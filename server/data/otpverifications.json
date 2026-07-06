@@ -1,0 +1,15 @@
+[
+  {
+    "_id": "cknk7tce3mqmaqya5",
+    "email": "2401100cse0006@cse.suh.edu.in",
+    "otp": "449978",
+    "createdAt": "2026-06-20T11:51:00.366Z"
+  },
+  {
+    "_id": "q8td0eb04mqmb5i5i",
+    "email": "test@gmail.com",
+    "otp": "762778",
+    "createdAt": "2026-06-20T12:02:19.302Z",
+    "verified": true
+  }
+]

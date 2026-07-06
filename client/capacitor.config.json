@@ -1,0 +1,9 @@
+{
+  "appId": "com.avento.app",
+  "appName": "AVENTO",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "cleartext": true
+  }
+}

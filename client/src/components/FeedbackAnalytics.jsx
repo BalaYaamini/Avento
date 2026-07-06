@@ -1,0 +1,185 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const RatingCard = ({ title, value, max = 5 }) => {
+  const numericValue = parseFloat(value);
+  const percentage = (numericValue / max) * 100;
+  
+  return (
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{title}</h4>
+      <div className="flex items-end gap-2 mb-2">
+        <span className="text-3xl font-black text-slate-800">{value}</span>
+        <span className="text-sm font-bold text-slate-400 mb-1">/ {max}</span>
+      </div>
+      
+      {/* Visual Stars Representation */}
+      <div className="flex text-amber-400 mb-2">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <svg 
+            key={star} 
+            xmlns="http://www.w3.org/2000/svg" 
+            className={`h-4 w-4 ${star <= Math.round(numericValue) ? 'text-amber-400' : 'text-slate-200'}`} 
+            viewBox="0 0 20 20" 
+            fill="currentColor"
+          >
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+          </svg>
+        ))}
+      </div>
+
+      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+        <div 
+          className="bg-violet-500 h-1.5 rounded-full transition-all duration-1000" 
+          style={{ width: `${percentage}%` }}
+        ></div>
+      </div>
+    </div>
+  );
+};
+
+const FeedbackAnalytics = ({ eventId }) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        setLoading(true);
+        const res = await axios.get(`/api/feedbacks/event/${eventId}`);
+        setData(res.data);
+      } catch (err) {
+        console.error('Error fetching feedback analytics:', err);
+        setError('Failed to load feedback data.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (eventId) {
+      fetchAnalytics();
+    }
+  }, [eventId]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-40">
+        <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="text-red-500 text-center p-4">{error}</div>;
+  }
+
+  if (!data) return null;
+
+  const { averages, distribution, participation, suggestions } = data;
+  const totalSubmissions = participation.submitted || 0;
+
+  return (
+    <div className="space-y-8 animate-fade-in-up">
+      
+      {/* Participation Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div className="text-xs font-bold text-slate-500 uppercase">Registered</div>
+          <div className="text-2xl font-black text-slate-800 mt-1">{participation.registered}</div>
+        </div>
+        <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+          <div className="text-xs font-bold text-emerald-600 uppercase">Submitted</div>
+          <div className="text-2xl font-black text-emerald-700 mt-1">{participation.submitted}</div>
+        </div>
+        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+          <div className="text-xs font-bold text-amber-600 uppercase">Pending</div>
+          <div className="text-2xl font-black text-amber-700 mt-1">{participation.pending}</div>
+        </div>
+        <div className="bg-violet-50 p-4 rounded-xl border border-violet-100">
+          <div className="text-xs font-bold text-violet-600 uppercase">Response Rate</div>
+          <div className="text-2xl font-black text-violet-700 mt-1">{participation.responseRate}%</div>
+        </div>
+      </div>
+
+      {totalSubmissions === 0 ? (
+        <div className="bg-white p-10 rounded-xl border border-slate-200 text-center">
+          <div className="text-slate-400 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-bold text-slate-700">No Feedback Yet</h3>
+          <p className="text-sm text-slate-500">Analytics will appear here once participants start submitting feedback.</p>
+        </div>
+      ) : (
+        <>
+          {/* Averages Row */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <RatingCard title="Overall" value={averages.overall} />
+            <RatingCard title="Content" value={averages.content} />
+            <RatingCard title="Speaker" value={averages.speaker} />
+            <RatingCard title="Organization" value={averages.organization} />
+            <RatingCard title="Engagement" value={averages.engagement} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Distribution Chart */}
+            <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-800 mb-6">Rating Distribution (Overall)</h3>
+              <div className="space-y-4">
+                {[5, 4, 3, 2, 1].map(star => {
+                  const count = distribution[star] || 0;
+                  const percentage = totalSubmissions > 0 ? (count / totalSubmissions) * 100 : 0;
+                  return (
+                    <div key={star} className="flex items-center gap-3">
+                      <div className="w-12 text-xs font-bold text-slate-600 flex items-center gap-1">
+                        {star} <span className="text-amber-400">★</span>
+                      </div>
+                      <div className="flex-grow bg-slate-100 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className="bg-amber-400 h-3 rounded-full" 
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
+                      <div className="w-8 text-right text-xs font-bold text-slate-500">{count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Suggestions List */}
+            <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-sm font-bold text-slate-800">Participant Suggestions</h3>
+                <span className="text-xs font-bold bg-violet-100 text-violet-700 px-2 py-1 rounded-md">
+                  {suggestions.length} Comments
+                </span>
+              </div>
+              
+              {suggestions.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 text-sm italic">
+                  No written suggestions provided yet.
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                  {suggestions.map((suggestion, idx) => (
+                    <div key={suggestion.id || idx} className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                      <p className="text-sm text-slate-700 leading-relaxed">"{suggestion.text}"</p>
+                      <div className="text-[10px] text-slate-400 mt-2 font-medium">
+                        Submitted on {new Date(suggestion.date).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default FeedbackAnalytics;

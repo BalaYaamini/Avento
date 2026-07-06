@@ -1,0 +1,18 @@
+[
+  {
+    "_id": "ngaot9umimqep4pwd",
+    "fullName": "Alex River",
+    "email": "student@university.edu",
+    "password": "$2a$10$CIsv3UBKPeKg6rJch/YMquiNnlESigCactde8/Z75TcBdK4ozfOf.",
+    "role": "student",
+    "createdAt": "2026-06-15T04:11:27.901Z"
+  },
+  {
+    "_id": "x4bg5ged1mqep4pwf",
+    "fullName": "Dr. Evelyn Carter",
+    "email": "admin@university.edu",
+    "password": "$2a$10$CIsv3UBKPeKg6rJch/YMquRxlELwi.x5cV7rQpqMqnK1ITD.HETVe",
+    "role": "admin",
+    "createdAt": "2026-06-15T04:11:27.903Z"
+  }
+]

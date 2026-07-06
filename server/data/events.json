@@ -1,0 +1,67 @@
+[
+  {
+    "_id": "qjvhm8u78mqep4pwh",
+    "title": "AVENTO Hackathon 2026",
+    "description": "Join the annual 48-hour varsity hackathon. Collaborate with designers, developers, and product managers to solve real-world problems and win prizes.",
+    "category": "Technical",
+    "venue": "Campus Innovation Center, Hall B",
+    "date": "2026-07-15T09:00:00.000Z",
+    "capacity": 80,
+    "registeredCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800",
+    "status": "active",
+    "createdAt": "2026-06-15T04:11:27.905Z"
+  },
+  {
+    "_id": "10lgr8llhmqep4pwj",
+    "title": "Campus Starlight Music Festival",
+    "description": "An open-air evening filled with live performances by campus bands, local artists, gourmet food trucks, and light installations.",
+    "category": "Cultural",
+    "venue": "Main Athletic Grounds",
+    "date": "2026-07-22T18:00:00.000Z",
+    "capacity": 350,
+    "registeredCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800",
+    "status": "active",
+    "createdAt": "2026-06-15T04:11:27.907Z"
+  },
+  {
+    "_id": "6ra3ip09vmqep4pwn",
+    "title": "Deep Learning & Neural Networks",
+    "description": "A hands-on coding workshop exploring tensor math, neural network architectures, and training custom computer vision models using PyTorch.",
+    "category": "Workshop",
+    "venue": "Engineering Lab 404",
+    "date": "2026-08-02T10:00:00.000Z",
+    "capacity": 30,
+    "registeredCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1531482615713-2afd69097998?w=800",
+    "status": "active",
+    "createdAt": "2026-06-15T04:11:27.911Z"
+  },
+  {
+    "_id": "rtfi0bzj4mqep4pwq",
+    "title": "Varsity Basketball Championships",
+    "description": "The final game of the inter-college varsity basketball league. Come support the home team as they compete for the championship cup.",
+    "category": "Sports",
+    "venue": "Indoor Sports Arena",
+    "date": "2026-06-28T15:00:00.000Z",
+    "capacity": 150,
+    "registeredCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800",
+    "status": "active",
+    "createdAt": "2026-06-15T04:11:27.914Z"
+  },
+  {
+    "_id": "j303wfy3omqep4pws",
+    "title": "Quantum Computing Guest Lecture",
+    "description": "A guest lecture by leading research physicist Dr. Alan Vance on superconducting qubits, quantum supremacy, and industry applications.",
+    "category": "Seminar",
+    "venue": "Science Auditorium",
+    "date": "2026-07-28T14:30:00.000Z",
+    "capacity": 120,
+    "registeredCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=800",
+    "status": "active",
+    "createdAt": "2026-06-15T04:11:27.916Z"
+  }
+]

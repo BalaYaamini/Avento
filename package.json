@@ -1,0 +1,21 @@
+{
+  "name": "avento-monorepo",
+  "version": "1.0.0",
+  "description": "AVENTO - University Event Management Platform",
+  "main": "main.js",
+  "scripts": {
+    "install-all": "npm install && npm install --prefix server && npm install --prefix client",
+    "server": "npm run start --prefix server",
+    "server-dev": "npm run dev --prefix server",
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server-dev\" \"npm run client\"",
+    "electron": "electron .",
+    "desktop": "concurrently \"npm run server-dev\" \"npm run client\" \"electron . --no-backend\"",
+    "build-client": "npm run build --prefix client",
+    "desktop-prod": "npm run build-client && electron . --production"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^41.7.1"
+  }
+}
