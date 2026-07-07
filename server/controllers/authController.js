@@ -154,21 +154,25 @@ exports.login = async (req, res) => {
     }
 
     const emailLower = email.toLowerCase().trim();
-    console.log('Incoming login attempt for email:', emailLower);
+    console.log('[AUTH] Incoming login attempt for email:', emailLower);
 
     // Find user in MongoDB
     const user = await User.findOne({ email: emailLower });
-    console.log('User found in DB:', !!user);
-
+    
     if (!user) {
+      console.log(`[AUTH] Login Failed: User '${emailLower}' was NOT FOUND in the MongoDB database.`);
+      console.log(`[AUTH] Debug: This usually means the production database is empty, or the MONGO_URI is pointing to the wrong database (e.g. 'test' instead of 'avento').`);
       return res.status(401).json({ message: 'Invalid credentials' });
+    } else {
+      console.log(`[AUTH] User '${emailLower}' found in DB. Document ID:`, user._id);
     }
 
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log('Password match result:', isMatch);
+    console.log(`[AUTH] bcrypt.compare() match result for '${emailLower}':`, isMatch);
 
     if (!isMatch) {
+      console.log(`[AUTH] Login Failed: Password mismatch for user '${emailLower}'.`);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
