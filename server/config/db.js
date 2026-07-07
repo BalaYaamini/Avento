@@ -11,5 +11,7 @@ const connectDB = async () => {
     console.error(`Error connecting to MongoDB: ${error.message}`);
     // Removed process.exit(1) to prevent the server from crashing abruptly,
     // which was causing the 502 Bad Gateway and "Network Error" on the frontend.
+  }
+};
 
 module.exports = connectDB;

@@ -8,11 +8,9 @@ dotenv.config();
 
 // Connect to MongoDB
 const connectDB = require('./config/db');
+connectDB();
 
-const startServer = async () => {
-  await connectDB();
-  
-  const app = express();
+const app = express();
 
 // Global Middlewares
 app.use(cors({
@@ -71,5 +69,3 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 AVENTO Server is running on port ${PORT}`);
 });
-};
-startServer();
