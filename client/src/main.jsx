@@ -8,14 +8,13 @@ import { Capacitor } from '@capacitor/core'
 // Configure Axios base URL for Capacitor (Android/iOS) builds or production
 // In local dev, Vite proxy handles '/api' calls. In production or Capacitor,
 // VITE_API_URL should be defined in .env (e.g. VITE_API_URL=http://192.168.1.100:5001)
-let apiUrl = import.meta.env.VITE_API_URL;
+let apiUrl;
 
 if (import.meta.env.PROD) {
-  // Enforce production URL to prevent Mixed Content errors if Vercel synced local .env variables
-  if (!apiUrl || apiUrl.includes('192.168') || apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1')) {
-    apiUrl = 'https://avento-7hnx.onrender.com';
-  }
+  // Strictly enforce the production Render URL to avoid any Vercel environment variable misconfigurations
+  apiUrl = 'https://avento-7hnx.onrender.com';
 } else if (Capacitor.isNativePlatform()) {
+  apiUrl = import.meta.env.VITE_API_URL;
   // Mobile devices cannot reach the host machine via localhost/127.0.0.1.
   // We automatically swap these for the Android Emulator host alias.
   if (!apiUrl || apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1')) {
