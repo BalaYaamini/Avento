@@ -26,7 +26,19 @@ app.use(express.json());
 console.log('⚡ Supabase Client Initialized.');
 
 app.get('/api/debug-env', (req, res) => {
-  res.json({ keys: Object.keys(process.env) });
+  const net = require('net');
+  const start = Date.now();
+  const sock = net.createConnection({port: 465, host: '142.250.114.108', timeout: 5000}, () => {
+    sock.destroy();
+    res.json({ keys: Object.keys(process.env), tcp: 'connected', time: Date.now() - start });
+  });
+  sock.on('error', (e) => {
+    res.json({ keys: Object.keys(process.env), tcp: 'error', message: e.message });
+  });
+  sock.on('timeout', () => {
+    sock.destroy();
+    res.json({ keys: Object.keys(process.env), tcp: 'timeout', time: Date.now() - start });
+  });
 });
 
 // Define API routes
