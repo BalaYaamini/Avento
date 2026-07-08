@@ -25,6 +25,10 @@ app.use(express.json());
 // Initialize Supabase integration check (Optional: log initialization)
 console.log('⚡ Supabase Client Initialized.');
 
+app.get('/api/debug-env', (req, res) => {
+  res.json({ keys: Object.keys(process.env) });
+});
+
 // Define API routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/events', require('./routes/eventRoutes'));
