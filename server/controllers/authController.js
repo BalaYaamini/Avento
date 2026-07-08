@@ -389,7 +389,12 @@ exports.sendOtp = async (req, res) => {
       `
     };
 
-    await transporter.sendMail(mailOptions);
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
+    );
+
+    await Promise.race([sendMailPromise, timeoutPromise]);
 
     return res.json({
       message: `OTP sent successfully to ${emailLower}. Please check your inbox.`,
