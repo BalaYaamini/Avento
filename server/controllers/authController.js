@@ -277,8 +277,8 @@ exports.sendOtp = async (req, res) => {
     console.log(`[OTP] Configuring Nodemailer for Gmail SMTP...`);
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
+      port: 587,
+      secure: false, // upgrade later with STARTTLS
       family: 4, // Force IPv4 routing to bypass Render IPv6 SMTP blocks
       auth: {
         user: process.env.EMAIL_USER,
