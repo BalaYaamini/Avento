@@ -277,34 +277,19 @@ exports.sendOtp = async (req, res) => {
     );
     console.log(`[OTP] OTP saved successfully.`);
 
-    // Fix for Render IPv6 routing issue: Manually lookup IPv4 address for smtp.gmail.com
-    const dns = require('dns');
-    const smtpIpv4 = await new Promise((resolve, reject) => {
-      dns.lookup('smtp.gmail.com', { family: 4 }, (err, address) => {
-        if (err) reject(err);
-        else resolve(address);
-      });
-    });
+    const { Resend } = require('resend');
+    const resend = new Resend(process.env.RESEND_API_KEY || 're_mock_key_for_local_testing');
 
-    console.log(`[OTP] Configuring Nodemailer for Gmail SMTP on IPv4: ${smtpIpv4}...`);
-    const transporter = nodemailer.createTransport({
-      host: smtpIpv4,
-      port: 465,
-      secure: true, // Use port 465 (SMTPS) which sometimes bypasses strict 587 blocks
-      tls: {
-        servername: 'smtp.gmail.com', // Required when connecting via IP address
-        rejectUnauthorized: false
-      },
-      connectionTimeout: 30000,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      }
-    });
+    console.log(`[OTP] Sending OTP via Resend to ${emailLower}...`);
+    
+    // Check if we are missing API key for actual delivery
+    if (!process.env.RESEND_API_KEY) {
+      console.warn(`[OTP] WARNING: RESEND_API_KEY is missing in environment! Emails will not be delivered.`);
+    }
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: emailLower,
+    const { data, error } = await resend.emails.send({
+      from: 'AVENTO <onboarding@resend.dev>',
+      to: [emailLower],
       subject: 'Avento Verification Code',
       html: `
 <!DOCTYPE html>
@@ -399,9 +384,12 @@ exports.sendOtp = async (req, res) => {
 </body>
 </html>
       `
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    if (error) {
+      console.error('[OTP] Resend API Error:', error);
+      throw new Error(error.message);
+    }
 
     return res.json({
       message: `OTP sent successfully to ${emailLower}. Please check your inbox.`,
