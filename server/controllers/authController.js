@@ -283,7 +283,7 @@ exports.sendOtp = async (req, res) => {
       port: 587,
       secure: false, // upgrade later with STARTTLS
       family: 4, // Force IPv4 routing to bypass Render IPv6 SMTP blocks
-      connectionTimeout: 5000, // 5 seconds max before falling back
+      connectionTimeout: 30000, // 30 seconds max before failing
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
@@ -389,29 +389,20 @@ exports.sendOtp = async (req, res) => {
       `
     };
 
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
-    );
-
-    await Promise.race([sendMailPromise, timeoutPromise]);
+    await transporter.sendMail(mailOptions);
 
     return res.json({
       message: `OTP sent successfully to ${emailLower}. Please check your inbox.`,
       email: emailLower,
     });
   } catch (err) {
-    console.error('[OTP] SendOtp error encountered (likely Render SMTP block):');
+    console.error('[OTP] SendOtp error encountered:');
     console.error(err); 
     
-    // Render Free Tier blocks outbound SMTP (ports 25, 465, 587). 
-    // We cannot bypass the network firewall. 
-    // As a temporary workaround so the user can continue testing registration, 
-    // we return HTTP 200 and provide the OTP in the response if SMTP fails.
-    return res.status(200).json({ 
-      message: 'SMTP blocked by Render. Check console or use this OTP for testing.', 
-      email: emailLower,
-      fallbackOtp: otp // TEMPORARY WORKAROUND FOR RENDER FREE TIER
+    return res.status(500).json({ 
+      message: 'Server error sending OTP.', 
+      error: err.message,
+      stack: err.stack
     });
   }
 };
