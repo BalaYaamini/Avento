@@ -4,7 +4,6 @@ const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
 const Otp = require('../models/Otp');
 const nodemailer = require('nodemailer');
-const { Resend } = require('resend');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
@@ -284,16 +283,29 @@ exports.sendOtp = async (req, res) => {
     console.log(`[OTP] EMAIL_USER configured:`, !!process.env.EMAIL_USER);
     console.log(`[OTP] EMAIL_PASS configured:`, !!process.env.EMAIL_PASS);
 
-    if (!process.env.RESEND_API_KEY) {
-      console.error(`[OTP] CRITICAL ERROR: RESEND_API_KEY missing in environment variables.`);
-      return res.status(500).json({ message: 'Server configuration error: Email API key missing.' });
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error(`[OTP] CRITICAL ERROR: SMTP credentials missing in environment variables.`);
+      return res.status(500).json({ message: 'Server configuration error: Email credentials missing.' });
     }
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      requireTLS: true,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
 
-    console.log(`[OTP] Sending OTP via Resend API to ${emailLower}...`);
+    console.log(`[OTP] Sending OTP via Nodemailer API to ${emailLower}...`);
 
-    const htmlContent = `
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: emailLower,
+      subject: 'Avento Verification Code',
+      html: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -385,20 +397,11 @@ exports.sendOtp = async (req, res) => {
   </table>
 </body>
 </html>
-      `;
+      `
+    };
 
-    const { data, error } = await resend.emails.send({
-      from: 'Avento <onboarding@resend.dev>',
-      to: emailLower,
-      subject: 'Avento Verification Code',
-      html: htmlContent
-    });
-
-    if (error) {
-      throw new Error(`Resend API Error: ${error.message}`);
-    }
-
-    console.log(`[OTP] Resend API send successful. Data:`, data);
+    await transporter.sendMail(mailOptions);
+    console.log(`[OTP] Nodemailer send successful.`);
 
     return res.json({
       message: `OTP sent successfully to ${emailLower}. Please check your inbox.`,
