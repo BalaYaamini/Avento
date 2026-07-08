@@ -277,13 +277,25 @@ exports.sendOtp = async (req, res) => {
     );
     console.log(`[OTP] OTP saved successfully.`);
 
-    console.log(`[OTP] Configuring Nodemailer for Gmail SMTP...`);
+    // Fix for Render IPv6 routing issue: Manually lookup IPv4 address for smtp.gmail.com
+    const dns = require('dns');
+    const smtpIpv4 = await new Promise((resolve, reject) => {
+      dns.lookup('smtp.gmail.com', { family: 4 }, (err, address) => {
+        if (err) reject(err);
+        else resolve(address);
+      });
+    });
+
+    console.log(`[OTP] Configuring Nodemailer for Gmail SMTP on IPv4: ${smtpIpv4}...`);
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // upgrade later with STARTTLS
-      family: 4, // Force IPv4 routing to bypass Render IPv6 SMTP blocks
-      connectionTimeout: 30000, // 30 seconds max before failing
+      host: smtpIpv4,
+      port: 465,
+      secure: true, // Use port 465 (SMTPS) which sometimes bypasses strict 587 blocks
+      tls: {
+        servername: 'smtp.gmail.com', // Required when connecting via IP address
+        rejectUnauthorized: false
+      },
+      connectionTimeout: 30000,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
