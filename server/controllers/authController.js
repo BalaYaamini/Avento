@@ -280,6 +280,7 @@ exports.sendOtp = async (req, res) => {
       port: 587,
       secure: false, // upgrade later with STARTTLS
       family: 4, // Force IPv4 routing to bypass Render IPv6 SMTP blocks
+      connectionTimeout: 5000, // 5 seconds max before falling back
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
