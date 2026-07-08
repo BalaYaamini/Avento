@@ -275,23 +275,32 @@ exports.sendOtp = async (req, res) => {
       { otp },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    console.log(`[OTP] OTP saved successfully.`);
+    console.log(`[OTP] OTP saved successfully in MongoDB.`);
 
-    const { Resend } = require('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY || 're_mock_key_for_local_testing');
-
-    console.log(`[OTP] Sending OTP via Resend to ${emailLower}...`);
+    console.log(`[OTP] Initializing email transporter...`);
     
-    // Check if we are missing API key for actual delivery
-    if (!process.env.RESEND_API_KEY) {
-      console.warn(`[OTP] WARNING: RESEND_API_KEY is missing in environment! Emails will not be delivered.`);
-      console.log(`[OTP] Mock Delivery - To: ${emailLower} | OTP: ${otp}`);
-      return res.status(200).json({ message: 'OTP sent successfully (Mock Delivery)' });
+    // Add logging to check if environment variables are present (without logging the password itself)
+    console.log(`[OTP] EMAIL_USER configured:`, !!process.env.EMAIL_USER);
+    console.log(`[OTP] EMAIL_PASS configured:`, !!process.env.EMAIL_PASS);
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error(`[OTP] CRITICAL ERROR: SMTP credentials missing in environment variables.`);
+      return res.status(500).json({ message: 'Server configuration error: Email credentials missing.' });
     }
 
-    const { data, error } = await resend.emails.send({
-      from: 'AVENTO <onboarding@resend.dev>',
-      to: [emailLower],
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    console.log(`[OTP] Sending OTP via Nodemailer API to ${emailLower}...`);
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: emailLower,
       subject: 'Avento Verification Code',
       html: `
 <!DOCTYPE html>
@@ -386,12 +395,14 @@ exports.sendOtp = async (req, res) => {
 </body>
 </html>
       `
-    });
+    };
 
-    if (error) {
-      console.error('[OTP] Resend API Error:', error);
-      throw new Error(error.message);
-    }
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 15000)
+    );
+    await Promise.race([sendMailPromise, timeoutPromise]);
+    console.log(`[OTP] Nodemailer send successful.`);
 
     return res.json({
       message: `OTP sent successfully to ${emailLower}. Please check your inbox.`,
