@@ -263,23 +263,27 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    // Generate 6-digit OTP
+    console.log(`[OTP] Generating OTP for ${emailLower}...`);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Save to DB (update if exists)
+    console.log(`[OTP] Saving OTP to MongoDB...`);
     await Otp.findOneAndUpdate(
       { email: emailLower },
       { otp },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    console.log(`[OTP] OTP saved successfully.`);
 
-    // Send email using Nodemailer
+    console.log(`[OTP] Configuring Nodemailer for Gmail SMTP...`);
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      family: 4, // Force IPv4 routing to bypass Render IPv6 SMTP blocks
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
-      },
+      }
     });
 
     const mailOptions = {
@@ -388,7 +392,8 @@ exports.sendOtp = async (req, res) => {
       email: emailLower,
     });
   } catch (err) {
-    console.error('SendOtp error:', err.message);
-    res.status(500).json({ message: 'Server error sending OTP.', error: err.message });
+    console.error('[OTP] SendOtp error encountered:');
+    console.error(err); // Prints full stack and details in Render logs
+    res.status(500).json({ message: 'Server error sending OTP.', error: err.message, stack: err.stack });
   }
 };
