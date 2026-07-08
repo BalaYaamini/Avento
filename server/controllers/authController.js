@@ -400,11 +400,7 @@ exports.sendOtp = async (req, res) => {
       `
     };
 
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 15000)
-    );
-    await Promise.race([sendMailPromise, timeoutPromise]);
+    await transporter.sendMail(mailOptions);
     console.log(`[OTP] Nodemailer send successful.`);
 
     return res.json({
