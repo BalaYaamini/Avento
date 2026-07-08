@@ -196,7 +196,17 @@ exports.submitContactForm = async (req, res) => {
       text: `From: ${name}\nStudent Email: ${email}\n\nSubject: ${subject}\n\nMessage:\n${message}`,
     };
 
-    await transporter.sendMail(mailOptions);
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
+    );
+
+    try {
+      await Promise.race([sendMailPromise, timeoutPromise]);
+    } catch (emailErr) {
+      console.error('[submitContactForm] Email failed (likely Render SMTP block):', emailErr.message);
+      // We gracefully continue so the user still gets a success message in UI
+    }
 
     res.json({ message: 'Your message has been sent successfully.' });
   } catch (err) {

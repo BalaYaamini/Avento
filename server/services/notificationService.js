@@ -30,7 +30,11 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
       subject: subject,
       html: htmlBody,
     };
-    await transporter.sendMail(mailOptions);
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
+    );
+    await Promise.race([sendMailPromise, timeoutPromise]);
     console.log(`Email sent to ${recipientEmail} with subject: ${subject}`);
   } catch (err) {
     console.error('Error sending email:', err.message);
