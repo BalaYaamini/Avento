@@ -285,6 +285,8 @@ exports.sendOtp = async (req, res) => {
     // Check if we are missing API key for actual delivery
     if (!process.env.RESEND_API_KEY) {
       console.warn(`[OTP] WARNING: RESEND_API_KEY is missing in environment! Emails will not be delivered.`);
+      console.log(`[OTP] Mock Delivery - To: ${emailLower} | OTP: ${otp}`);
+      return res.status(200).json({ message: 'OTP sent successfully (Mock Delivery)' });
     }
 
     const { data, error } = await resend.emails.send({
