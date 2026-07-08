@@ -241,13 +241,16 @@ exports.getProfile = async (req, res) => {
 // ─── SEND OTP ───────────────────────────────────────────────────────────────
 // Sends a 6-digit OTP to the exact email address provided via Nodemailer.
 exports.sendOtp = async (req, res) => {
+  let emailLower = '';
+  let otp = '';
+  
   try {
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ message: 'Email is required.' });
     }
 
-    const emailLower = email.toLowerCase().trim();
+    emailLower = email.toLowerCase().trim();
 
     // Check if user already exists in MongoDB
     const existingUser = await User.findOne({ email: emailLower });
@@ -264,7 +267,7 @@ exports.sendOtp = async (req, res) => {
     }
 
     console.log(`[OTP] Generating OTP for ${emailLower}...`);
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     console.log(`[OTP] Saving OTP to MongoDB...`);
     await Otp.findOneAndUpdate(
