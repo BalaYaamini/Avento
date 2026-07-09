@@ -24,6 +24,17 @@ const StudentCertificates = () => {
     fetchCertificates();
   }, []);
 
+  const getFullPdfUrl = (urlPath) => {
+    if (!urlPath) return '';
+    if (urlPath.startsWith('http')) return urlPath;
+    if (axios.defaults.baseURL) {
+      const base = axios.defaults.baseURL.replace(/\/$/, '');
+      const path = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
+      return `${base}${path}`;
+    }
+    return urlPath;
+  };
+
   return (
     <div className="flex-1 bg-slate-50/50">
       <div className="pt-24 pb-12 px-6 lg:px-12 max-w-7xl mx-auto">
@@ -73,7 +84,7 @@ const StudentCertificates = () => {
                     ID: {cert.certificate_id}
                   </div>
                   <a
-                    href={cert.certificate_url}
+                    href={getFullPdfUrl(cert.certificate_url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block text-center w-full bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"

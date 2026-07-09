@@ -14,6 +14,17 @@ const CertificateManager = ({ eventId, eventStatus }) => {
   const { user } = useAuth();
   const [templateFile, setTemplateFile] = useState(null);
   const [templateUrl, setTemplateUrl] = useState(null);
+  
+  const getFullImageUrl = (urlPath) => {
+    if (!urlPath) return '';
+    if (urlPath.startsWith('http')) return urlPath;
+    if (axios.defaults.baseURL) {
+      const base = axios.defaults.baseURL.replace(/\/$/, '');
+      const path = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
+      return `${base}${path}`;
+    }
+    return urlPath;
+  };
   const [config, setConfig] = useState(defaultFields);
   
   const [uploading, setUploading] = useState(false);
@@ -60,8 +71,8 @@ const CertificateManager = ({ eventId, eventStatus }) => {
     setDragStart({
       x: e.clientX,
       y: e.clientY,
-      startX: config[key].x,
-      startY: config[key].y
+      startX: Number(config[key].x) || 0,
+      startY: Number(config[key].y) || 0
     });
   };
 
@@ -168,8 +179,8 @@ const CertificateManager = ({ eventId, eventStatus }) => {
     try {
       const res = await axios.post(`/api/certificates/generate/${eventId}/test`);
       
-      // Open the preview certificate in a new tab
-      const pdfUrl = res.data.certificate_url;
+      // Open the preview certificate in a new tab using the fully qualified backend URL
+      const pdfUrl = getFullImageUrl(res.data.certificate_url);
       window.open(pdfUrl, '_blank');
 
       setFeedback({ type: 'success', message: 'Test certificate opened in a new tab!' });
@@ -246,7 +257,7 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                 style={{ cursor: draggingField ? 'grabbing' : 'auto' }}
               >
                 <img 
-                  src={templateUrl} 
+                  src={getFullImageUrl(templateUrl)} 
                   onLoad={handleImageLoad} 
                   className="w-full h-auto pointer-events-none block" 
                   alt="Certificate Template"
@@ -254,9 +265,10 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                 />
                 
                 {Object.entries(config).map(([key, field]) => {
-                  const screenX = field.x / scale;
-                  const screenY = field.y / scale;
-                  const screenFontSize = Math.max(8, field.fontSize / scale); // don't let it get too small visually
+                  const safeScale = scale || 1;
+                  const screenX = Number(field.x) / safeScale;
+                  const screenY = Number(field.y) / safeScale;
+                  const screenFontSize = Math.max(8, (Number(field.fontSize) || 12) / safeScale); // don't let it get too small visually
                   
                   let transform = '';
                   if (field.align === 'center') transform = 'translateX(-50%)';
@@ -308,7 +320,7 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                       <input 
                         type="number" 
                         value={config[activeField].fontSize}
-                        onChange={(e) => updateFieldProperty(activeField, 'fontSize', parseInt(e.target.value) || 12)}
+                        onChange={(e) => updateFieldProperty(activeField, 'fontSize', e.target.value === '' ? '' : Number(e.target.value))}
                         className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
                       />
                     </div>
