@@ -276,11 +276,24 @@ const createPdfCertificate = async (event, student, certId) => {
   drawText(certId, 'CERTIFICATE_ID');
 
   const pdfBytes = await pdfDoc.save();
-  const certFileName = `certificate-${certId}.pdf`;
-  const certPathLocal = path.join(__dirname, '../uploads/certificates', certFileName);
-  fs.writeFileSync(certPathLocal, pdfBytes);
-
-  return `/uploads/certificates/${certFileName}`;
+  const certFileName = `generated/certificate-${certId}-${Date.now()}.pdf`;
+  
+  const { error: uploadErr } = await supabase.storage
+    .from('certificates')
+    .upload(certFileName, pdfBytes, {
+      contentType: 'application/pdf',
+      upsert: true
+    });
+    
+  if (uploadErr) {
+    throw new Error(`Failed to upload certificate to storage: ${uploadErr.message}`);
+  }
+  
+  const { data: urlData } = supabase.storage
+    .from('certificates')
+    .getPublicUrl(certFileName);
+    
+  return urlData.publicUrl;
 };
 
 // 2. Generate Certificates (Bulk)
