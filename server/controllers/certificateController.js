@@ -3,6 +3,7 @@ const { notifyUser } = require('../services/notificationService');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 // Helper to get font size
 const getFontSize = (size) => size || 24;
@@ -46,7 +47,27 @@ exports.uploadTemplate = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to upload template for this event.' });
     }
 
-    const templatePath = `/uploads/templates/${req.file.filename}`;
+    const file = req.file;
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const fileName = 'template-' + uniqueSuffix + path.extname(file.originalname).toLowerCase();
+
+    const { data: uploadData, error: uploadErr } = await supabase.storage
+      .from('certificates')
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true
+      });
+
+    if (uploadErr) {
+      console.error('Supabase upload error:', uploadErr);
+      return res.status(500).json({ message: 'Error uploading to storage.', error: uploadErr.message });
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('certificates')
+      .getPublicUrl(fileName);
+
+    const templatePath = urlData.publicUrl;
     
     // Default config (A4 Landscape roughly: 842 x 595)
     const defaultConfig = {
@@ -141,13 +162,28 @@ exports.saveTemplateConfig = async (req, res) => {
 
 // Internal function to generate PDF
 const createPdfCertificate = async (event, student, certId) => {
-  const templatePathLocal = path.join(__dirname, '..', event.certificate_template);
-  if (!fs.existsSync(templatePathLocal)) {
-    throw new Error('Template file not found on server.');
-  }
+  const templatePathStr = event.certificate_template;
+  let fileBytes;
+  let ext;
 
-  const ext = path.extname(templatePathLocal).toLowerCase();
-  const fileBytes = fs.readFileSync(templatePathLocal);
+  if (templatePathStr.startsWith('http')) {
+    ext = path.extname(templatePathStr).split('?')[0].toLowerCase();
+    if (!ext || ext === '') {
+      if (templatePathStr.includes('.png')) ext = '.png';
+      else if (templatePathStr.includes('.jpg') || templatePathStr.includes('.jpeg')) ext = '.jpg';
+      else ext = '.png';
+    }
+    const response = await axios.get(templatePathStr, { responseType: 'arraybuffer' });
+    fileBytes = response.data;
+  } else {
+    // Backward compatibility for old local templates
+    const templatePathLocal = path.join(__dirname, '..', templatePathStr);
+    if (!fs.existsSync(templatePathLocal)) {
+      throw new Error('Template file not found on server.');
+    }
+    ext = path.extname(templatePathLocal).toLowerCase();
+    fileBytes = fs.readFileSync(templatePathLocal);
+  }
   let pdfDoc;
 
   if (ext === '.pdf') {
