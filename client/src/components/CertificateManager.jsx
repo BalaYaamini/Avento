@@ -390,7 +390,7 @@ const CertificateManager = ({ eventId, eventStatus }) => {
         <div className="border border-emerald-200 p-5 rounded-xl bg-emerald-50">
           <h3 className="font-medium text-emerald-800 mb-2">3. Issue Certificates</h3>
           <p className="text-xs text-emerald-600 mb-4">Ensure you have saved your layout configuration before generating. This will generate personalized PDFs for all registered/attended participants.</p>
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
             <button 
               onClick={handleGenerateTest}
               disabled={generating}

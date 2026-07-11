@@ -8,7 +8,10 @@ import {
   SquiggleDoodle, 
   StarDoodle,
   ArrowDoodle,
-  PinDoodle
+  PinDoodle,
+  CloudDoodle,
+  PaperPlaneDoodle,
+  GeometricBlobDoodle
 } from '../components/Doodles';
 const Home = () => {
   const { user } = useAuth();
@@ -290,12 +293,16 @@ const Home = () => {
           </div>
         </div>
 
+        <CloudDoodle className="absolute top-24 left-[30%] w-24 h-12 text-pastel-blue opacity-50 animate-float-slow hidden md:block" />
+
         <div className="absolute top-32 right-[10%] animate-float hidden lg:block">
           <div className="bg-pastel-yellow w-40 p-4 shadow-md rotate-[5deg] font-quicksand font-bold text-yellow-800 text-sm relative">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-1 !bg-white/40"></div>
             Good vibes only! See you there.
           </div>
         </div>
+
+        <PaperPlaneDoodle className="absolute top-40 right-[28%] w-16 h-16 text-pastel-coral opacity-60 animate-wobble hidden md:block -rotate-12" />
 
         <div className="absolute bottom-10 left-[20%] animate-bounce-gentle hidden lg:block">
           <SparkleDoodle className="w-16 h-16 text-pastel-coral opacity-60" />
@@ -307,6 +314,9 @@ const Home = () => {
             Campus lore unlocked ✨
           </div>
         </div>
+        
+        <GeometricBlobDoodle className="absolute -top-10 -left-10 w-96 h-96 text-pastel-lavender -z-10 hidden md:block animate-spin-slow" />
+        <GeometricBlobDoodle className="absolute top-20 -right-20 w-[500px] h-[500px] text-pastel-mint -z-10 hidden md:block animate-float-slow" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
           {/* Animated badge */}
@@ -318,7 +328,7 @@ const Home = () => {
           </div>
 
           {/* Main headline */}
-            <h1 className="animate-fade-in-up delay-100 font-heading text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight text-text-primary mb-6 leading-[1.1]">
+            <h1 className="animate-fade-in-up delay-100 font-heading text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-text-primary mb-6 leading-[1.1]">
               <span className="marker-highlight">Collect moments.</span><br className="hidden sm:block" />
               Meet your people.
             </h1>
@@ -358,7 +368,7 @@ const Home = () => {
         )}
 
         {/* ── Filter Controls ── */}
-        <div className="animate-fade-in-up delay-300 polaroid p-5 sm:p-6 mb-10 flex flex-col lg:flex-row items-center justify-between gap-5 relative z-20 mx-auto max-w-5xl -mt-8 rotate-1">
+        <div className="animate-fade-in-up delay-300 polaroid p-4 sm:p-6 mb-10 flex flex-col lg:flex-row items-center justify-between gap-5 relative z-20 mx-auto max-w-5xl -mt-8 rotate-1">
           <div className="absolute -top-3 left-10 tape tape-2 !w-24"></div>
           
           {/* Search Input */}

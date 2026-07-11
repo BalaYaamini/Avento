@@ -1,145 +1,201 @@
-import { SparkleDoodle, StarDoodle, HeartDoodle, RocketDoodle, SquiggleDoodle } from '../components/Doodles';
+import React from 'react';
+import { 
+  SparkleDoodle, StarDoodle, HeartDoodle, SquiggleDoodle, RocketDoodle, 
+  TicketDoodle, CalendarDoodle, CertificateDoodle, QRDoodle, 
+  GraduationCapDoodle, CollaborationDoodle, LeafDoodle, FlowerDoodle, CloudDoodle, TargetDoodle,
+  ArrowDoodle, CampusJourneyDoodle
+} from '../components/Doodles';
 
 const About = () => {
-  const stats = [
-    { value: '25+', label: 'Monthly Events', icon: '📅' },
-    { value: '4,000+', label: 'Registered Students', icon: '👥' },
-    { value: '98%', label: 'Attendance Satisfaction', icon: '⭐' },
-    { value: '15+', label: 'Student Clubs & Societies', icon: '🎯' }
+  const platformHighlights = [
+    { title: 'Smart Event Registration', desc: 'Seamlessly discover and register for events with one click.', icon: <TicketDoodle className="w-10 h-10 text-pastel-coral" /> },
+    { title: 'QR Attendance', desc: 'Fast, secure, and touchless check-ins for every participant.', icon: <QRDoodle className="w-10 h-10 text-pastel-blue" /> },
+    { title: 'Certificate Generation', desc: 'Automated digital credentials for your achievements.', icon: <CertificateDoodle className="w-10 h-10 text-pastel-yellow" /> },
+    { title: 'Event Discovery', desc: 'Find workshops, hackathons, and cultural fests easily.', icon: <TargetDoodle className="w-10 h-10 text-pastel-mint" /> },
+    { title: 'Smart Notifications', desc: 'Stay updated with personalized event reminders.', icon: <SparkleDoodle className="w-10 h-10 text-pastel-pink" /> },
+    { title: 'Organizer Workspace', desc: 'A dedicated command center for event coordinators.', icon: <CollaborationDoodle className="w-10 h-10 text-pastel-lavender" /> }
   ];
 
-  const futureFeatures = [
-    { title: 'OTP Verification', desc: 'Secure student authentication and reduced spam through verification systems.', icon: '🔐' },
-    { title: 'Faculty and Coordinator Roles', desc: 'Structured approval workflows for event proposals and organizing groups.', icon: '👨‍🏫' },
-    { title: 'Analytics Dashboard', desc: 'Visual insights into event participation, engagement, and seat occupancy trends.', icon: '📊' },
-    { title: 'Waitlist and QR Attendance System', desc: 'Automated check-in system using QR codes for physical event tracking.', icon: '📱' },
-    { title: 'Certificate Generation', desc: 'Automated certificate distribution for verified and attended participants.', icon: '🏆' }
+  const studentJourney = [
+    { step: 'Discover', icon: <TargetDoodle className="w-8 h-8 text-pastel-lavender" /> },
+    { step: 'Register', icon: <TicketDoodle className="w-8 h-8 text-pastel-coral" /> },
+    { step: 'Participate', icon: <HeartDoodle className="w-8 h-8 text-pastel-pink" /> },
+    { step: 'Scan QR', icon: <QRDoodle className="w-8 h-8 text-pastel-blue" /> },
+    { step: 'Earn Certificates', icon: <CertificateDoodle className="w-8 h-8 text-pastel-yellow" /> }
+  ];
+
+  const organizerJourney = [
+    { step: 'Create Event', icon: <CalendarDoodle className="w-8 h-8 text-pastel-lavender" /> },
+    { step: 'Manage Registrations', icon: <CollaborationDoodle className="w-8 h-8 text-pastel-mint" /> },
+    { step: 'Track Attendance', icon: <QRDoodle className="w-8 h-8 text-pastel-blue" /> },
+    { step: 'Issue Certificates', icon: <CertificateDoodle className="w-8 h-8 text-pastel-yellow" /> },
+    { step: 'Celebrate Success', icon: <SparkleDoodle className="w-8 h-8 text-pastel-pink" /> }
   ];
 
   return (
-    <div className="flex-grow py-20 text-slate-700">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Banner Section */}
-        <div className="text-center mb-20 animate-fade-in-up">
-          <div className="flex justify-center mb-5">
-            <span className="inline-flex items-center gap-2 text-[10px] font-bold px-4 py-1.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 uppercase tracking-[0.15em]">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
-              Portal Overview
+    <div className="flex-grow overflow-hidden bg-[#FFFDFB]">
+      
+      {/* 1. HERO SECTION */}
+      <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center">
+        <CloudDoodle className="absolute top-20 left-10 w-16 h-16 text-pastel-blue/40 animate-float-slow hidden md:block" />
+        <CloudDoodle className="absolute top-40 right-16 w-20 h-20 text-pastel-lavender/30 animate-float hidden md:block" />
+        <StarDoodle className="absolute top-32 left-1/4 w-8 h-8 text-pastel-yellow animate-pulse hidden sm:block" />
+        <SparkleDoodle className="absolute top-24 right-1/4 w-10 h-10 text-pastel-pink animate-bounce-gentle" />
+
+        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-pastel-lavender/10 text-pastel-lavender border border-pastel-lavender/20 mb-8 animate-fade-in-up">
+          <LeafDoodle className="w-4 h-4" />
+          <span className="text-xs font-bold uppercase tracking-widest">Our Story</span>
+        </div>
+
+        <h1 className="font-display text-5xl md:text-7xl font-black text-slate-800 mb-6 tracking-tight animate-fade-in-up delay-100 relative">
+          More than an Event Platform.
+          <br className="hidden md:block" />
+          <span className="relative inline-block mt-2">
+            AVENTO is where campus
+            <span className="relative inline-block mx-3">
+              <span className="relative z-10 text-pastel-coral">memories</span>
+              <SquiggleDoodle className="absolute -bottom-2 left-0 w-full h-4 text-pastel-yellow/60 z-0" />
             </span>
+            begin.
+          </span>
+        </h1>
+
+        <p className="font-body text-slate-600 text-lg md:text-xl max-w-3xl mx-auto leading-relaxed mb-12 animate-fade-in-up delay-200">
+          AVENTO is built to simplify the entire campus event journey. From discovering the perfect workshop to registering, attending, and earning your digital certificates, we make campus life effortless and engaging.
+        </p>
+
+        <div className="relative animate-fade-in-up delay-300 w-full max-w-2xl mx-auto">
+          <div className="absolute inset-0 bg-gradient-to-r from-pastel-lavender/20 to-pastel-coral/20 blur-3xl rounded-full" />
+          <div className="relative bg-white/60 backdrop-blur-xl border border-white/80 shadow-2xl shadow-pastel-lavender/10 rounded-[3rem] p-8 md:p-12 flex justify-center items-center scrapbook-panel-hover">
+            <CampusJourneyDoodle className="w-64 h-64 md:w-80 md:h-80 animate-float-slow z-10" />
+            <GraduationCapDoodle className="absolute -top-6 -right-6 w-16 h-16 text-pastel-mint animate-bounce-gentle z-20" />
+            <FlowerDoodle className="absolute -bottom-8 -left-8 w-20 h-20 text-pastel-pink animate-spin-slow z-20" />
           </div>
-          <h1 className="font-display text-4xl sm:text-5xl font-black text-text-primary mt-4 mb-5 tracking-tight relative inline-block">
-            Unified Campus <span className="heading-gradient">Engagement Platform</span>
-            <SparkleDoodle className="absolute -top-6 -right-8 w-10 h-10 text-pastel-coral animate-pulse" />
-          </h1>
-          <p className="font-body text-slate-600 max-w-2xl mx-auto text-lg leading-relaxed relative">
-            <HeartDoodle className="absolute -top-4 -left-8 w-6 h-6 text-pastel-pink animate-bounce-gentle hidden sm:block" />
-            AVENTO is a campus engagement platform designed by students for students, connecting event coordinators with participants and simplifying event discovery, registration, and management.
-            <StarDoodle className="absolute -bottom-6 -right-6 w-8 h-8 text-pastel-yellow animate-float hidden sm:block" />
+        </div>
+      </section>
+
+      {/* 2. THE STORY BEHIND AVENTO */}
+      <section className="relative py-24 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
+        <div className="scrapbook-panel p-10 md:p-16 text-center relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pastel-lavender via-pastel-pink to-pastel-yellow" />
+          <HeartDoodle className="absolute top-10 left-10 w-12 h-12 text-pastel-coral/20 group-hover:scale-125 transition-transform duration-500" />
+          <StarDoodle className="absolute bottom-10 right-10 w-16 h-16 text-pastel-yellow/30 group-hover:rotate-90 transition-transform duration-700" />
+          
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-slate-800 mb-6">
+            The Story Behind <span className="text-pastel-lavender">AVENTO</span>
+          </h2>
+          <p className="font-body text-slate-600 text-lg leading-loose max-w-3xl mx-auto">
+            AVENTO represents adventure, opportunity, participation, creativity, memories, and growth. We realized that campus life is defined by the moments we share outside the classroom. Every hackathon, cultural fest, and workshop is a chance to grow. We built this platform so that every event becomes more than just attendance—it becomes an unforgettable experience.
           </p>
         </div>
+      </section>
 
-        <div className="flex justify-center mb-16 animate-fade-in-up">
-          <SquiggleDoodle className="w-24 h-6 text-pastel-lavender/50" />
+      {/* 3. MISSION & VISION */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-8">
+          <div className="scrapbook-panel p-10 relative overflow-hidden group">
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-pastel-mint/20 rounded-full blur-2xl group-hover:bg-pastel-mint/40 transition-colors duration-500" />
+            <RocketDoodle className="w-12 h-12 text-pastel-mint mb-6 relative z-10" />
+            <h3 className="font-display text-2xl font-bold text-slate-800 mb-4 relative z-10">Our Mission</h3>
+            <p className="font-body text-slate-600 leading-relaxed relative z-10">
+              To eliminate the friction of organizing and attending campus activities. We want to empower students to discover their passions and help organizers seamlessly manage experiences without the administrative headache.
+            </p>
+          </div>
+          <div className="scrapbook-panel p-10 relative overflow-hidden group">
+            <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-pastel-blue/20 rounded-full blur-2xl group-hover:bg-pastel-blue/40 transition-colors duration-500" />
+            <TargetDoodle className="w-12 h-12 text-pastel-blue mb-6 relative z-10" />
+            <h3 className="font-display text-2xl font-bold text-slate-800 mb-4 relative z-10">Our Vision</h3>
+            <p className="font-body text-slate-600 leading-relaxed relative z-10">
+              A future where campus events are smarter, more connected, and deeply engaging. We envision a digital ecosystem where every student's extracurricular journey is celebrated, tracked, and rewarded beautifully.
+            </p>
+          </div>
         </div>
+      </section>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-20">
-          {stats.map((stat, i) => (
-            <div 
-              key={i} 
-              className="animate-fade-in-up glass-panel glass-panel-hover p-6 rounded-2xl text-center group cursor-default"
-              style={{ animationDelay: `${i * 100 + 100}ms` }}
-            >
-              <div className="text-2xl mb-2 group-hover:scale-125 transition-transform duration-300">{stat.icon}</div>
-              <div className="text-2xl sm:text-3xl font-display font-black heading-gradient mb-1">
-                {stat.value}
+      {/* 4. PLATFORM HIGHLIGHTS */}
+      <section className="py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <div className="text-center mb-16 relative">
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-slate-800 mb-4">Platform Highlights</h2>
+          <SquiggleDoodle className="w-24 h-6 text-pastel-pink mx-auto" />
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {platformHighlights.map((feat, idx) => (
+            <div key={idx} className="scrapbook-panel p-8 scrapbook-panel-hover group">
+              <div className="mb-6 flex justify-between items-start">
+                <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
+                  {feat.icon}
+                </div>
+                <StarDoodle className="w-4 h-4 text-pastel-yellow opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               </div>
-              <div className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
-                {stat.label}
-              </div>
+              <h4 className="font-display text-xl font-bold text-slate-800 mb-3">{feat.title}</h4>
+              <p className="font-body text-slate-500 text-sm leading-relaxed">{feat.desc}</p>
             </div>
           ))}
         </div>
+      </section>
 
-        {/* Detail Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-20">
-          <div className="animate-fade-in-up delay-100 glass-panel glass-panel-hover p-8 rounded-2xl group">
-            <h3 className="text-lg font-display font-bold text-text-primary mb-3 flex items-center gap-3 relative">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-pastel-coral/20 flex items-center justify-center border border-violet-500/20 group-hover:scale-110 transition-transform">
-                <div className="h-2 w-2 rounded-full bg-violet-400" />
-              </div>
-              For Students
-              <RocketDoodle className="absolute -top-4 right-4 w-6 h-6 text-pastel-lavender opacity-0 group-hover:opacity-100 group-hover:-translate-y-2 group-hover:translate-x-2 transition-all duration-500" />
-            </h3>
-            <p className="text-sm font-body text-slate-600 leading-relaxed mb-5">
-              Students can easily explore and participate in campus activities including workshops, cultural events, sports tournaments, and hackathons through a clean, modern interface.
-            </p>
-            <ul className="space-y-2.5 text-xs font-bold text-slate-700">
-              <li className="flex items-center gap-2.5">
-                <span className="text-emerald-400">✓</span> Dynamic search and category-based filtering
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="text-emerald-400">✓</span> Real-time seat availability tracking
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="text-emerald-400">✓</span> Personal registration history and tracking
-              </li>
-            </ul>
-          </div>
-
-          <div className="animate-fade-in-up delay-200 glass-panel glass-panel-hover p-8 rounded-2xl group">
-            <h3 className="text-lg font-display font-bold text-text-primary mb-3 flex items-center gap-3 relative">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 flex items-center justify-center border border-indigo-500/20 group-hover:scale-110 transition-transform">
-                <div className="h-2 w-2 rounded-full bg-indigo-400" />
-              </div>
-              For Administrators
-              <StarDoodle className="absolute -top-2 right-4 w-6 h-6 text-pastel-yellow opacity-0 group-hover:opacity-100 group-hover:rotate-45 transition-all duration-500" />
-            </h3>
-            <p className="text-sm font-body text-slate-600 leading-relaxed mb-5">
-              Event organizers and administrators can efficiently manage events, participants, and engagement metrics through a centralized system.
-            </p>
-            <ul className="space-y-2.5 text-xs font-bold text-slate-700">
-              <li className="flex items-center gap-2.5">
-                <span className="text-emerald-400">✓</span> Instant event publishing with banners and updates
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="text-emerald-400">✓</span> Complete registration and participant management
-              </li>
-              <li className="flex items-center gap-2.5">
-                <span className="text-emerald-400">✓</span> Quick access to user and event insights
-              </li>
-            </ul>
-          </div>
+      {/* 5. STUDENT EXPERIENCE */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative">
+        <div className="absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-pastel-lavender/30 to-transparent hidden lg:block" />
+        <div className="text-center mb-16">
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-slate-800 mb-4">The Student Experience</h2>
         </div>
-
-        <div className="animate-fade-in-up delay-300 glass-panel rounded-2xl p-8 relative">
-          <SparkleDoodle className="absolute -top-3 left-4 w-6 h-6 text-pastel-yellow animate-float-slow" />
-          <h3 className="text-xl font-display font-bold text-text-primary mb-8 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500/15 to-pastel-coral/15 flex items-center justify-center border border-violet-500/15">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 relative z-10">
+          {studentJourney.map((item, idx) => (
+            <div key={idx} className="flex flex-col items-center text-center group">
+              <div className="w-20 h-20 bg-white rounded-full shadow-lg border-2 border-pastel-lavender/20 flex items-center justify-center mb-4 group-hover:-translate-y-2 transition-transform duration-300 relative">
+                {item.icon}
+                {idx !== studentJourney.length - 1 && (
+                  <div className="absolute -right-8 top-1/2 -translate-y-1/2 hidden lg:block text-pastel-lavender/40">
+                    →
+                  </div>
+                )}
+              </div>
+              <h5 className="font-display font-bold text-slate-700">{item.step}</h5>
             </div>
-            Future Product Roadmap
-          </h3>
-          <div className="space-y-6">
-            {futureFeatures.map((feat, i) => (
-              <div 
-                key={i} 
-                className="flex gap-5 border-l-2 border-slate-200/60 pl-5 hover:border-violet-500 transition-all duration-500 group cursor-default"
-              >
-                <div className="flex-shrink-0 text-xl group-hover:scale-110 transition-transform duration-300">{feat.icon}</div>
-                <div>
-                  <h4 className="text-sm font-display font-bold text-slate-800 group-hover:text-text-primary transition-colors">{feat.title}</h4>
-                  <p className="text-xs font-body text-slate-600 mt-1 leading-relaxed group-hover:text-slate-600 transition-colors">{feat.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
+      </section>
 
-      </div>
+      {/* 6. ORGANIZER EXPERIENCE */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto bg-slate-50/50 rounded-[3rem] border border-slate-100 mb-20">
+        <div className="text-center mb-16">
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-slate-800 mb-4">The Organizer Experience</h2>
+          <p className="text-slate-500">From concept to celebration, completely streamlined.</p>
+        </div>
+        <div className="flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8">
+          {organizerJourney.map((item, idx) => (
+            <React.Fragment key={idx}>
+              <div className="polaroid w-40 flex flex-col items-center text-center group">
+                <div className="w-16 h-16 bg-slate-50 rounded-xl flex items-center justify-center mb-4 border border-slate-100 group-hover:scale-110 transition-transform duration-300">
+                  {item.icon}
+                </div>
+                <h5 className="font-display font-bold text-slate-700 text-sm">{item.step}</h5>
+              </div>
+              {idx !== organizerJourney.length - 1 && (
+                <ArrowDoodle className="w-8 h-8 text-pastel-lavender rotate-90 md:rotate-0" />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </section>
+
+      {/* 7. CLOSING QUOTE */}
+      <section className="py-24 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center relative">
+        <SparkleDoodle className="absolute top-10 left-10 w-8 h-8 text-pastel-yellow animate-spin-slow" />
+        <SparkleDoodle className="absolute bottom-10 right-10 w-12 h-12 text-pastel-pink animate-bounce-gentle" />
+        
+        <blockquote className="font-display text-2xl md:text-4xl font-bold text-slate-800 leading-tight mb-8">
+          "Every event creates a memory. <br className="hidden sm:block" />
+          <span className="text-pastel-lavender">AVENTO</span> helps bring those memories to life."
+        </blockquote>
+        <div className="w-16 h-1 bg-gradient-to-r from-pastel-coral to-pastel-lavender mx-auto rounded-full mb-8" />
+        <p className="font-body text-slate-500 uppercase tracking-widest text-xs font-bold">
+          Built with passion for students, organizers, <br className="sm:hidden" /> and every unforgettable campus experience.
+        </p>
+      </section>
+
     </div>
   );
 };

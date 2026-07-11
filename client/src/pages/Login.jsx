@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { StarDoodle, SparkleDoodle } from '../components/Doodles';
+import { StarDoodle, SparkleDoodle, BookDoodle } from '../components/Doodles';
+import PasswordInput from '../components/PasswordInput';
 
 const Login = () => {
   const { login, error, clearError, user, getRedirectPath } = useAuth();
@@ -61,8 +62,12 @@ const Login = () => {
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-1 !w-32"></div>
           
           {/* Header */}
-          <div className="text-center mb-8 pt-4">
-            <h1 className="font-heading text-3xl font-black text-text-primary tracking-wide">Welcome Back!</h1>
+          <div className="text-center mb-8 pt-4 relative">
+            <BookDoodle className="absolute top-0 left-4 w-8 h-8 text-pastel-lavender opacity-60 animate-float-slow hidden sm:block" />
+            <h1 className="font-heading text-3xl font-black text-text-primary tracking-wide relative inline-block">
+              Welcome Back!
+              <StarDoodle className="absolute -top-4 -right-6 w-6 h-6 text-pastel-yellow animate-spin-slow" />
+            </h1>
             <p className="font-body text-text-secondary text-sm mt-2">Sign in to your AVENTO account</p>
           </div>
 
@@ -95,8 +100,7 @@ const Login = () => {
               <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.1em] mb-2 font-quicksand" htmlFor="login-password">
                 Password
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 id="login-password"
                 required
                 value={password}

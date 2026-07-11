@@ -4,6 +4,7 @@ import axios from 'axios';
 import Modal from '../components/Modal';
 import { useAuth } from '../context/AuthContext';
 import QRScanner from '../components/QRScanner';
+import { StickyNoteDoodle, GeometricBlobDoodle } from '../components/Doodles';
 
 const StudentOrgEvents = () => {
   const { user } = useAuth();
@@ -465,12 +466,16 @@ const StudentOrgEvents = () => {
   const myOrganizingEvents = events.filter(e => String(e.proposed_by) !== String(user.id));
 
   return (
-    <div className="flex-grow py-20 text-slate-700">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="flex-grow py-20 text-slate-700 relative overflow-hidden">
+      <GeometricBlobDoodle className="absolute top-10 right-10 w-96 h-96 text-pastel-lavender -z-10 opacity-30 animate-spin-slow" />
+      <GeometricBlobDoodle className="absolute bottom-20 left-10 w-80 h-80 text-pastel-mint -z-10 opacity-30 animate-float" />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10 animate-fade-in-up">
-          <div>
+          <div className="relative">
+            <StickyNoteDoodle className="absolute -top-6 -left-10 w-10 h-10 text-pastel-yellow opacity-80 animate-wobble hidden md:block" />
             <h1 className="font-display text-3xl font-black text-text-primary">My <span className="heading-gradient text-fuchsia-400">Proposals</span></h1>
             <p className="font-body text-slate-600 text-sm mt-1.5">Draft, submit, and publish your events</p>
           </div>

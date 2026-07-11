@@ -13,7 +13,7 @@ const QRScanner = ({ onScanSuccess, onScanFailure }) => {
       try {
         await html5QrCode.start(
           { facingMode: "environment" }, // Prefer back camera
-          { fps: 10, qrbox: { width: 250, height: 250 } },
+          { fps: 10, qrbox: { width: 200, height: 200 } },
           (decodedText) => {
             if (isScanning) {
               isScanning = false;

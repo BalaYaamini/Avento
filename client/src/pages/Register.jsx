@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { SparkleDoodle, StarDoodle } from '../components/Doodles';
+import { SparkleDoodle, StarDoodle, LaptopDoodle } from '../components/Doodles';
+import PasswordInput from '../components/PasswordInput';
 
 const ALLOWED_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
 
@@ -131,14 +132,16 @@ const Register = () => {
       </div>
 
       <div className="w-full max-w-md relative z-10 animate-fade-in-up">
-        <div className="polaroid -rotate-1 p-8">
+        <div className="polaroid -rotate-1 p-4 sm:p-8">
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-2 !w-32"></div>
 
           {/* Header */}
-          <div className="text-center mb-8 pt-4">
-            <h1 className="font-heading text-3xl font-black text-text-primary tracking-wide">
+          <div className="text-center mb-8 pt-4 relative">
+            <LaptopDoodle className="absolute top-0 right-4 w-10 h-10 text-pastel-mint opacity-60 animate-float-slow hidden sm:block" />
+            <h1 className="font-heading text-3xl font-black text-text-primary tracking-wide relative inline-block">
               {step === 1 && 'Join the Club!'}
               {step === 2 && 'Almost There!'}
+              <StarDoodle className="absolute -top-4 -right-6 w-6 h-6 text-pastel-yellow animate-spin-slow" />
             </h1>
             <p className="font-body text-text-secondary text-sm mt-2">
               {step === 1 && 'Step 1 of 2 — The basics'}
@@ -225,8 +228,7 @@ const Register = () => {
                   <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.1em] mb-2 font-quicksand" htmlFor="reg-password">
                     Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     id="reg-password"
                     required
                     value={password}
@@ -239,8 +241,7 @@ const Register = () => {
                   <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.1em] mb-2 font-quicksand" htmlFor="reg-confirmPassword">
                     Confirm
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     id="reg-confirmPassword"
                     required
                     value={confirmPassword}

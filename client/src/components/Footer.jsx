@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { StarDoodle } from './Doodles';
+import { StarDoodle, LeafDoodle, FlowerDoodle } from './Doodles';
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -7,7 +7,11 @@ const Footer = () => {
   return (
     <footer className="relative bg-slate-900 mt-auto">
       {/* Top gradient divider */}
-      <div className="gradient-line-thick" />
+      <div className="relative">
+        <div className="gradient-line-thick" />
+        <LeafDoodle className="absolute -top-4 left-1/4 w-8 h-8 text-pastel-mint opacity-40 animate-wobble hidden md:block" />
+        <FlowerDoodle className="absolute -top-5 right-1/4 w-10 h-10 text-pastel-pink opacity-40 animate-spin-slow hidden md:block" />
+      </div>
 
       <div className="max-w-7xl mx-auto px-4 py-14 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10">

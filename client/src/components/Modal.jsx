@@ -27,8 +27,8 @@ const Modal = ({ isOpen, onClose, title, children }) => {
       >
         <SparkleDoodle className="absolute top-6 right-16 w-6 h-6 text-pastel-coral opacity-40 animate-pulse pointer-events-none" />
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-8 py-6 border-b border-pastel-lavender/10">
-          <h3 className="text-xl font-heading font-bold text-text-primary tracking-wide">{title}</h3>
+        <div className="flex items-center justify-between px-4 py-4 sm:px-8 sm:py-6 border-b border-pastel-lavender/10">
+          <h3 className="text-lg sm:text-xl font-heading font-bold text-text-primary tracking-wide">{title}</h3>
           <button
             onClick={onClose}
             className="p-1.5 rounded-xl text-slate-400 hover:text-pastel-coral hover:bg-pastel-coral/10 transition-all duration-300 relative z-10"
@@ -40,7 +40,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
         </div>
         
         {/* Modal Body */}
-        <div className="p-8 overflow-y-auto flex-grow text-text-secondary">
+        <div className="p-4 sm:p-8 overflow-y-auto flex-grow text-text-secondary">
           {children}
         </div>
       </div>

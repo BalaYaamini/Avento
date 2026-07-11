@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
@@ -8,10 +8,24 @@ const Navbar = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const workspaceRef = useRef(null);
 
   // Notification State
   const [notifications, setNotifications] = useState([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifTimeoutRef = useRef(null);
+
+  const handleNotifMouseEnter = () => {
+    if (notifTimeoutRef.current) clearTimeout(notifTimeoutRef.current);
+    setIsNotifOpen(true);
+  };
+
+  const handleNotifMouseLeave = () => {
+    notifTimeoutRef.current = setTimeout(() => {
+      setIsNotifOpen(false);
+    }, 200);
+  };
 
   // Fetch notifications
   useEffect(() => {
@@ -57,6 +71,25 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (workspaceRef.current && !workspaceRef.current.contains(event.target)) {
+        setIsWorkspaceOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleWorkspaceKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setIsWorkspaceOpen(prev => !prev);
+    } else if (e.key === 'Escape') {
+      setIsWorkspaceOpen(false);
+    }
+  };
+
   const handleLogout = () => {
     logout();
     setIsOpen(false);
@@ -87,7 +120,7 @@ const Navbar = () => {
                 <img 
                   src="/logo.png?v=3" 
                   alt="Avento Logo" 
-                  className="h-[52px] w-auto object-contain transition-all duration-300 ease-in-out group-hover:scale-[1.05] relative z-10"
+                  className="h-10 md:h-[52px] w-auto object-contain transition-all duration-300 ease-in-out group-hover:scale-[1.05] relative z-10"
                 />
 
                 {/* Tiny hand-drawn sparkle nearby */}
@@ -111,9 +144,59 @@ const Navbar = () => {
             {user && user.roles?.includes('student') && (
               <>
                 <NavLink to="/student-organizer" end className={navLinkClass}>Dashboard</NavLink>
-                <NavLink to="/student-organizer/events" className={navLinkClass}>My Events</NavLink>
-                <NavLink to="/my-registrations" className={navLinkClass}>Registrations</NavLink>
-                <NavLink to="/my-certificates" className={navLinkClass}>Certificates</NavLink>
+                
+                {/* My Workspace Dropdown */}
+                <div 
+                  className="relative" 
+                  ref={workspaceRef}
+                  onMouseEnter={() => setIsWorkspaceOpen(true)}
+                  onMouseLeave={() => setIsWorkspaceOpen(false)}
+                >
+                  <button 
+                    onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
+                    onKeyDown={handleWorkspaceKeyDown}
+                    className="flex items-center gap-1 text-sm font-semibold tracking-wide text-text-secondary hover:text-pastel-coral font-quicksand transition-all duration-300 focus:outline-none"
+                    aria-haspopup="true"
+                    aria-expanded={isWorkspaceOpen}
+                  >
+                    My Workspace
+                    <svg className={`w-4 h-4 transition-transform duration-300 ${isWorkspaceOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {/* Dropdown Menu Wrapper with padding to bridge the hover gap */}
+                  <div 
+                    className={`absolute left-0 top-full pt-4 w-48 z-[60] transition-all duration-300 origin-top ${
+                      isWorkspaceOpen ? 'scale-y-100 opacity-100' : 'scale-y-0 opacity-0 pointer-events-none'
+                    }`}
+                  >
+                    <div className="bg-white rounded-xl shadow-lg border border-pastel-lavender/20 overflow-hidden flex flex-col py-2 relative z-[60]">
+                      <NavLink 
+                        to="/student-organizer/events"  
+                        onClick={() => setIsWorkspaceOpen(false)}
+                        className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
+                      >
+                        My Events
+                      </NavLink>
+                      <NavLink 
+                        to="/my-registrations" 
+                        onClick={() => setIsWorkspaceOpen(false)}
+                        className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
+                      >
+                        Registrations
+                      </NavLink>
+                      <NavLink 
+                        to="/my-certificates" 
+                        onClick={() => setIsWorkspaceOpen(false)}
+                        className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
+                      >
+                        Certificates
+                      </NavLink>
+                    </div>
+                  </div>
+                </div>
+
                 <NavLink to="/profile" className={navLinkClass}>Profile</NavLink>
               </>
             )}
@@ -142,10 +225,19 @@ const Navbar = () => {
                <div className="flex items-center gap-4">
                  
                  {/* Notification Bell (Desktop) */}
-                 <div className="relative">
+                 <div 
+                   className="relative"
+                   onMouseEnter={handleNotifMouseEnter}
+                   onMouseLeave={handleNotifMouseLeave}
+                   onKeyDown={(e) => {
+                     if (e.key === 'Escape') setIsNotifOpen(false);
+                   }}
+                 >
                    <button 
                      onClick={() => setIsNotifOpen(!isNotifOpen)} 
                      className="relative p-2 text-text-secondary hover:text-pastel-lavender transition-colors focus:outline-none"
+                     aria-haspopup="true"
+                     aria-expanded={isNotifOpen}
                    >
                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -157,17 +249,21 @@ const Navbar = () => {
                      )}
                    </button>
 
-                   {isNotifOpen && (
-                     <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-pastel-lavender/20 overflow-hidden z-50">
-                       <div className="flex justify-between items-center px-4 py-3 bg-pastel-lavender/10 border-b border-pastel-lavender/20">
+                   <div 
+                     className={`absolute right-0 top-full pt-2 w-80 z-50 transition-all duration-300 origin-top ${
+                       isNotifOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-2 scale-95 pointer-events-none'
+                     }`}
+                   >
+                     <div className="bg-white rounded-2xl shadow-xl shadow-pastel-lavender/10 border border-pastel-lavender/20 overflow-hidden">
+                       <div className="flex justify-between items-center px-4 py-3 bg-pastel-lavender/5 border-b border-pastel-lavender/10">
                          <h3 className="font-bold text-sm text-text-primary">Notifications</h3>
                          {unreadCount > 0 && (
-                           <button onClick={handleMarkAllAsRead} className="text-xs text-pastel-lavender hover:text-pastel-coral font-semibold transition-colors">
+                           <button onClick={handleMarkAllAsRead} className="text-xs text-pastel-lavender hover:text-pastel-coral font-semibold transition-colors focus:outline-none">
                              Mark all as read
                            </button>
                          )}
                        </div>
-                       <div className="max-h-80 overflow-y-auto">
+                       <div className="max-h-80 overflow-y-auto scrollbar-thin">
                          {notifications.length === 0 ? (
                            <div className="p-4 text-center text-sm text-text-secondary">No notifications yet.</div>
                          ) : (
@@ -175,7 +271,14 @@ const Navbar = () => {
                              <div 
                                key={notif.id} 
                                onClick={() => !notif.isRead && handleMarkAsRead(notif.id)}
-                               className={`p-4 border-b border-gray-100 last:border-0 cursor-pointer transition-colors ${!notif.isRead ? 'bg-pastel-lavender/5' : 'hover:bg-gray-50'}`}
+                               onKeyDown={(e) => {
+                                 if ((e.key === 'Enter' || e.key === ' ') && !notif.isRead) {
+                                   e.preventDefault();
+                                   handleMarkAsRead(notif.id);
+                                 }
+                               }}
+                               tabIndex={0}
+                               className={`p-4 border-b border-gray-100 last:border-0 cursor-pointer transition-colors focus:outline-none focus:bg-pastel-lavender/10 ${!notif.isRead ? 'bg-pastel-lavender/5' : 'hover:bg-gray-50'}`}
                              >
                                <div className="flex justify-between items-start mb-1">
                                  <h4 className={`text-sm font-semibold pr-2 ${!notif.isRead ? 'text-text-primary' : 'text-gray-600'}`}>{notif.title}</h4>
@@ -188,7 +291,7 @@ const Navbar = () => {
                          )}
                        </div>
                      </div>
-                   )}
+                   </div>
                  </div>
 
                  <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-full border-2 border-pastel-lavender/20 shadow-sm">
@@ -247,8 +350,8 @@ const Navbar = () => {
 
        {/* Mobile Menu — Animated */}
        <div 
-         className={`md:hidden overflow-hidden transition-all duration-500 ease-out-expo bg-white border-t border-pastel-lavender/20 shadow-soft ${
-           isOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
+         className={`md:hidden overflow-y-auto overflow-x-hidden transition-all duration-500 ease-out-expo bg-white border-t border-pastel-lavender/20 shadow-soft ${
+           isOpen ? 'max-h-[85vh] opacity-100' : 'max-h-0 opacity-0'
          }`} 
        >
          <div className="px-4 pt-4 pb-6 space-y-2">
@@ -259,9 +362,16 @@ const Navbar = () => {
            {user && user.roles?.includes('student') && (
              <>
                <NavLink to="/student-organizer" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
-               <NavLink to="/student-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>My Events</NavLink>
-               <NavLink to="/my-registrations" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Registrations</NavLink>
-               <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
+               
+               <div className="py-2 space-y-1">
+                 <div className="px-4 py-2 text-sm font-bold text-text-primary uppercase tracking-wider">My Workspace</div>
+                 <div className="pl-4 border-l-2 border-pastel-lavender/30 ml-4 space-y-1">
+                   <NavLink to="/student-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>My Events</NavLink>
+                   <NavLink to="/my-registrations" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Registrations</NavLink>
+                   <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
+                 </div>
+               </div>
+               
                <NavLink to="/profile" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Profile</NavLink>
              </>
            )}
