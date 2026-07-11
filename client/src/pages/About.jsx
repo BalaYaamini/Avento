@@ -33,14 +33,14 @@ const About = () => {
   ];
 
   return (
-    <div className="flex-grow overflow-hidden bg-[#FFFDFB]">
+    <div className="flex-grow overflow-hidden bg-background transition-colors duration-300">
       
       {/* 1. HERO SECTION */}
       <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center">
-        <CloudDoodle className="absolute top-20 left-10 w-16 h-16 text-pastel-blue/40 animate-float-slow hidden md:block" />
-        <CloudDoodle className="absolute top-40 right-16 w-20 h-20 text-pastel-lavender/30 animate-float hidden md:block" />
-        <StarDoodle className="absolute top-32 left-1/4 w-8 h-8 text-pastel-yellow animate-pulse hidden sm:block" />
-        <SparkleDoodle className="absolute top-24 right-1/4 w-10 h-10 text-pastel-pink animate-bounce-gentle" />
+        <CloudDoodle className="absolute top-20 left-10 w-16 h-16 text-pastel-blue/40 mix-blend-multiply animate-float-slow hidden md:block" />
+        <CloudDoodle className="absolute top-40 right-16 w-20 h-20 text-pastel-lavender/30 mix-blend-multiply animate-float hidden md:block" />
+        <StarDoodle className="absolute top-32 left-1/4 w-8 h-8 text-pastel-yellow mix-blend-multiply animate-pulse hidden sm:block" />
+        <SparkleDoodle className="absolute top-24 right-1/4 w-10 h-10 text-pastel-pink mix-blend-multiply animate-bounce-gentle" />
 
         <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-pastel-lavender/10 text-pastel-lavender border border-pastel-lavender/20 mb-8 animate-fade-in-up">
           <LeafDoodle className="w-4 h-4" />
@@ -65,8 +65,8 @@ const About = () => {
         </p>
 
         <div className="relative animate-fade-in-up delay-300 w-full max-w-2xl mx-auto">
-          <div className="absolute inset-0 bg-gradient-to-r from-pastel-lavender/20 to-pastel-coral/20 blur-3xl rounded-full" />
-          <div className="relative bg-white/60 backdrop-blur-xl border border-white/80 shadow-2xl shadow-pastel-lavender/10 rounded-[3rem] p-8 md:p-12 flex justify-center items-center scrapbook-panel-hover">
+          <div className="absolute inset-0 bg-gradient-to-r from-pastel-lavender/30 to-pastel-coral/30 mix-blend-multiply blur-3xl rounded-full" />
+          <div className="relative glass-panel backdrop-blur-xl border border-slate-200 shadow-2xl shadow-pastel-lavender/10 rounded-[3rem] p-8 md:p-12 flex justify-center items-center scrapbook-panel-hover">
             <CampusJourneyDoodle className="w-64 h-64 md:w-80 md:h-80 animate-float-slow z-10" />
             <GraduationCapDoodle className="absolute -top-6 -right-6 w-16 h-16 text-pastel-mint animate-bounce-gentle z-20" />
             <FlowerDoodle className="absolute -bottom-8 -left-8 w-20 h-20 text-pastel-pink animate-spin-slow z-20" />
@@ -77,9 +77,9 @@ const About = () => {
       {/* 2. THE STORY BEHIND AVENTO */}
       <section className="relative py-24 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
         <div className="scrapbook-panel p-10 md:p-16 text-center relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pastel-lavender via-pastel-pink to-pastel-yellow" />
-          <HeartDoodle className="absolute top-10 left-10 w-12 h-12 text-pastel-coral/20 group-hover:scale-125 transition-transform duration-500" />
-          <StarDoodle className="absolute bottom-10 right-10 w-16 h-16 text-pastel-yellow/30 group-hover:rotate-90 transition-transform duration-700" />
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pastel-lavender via-pastel-pink to-pastel-yellow mix-blend-multiply" />
+          <HeartDoodle className="absolute top-10 left-10 w-12 h-12 text-pastel-coral/40 mix-blend-multiply group-hover:scale-125 transition-transform duration-500" />
+          <StarDoodle className="absolute bottom-10 right-10 w-16 h-16 text-pastel-yellow/50 mix-blend-multiply group-hover:rotate-90 transition-transform duration-700" />
           
           <h2 className="font-display text-3xl md:text-4xl font-bold text-slate-800 mb-6">
             The Story Behind <span className="text-pastel-lavender">AVENTO</span>
@@ -94,7 +94,7 @@ const About = () => {
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
         <div className="grid md:grid-cols-2 gap-8">
           <div className="scrapbook-panel p-10 relative overflow-hidden group">
-            <div className="absolute -right-10 -top-10 w-40 h-40 bg-pastel-mint/20 rounded-full blur-2xl group-hover:bg-pastel-mint/40 transition-colors duration-500" />
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-pastel-mint/30 mix-blend-multiply rounded-full blur-2xl group-hover:bg-pastel-mint/50 transition-colors duration-500" />
             <RocketDoodle className="w-12 h-12 text-pastel-mint mb-6 relative z-10" />
             <h3 className="font-display text-2xl font-bold text-slate-800 mb-4 relative z-10">Our Mission</h3>
             <p className="font-body text-slate-600 leading-relaxed relative z-10">
@@ -102,7 +102,7 @@ const About = () => {
             </p>
           </div>
           <div className="scrapbook-panel p-10 relative overflow-hidden group">
-            <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-pastel-blue/20 rounded-full blur-2xl group-hover:bg-pastel-blue/40 transition-colors duration-500" />
+            <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-pastel-blue/30 mix-blend-multiply rounded-full blur-2xl group-hover:bg-pastel-blue/50 transition-colors duration-500" />
             <TargetDoodle className="w-12 h-12 text-pastel-blue mb-6 relative z-10" />
             <h3 className="font-display text-2xl font-bold text-slate-800 mb-4 relative z-10">Our Vision</h3>
             <p className="font-body text-slate-600 leading-relaxed relative z-10">
@@ -159,7 +159,7 @@ const About = () => {
       </section>
 
       {/* 6. ORGANIZER EXPERIENCE */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto bg-slate-50/50 rounded-[3rem] border border-slate-100 mb-20">
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto bg-slate-50 rounded-[3rem] border border-slate-200 mb-20">
         <div className="text-center mb-16">
           <h2 className="font-display text-3xl md:text-4xl font-bold text-slate-800 mb-4">The Organizer Experience</h2>
           <p className="text-slate-500">From concept to celebration, completely streamlined.</p>
@@ -183,8 +183,8 @@ const About = () => {
 
       {/* 7. CLOSING QUOTE */}
       <section className="py-24 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto text-center relative">
-        <SparkleDoodle className="absolute top-10 left-10 w-8 h-8 text-pastel-yellow animate-spin-slow" />
-        <SparkleDoodle className="absolute bottom-10 right-10 w-12 h-12 text-pastel-pink animate-bounce-gentle" />
+        <SparkleDoodle className="absolute top-10 left-10 w-8 h-8 text-pastel-yellow mix-blend-multiply animate-spin-slow" />
+        <SparkleDoodle className="absolute bottom-10 right-10 w-12 h-12 text-pastel-pink mix-blend-multiply animate-bounce-gentle" />
         
         <blockquote className="font-display text-2xl md:text-4xl font-bold text-slate-800 leading-tight mb-8">
           "Every event creates a memory. <br className="hidden sm:block" />

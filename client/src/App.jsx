@@ -164,7 +164,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <div className="flex flex-col min-h-screen bg-[#fdfbf7] text-slate-800 relative overflow-hidden">
+        <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
           {/* ── Animated Background Orbs ── */}
           <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
             <div className="absolute top-[-200px] left-[-200px] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-[#FFB6C1]/20 via-[#C8A2C8]/15 to-[#E6E6FA]/20 blur-[150px] animate-orb-1" />

@@ -236,3 +236,233 @@ footer[class*="bg-slate-"] a:hover, footer[class*="bg-gray-"] a:hover, footer[cl
 .bg-sky-500\/10 { background-color: rgba(191, 231, 255, 0.4) !important; color: #2196F3 !important; }
 .bg-amber-500\/10 { background-color: rgba(255, 241, 166, 0.6) !important; color: #FF9800 !important; }
 
+/* ============================================
+   🌙 MIDNIGHT DARK THEME 🌙
+   ============================================ */
+:root {
+  --color-bg-base: #FFFDFB;
+  --color-bg-card: #FFFFFF;
+  --color-text-primary: #222222;
+  --color-text-secondary: #555555;
+  --color-text-muted: #6B7280;
+}
+
+[data-theme="dark"] {
+  --color-bg-base: #0F172A;
+  --color-bg-card: #1E293B;
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #CBD5E1;
+  --color-text-muted: #94A3B8;
+}
+
+/* Base Body & Root Container */
+[data-theme="dark"] body,
+[data-theme="dark"] .bg-background,
+[data-theme="dark"] .bg-\[\#fdfbf7\] {
+  background-color: var(--color-bg-base) !important;
+  color: var(--color-text-primary) !important;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px) !important;
+}
+
+/* Headings & Primary Text */
+[data-theme="dark"] h1, 
+[data-theme="dark"] h2, 
+[data-theme="dark"] h3, 
+[data-theme="dark"] h4, 
+[data-theme="dark"] h5, 
+[data-theme="dark"] h6,
+[data-theme="dark"] .text-text-primary,
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-slate-900,
+[data-theme="dark"] .text-gray-800,
+[data-theme="dark"] .text-gray-900,
+[data-theme="dark"] .text-black {
+  color: var(--color-text-primary) !important;
+}
+
+/* Secondary Text */
+[data-theme="dark"] .text-slate-700,
+[data-theme="dark"] .text-gray-700,
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-gray-600 {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Muted Text */
+[data-theme="dark"] .text-slate-500,
+[data-theme="dark"] .text-gray-500,
+[data-theme="dark"] .text-slate-400,
+[data-theme="dark"] .text-gray-400,
+[data-theme="dark"] .text-text-secondary {
+  color: var(--color-text-muted) !important;
+}
+
+/* Surfaces & Cards */
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-card,
+[data-theme="dark"] .polaroid,
+[data-theme="dark"] .scrapbook-panel {
+  background-color: var(--color-bg-card) !important;
+  border-color: #334155 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Hover over Cards */
+[data-theme="dark"] .scrapbook-panel-hover:hover {
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.4), 0 15px 30px -8px rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(184, 156, 255, 0.4) !important; /* Lavender focus */
+}
+
+/* Surfaces (Elevated slightly from body) */
+[data-theme="dark"] .glass-panel,
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-slate-100,
+[data-theme="dark"] .bg-gray-100,
+[data-theme="dark"] .bg-white\/50,
+[data-theme="dark"] .bg-white\/60,
+[data-theme="dark"] .bg-white\/80 {
+  background-color: #162033 !important;
+  border-color: #334155 !important;
+}
+
+/* Nav & Scrolled Nav */
+[data-theme="dark"] nav,
+[data-theme="dark"] nav.bg-white\/80 {
+  background-color: rgba(15, 23, 42, 0.85) !important;
+  border-color: #334155 !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Elevated Hover States (Dropdowns, Tables, List Items) */
+[data-theme="dark"] .hover\:bg-gray-50:hover,
+[data-theme="dark"] .hover\:bg-slate-50:hover,
+[data-theme="dark"] .hover\:bg-white\/20:hover,
+[data-theme="dark"] .hover\:bg-pastel-lavender\/10:hover {
+  background-color: #263449 !important; /* Elevated Card */
+}
+
+/* Modals & Popups Backgrounds */
+[data-theme="dark"] .modal-content,
+[data-theme="dark"] .dropdown-menu,
+[data-theme="dark"] [role="menu"] {
+  background-color: var(--color-bg-card) !important;
+  border-color: #334155 !important;
+}
+
+/* Borders & Dividers */
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-slate-100,
+[data-theme="dark"] .border-gray-100,
+[data-theme="dark"] .border-slate-300,
+[data-theme="dark"] .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+[data-theme="dark"] .border-b,
+[data-theme="dark"] .border-t,
+[data-theme="dark"] .border-l,
+[data-theme="dark"] .border-r {
+  border-color: #334155 !important;
+}
+
+/* Interactive Elements (Inputs, Selects, Textareas) */
+[data-theme="dark"] input, 
+[data-theme="dark"] select, 
+[data-theme="dark"] textarea {
+  background-color: #0F172A !important;
+  color: var(--color-text-primary) !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] input:focus, 
+[data-theme="dark"] select:focus, 
+[data-theme="dark"] textarea:focus {
+  border-color: #B89CFF !important; /* Lavender focus ring */
+  box-shadow: 0 0 0 3px rgba(184, 156, 255, 0.2) !important;
+  background-color: #162033 !important;
+}
+
+[data-theme="dark"] input::placeholder, 
+[data-theme="dark"] textarea::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* Primary Button Adjustments */
+[data-theme="dark"] .btn-primary {
+  box-shadow: 0 0 15px rgba(184, 156, 255, 0.2) !important;
+}
+[data-theme="dark"] .btn-primary:hover {
+  box-shadow: 0 0 25px rgba(255, 180, 162, 0.35) !important;
+}
+
+/* Secondary Button (Dark) */
+[data-theme="dark"] .btn-secondary {
+  background-color: var(--color-bg-card) !important;
+  color: var(--color-text-primary) !important;
+  border-color: #334155 !important;
+}
+[data-theme="dark"] .btn-secondary:hover {
+  background-color: #263449 !important; /* Elevated Card */
+  color: #FFFFFF !important;
+}
+
+/* Miscellaneous UI Overrides */
+[data-theme="dark"] .tape {
+  background-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+[data-theme="dark"] .marker-highlight::after {
+  background-color: rgba(184, 156, 255, 0.2);
+}
+
+/* Badges / Colored Backgrounds */
+[data-theme="dark"] .bg-pastel-lavender\/5,
+[data-theme="dark"] .bg-pastel-lavender\/10 {
+  background-color: rgba(184, 156, 255, 0.15) !important;
+}
+[data-theme="dark"] .bg-pastel-coral\/20,
+[data-theme="dark"] .bg-pastel-coral\/10 {
+  background-color: rgba(255, 180, 162, 0.2) !important;
+}
+[data-theme="dark"] .bg-amber-500\/10 {
+  background-color: rgba(255, 152, 0, 0.2) !important;
+  color: #FFB74D !important;
+}
+
+/* Doodles & Decorative Glow Enhancement */
+[data-theme="dark"] .mix-blend-multiply {
+  mix-blend-mode: screen !important;
+  opacity: 0.15 !important;
+}
+
+[data-theme="dark"] .animate-orb-1,
+[data-theme="dark"] .animate-orb-2,
+[data-theme="dark"] .animate-orb-3 {
+  opacity: 0.25 !important;
+  mix-blend-mode: screen !important;
+}
+
+[data-theme="dark"] svg.text-pastel-lavender,
+[data-theme="dark"] svg.text-pastel-coral,
+[data-theme="dark"] svg.text-pastel-mint,
+[data-theme="dark"] svg.text-pastel-yellow,
+[data-theme="dark"] svg.text-pastel-blue,
+[data-theme="dark"] svg.text-pastel-pink {
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4));
+  opacity: 0.85; /* Soften doodles */
+}
+
+/* Table overrides */
+[data-theme="dark"] table,
+[data-theme="dark"] thead,
+[data-theme="dark"] tbody,
+[data-theme="dark"] tr,
+[data-theme="dark"] td,
+[data-theme="dark"] th {
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] thead {
+  background-color: #162033 !important; /* Surface */
+}
