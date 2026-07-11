@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import Modal from '../components/Modal';
+import QRScanner from '../components/QRScanner';
 
 const AdminEvents = () => {
   const [events, setEvents] = useState([]);
@@ -14,6 +15,10 @@ const AdminEvents = () => {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+
+  // Scanner Modal states
+  const [scannerModalEvent, setScannerModalEvent] = useState(null);
+  const [scanFeedback, setScanFeedback] = useState(null);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -144,6 +149,19 @@ const AdminEvents = () => {
     }
   };
 
+  const handleScanSuccess = async (registrationId) => {
+    console.log('Decoded QR value:', registrationId);
+    if (!registrationId) return;
+    setScanFeedback(null);
+    try {
+      const res = await axios.post('/api/attendance/verify', { registrationId });
+      setScanFeedback({ type: 'success', message: res.data.message || 'Attendance recorded.' });
+      setTimeout(() => setScannerModalEvent(null), 2000);
+    } catch (err) {
+      setScanFeedback({ type: 'error', message: err.response?.data?.message || 'Invalid QR code.' });
+    }
+  };
+
   const formatDate = (dateString) => {
     const options = { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' };
     return new Date(dateString).toLocaleDateString('en-US', options);
@@ -253,12 +271,23 @@ const AdminEvents = () => {
                       </td>
                       <td className="px-6 py-4 text-right space-x-2">
                         {(evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && (
-                          <Link
-                            to={`/workspace/${evt._id || evt.id}`}
-                            className="px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300 inline-block align-middle"
-                          >
-                            Workspace
-                          </Link>
+                          <>
+                            <button
+                              onClick={() => {
+                                setScanFeedback(null);
+                                setScannerModalEvent(evt);
+                              }}
+                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300 inline-block align-middle mr-2"
+                            >
+                              Scan QR
+                            </button>
+                            <Link
+                              to={`/workspace/${evt._id || evt.id}`}
+                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300 inline-block align-middle"
+                            >
+                              Workspace
+                            </Link>
+                          </>
                         )}
                         <button
                           onClick={() => openEditModal(evt)}
@@ -425,6 +454,46 @@ const AdminEvents = () => {
             </div>
           </form>
         </Modal>
+
+        {/* QR Scanner Modal */}
+        {scannerModalEvent && (
+          <Modal
+            isOpen={!!scannerModalEvent}
+            onClose={() => setScannerModalEvent(null)}
+            title="Scan Attendance"
+          >
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <p className="text-sm text-slate-600">Scan student's QR pass to mark attendance for <strong>{scannerModalEvent.title}</strong>.</p>
+              
+              {scanFeedback && (
+                <div className={`w-full p-3 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
+                  scanFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-500' : 'bg-red-500/8 border-red-500/15 text-red-500'
+                }`}>
+                  <span>{scanFeedback.type === 'success' ? '✓' : '⚠'}</span>
+                  <span>{scanFeedback.message}</span>
+                </div>
+              )}
+
+              <div className="w-full max-w-sm rounded-xl overflow-hidden border border-slate-200">
+                <QRScanner
+                  onScanSuccess={handleScanSuccess}
+                  onScanFailure={(error) => {
+                    // console.warn(error);
+                  }}
+                />
+              </div>
+
+              <div className="mt-2 flex justify-end w-full">
+                <button
+                  onClick={() => setScannerModalEvent(null)}
+                  className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
 
       </div>
     </div>

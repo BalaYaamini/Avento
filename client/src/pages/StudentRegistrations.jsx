@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Modal from '../components/Modal';
 import FeedbackModal from '../components/FeedbackModal';
+import { QRCodeSVG } from 'qrcode.react';
 
 const StudentRegistrations = () => {
   const [registrations, setRegistrations] = useState([]);
@@ -13,6 +14,7 @@ const StudentRegistrations = () => {
   const [isConfirmCancelOpen, setIsConfirmCancelOpen] = useState(false);
   const [confirmCancelReg, setConfirmCancelReg] = useState(null);
   const [teamModalData, setTeamModalData] = useState(null);
+  const [qrModalData, setQrModalData] = useState(null);
   
   // Feedback states
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
@@ -273,6 +275,12 @@ const StudentRegistrations = () => {
                                     </button>
                                   )
                                 )}
+                                <button
+                                  onClick={() => setQrModalData(reg)}
+                                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
+                                >
+                                  View Pass
+                                </button>
                                 {reg.teamId && (
                                   <button
                                     onClick={() => setTeamModalData(reg)}
@@ -518,6 +526,41 @@ const StudentRegistrations = () => {
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => setTeamModalData(null)}
+                className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </Modal>
+        )}
+
+        {/* QR Code Pass Modal */}
+        {qrModalData && (
+          <Modal
+            isOpen={!!qrModalData}
+            onClose={() => setQrModalData(null)}
+            title="Event Pass"
+          >
+            <div className="flex flex-col items-center justify-center py-6 space-y-6">
+              <div className="text-center">
+                <h3 className="font-display font-bold text-lg text-slate-800">{qrModalData.eventId?.title}</h3>
+                <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
+              </div>
+              <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 flex items-center justify-center">
+                <QRCodeSVG value={qrModalData.id} size={200} />
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-slate-600 font-medium">Show this QR code at the venue for attendance verification.</p>
+                {qrModalData.attendance_status === 'Present' && (
+                  <div className="mt-4 px-4 py-2 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
+                    <span>✓</span> Attendance Verified
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setQrModalData(null)}
                 className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
               >
                 Close
