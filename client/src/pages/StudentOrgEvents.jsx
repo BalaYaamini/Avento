@@ -684,15 +684,17 @@ const StudentOrgEvents = () => {
                                )}
                                {(evt.status === 'approved' || evt.status === 'published' || evt.status === 'active' || evt.status === 'completed') && (
                                  <>
-                                   <button
-                                     onClick={() => {
-                                       setScanFeedback(null);
-                                       setScannerModalEvent(evt);
-                                     }}
-                                     className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300"
-                                   >
-                                     Scan QR
-                                   </button>
+                                   {new Date(evt.date) >= new Date() && (
+                                     <button
+                                       onClick={() => {
+                                         setScanFeedback(null);
+                                         setScannerModalEvent(evt);
+                                       }}
+                                       className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300"
+                                     >
+                                       Scan QR
+                                     </button>
+                                   )}
                                    <Link
                                        to={`/workspace/${evt._id || evt.id}`}
                                        className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
@@ -770,15 +772,17 @@ const StudentOrgEvents = () => {
                             <td className="px-6 py-4 text-right space-x-2 flex justify-end">
                               {(evt.status === 'approved' || evt.status === 'published' || evt.status === 'active' || evt.status === 'completed') ? (
                                 <>
-                                  <button
-                                    onClick={() => {
-                                      setScanFeedback(null);
-                                      setScannerModalEvent(evt);
-                                    }}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300 inline-block"
-                                  >
-                                    Scan QR
-                                  </button>
+                                  {new Date(evt.date) >= new Date() && (
+                                    <button
+                                      onClick={() => {
+                                        setScanFeedback(null);
+                                        setScannerModalEvent(evt);
+                                      }}
+                                      className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300 inline-block mr-2"
+                                    >
+                                      Scan QR
+                                    </button>
+                                  )}
                                   <Link
                                     to={`/workspace/${evt._id || evt.id}`}
                                     className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300 inline-block"

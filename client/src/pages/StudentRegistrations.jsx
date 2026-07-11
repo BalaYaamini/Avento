@@ -275,12 +275,18 @@ const StudentRegistrations = () => {
                                     </button>
                                   )
                                 )}
-                                <button
-                                  onClick={() => setQrModalData(reg)}
-                                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
-                                >
-                                  View Pass
-                                </button>
+                                {new Date(evt.date) < new Date() ? (
+                                  <span className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
+                                    Event Completed – QR Pass is no longer available.
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => setQrModalData(reg)}
+                                    className="px-4 py-1.5 text-xs font-bold rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
+                                  >
+                                    View Pass
+                                  </button>
+                                )}
                                 {reg.teamId && (
                                   <button
                                     onClick={() => setTeamModalData(reg)}

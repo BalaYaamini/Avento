@@ -24,6 +24,11 @@ exports.verifyQrToken = async (req, res) => {
     const { data: event } = await supabase.from('events').select('*').eq('id', registration.event_id).single();
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
+    // Rule 3: Backend Validation - Check if event has ended
+    if (new Date(event.date) < new Date()) {
+      return res.status(403).json({ success: false, message: 'Attendance is closed because this event has already ended.' });
+    }
+
     const isOwner = req.user.roles.includes('admin') || 
                     event.organizer_id === req.user.id || 
                     event.student_organizer_id === req.user.id || 

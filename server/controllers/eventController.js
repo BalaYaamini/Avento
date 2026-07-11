@@ -924,6 +924,19 @@ const recruitOrganizer = async (req, res) => {
       return res.status(400).json({ message: 'This student is already an organizer for this event.' });
     }
 
+    // Rule 2: Verify student is not already participating as a team member
+    const { data: existingReg, error: regErr } = await supabase
+      .from('event_registrations')
+      .select('id')
+      .eq('event_id', id)
+      .eq('user_id', studentId)
+      .maybeSingle();
+
+    if (regErr) throw regErr;
+    if (existingReg) {
+      return res.status(400).json({ message: 'You are already participating as a team member for this event and cannot become an organizer or volunteer.' });
+    }
+
     // Insert into event_organizers
     const newOrg = {
       event_id: id,
@@ -1109,6 +1122,19 @@ const submitOrganizerRequest = async (req, res) => {
 
     if (isProposer || existingOrg) {
       return res.status(400).json({ message: 'You are already on the organizing team.' });
+    }
+
+    // Rule 2: Verify student is not already participating as a team member
+    const { data: existingReg, error: regErr } = await supabase
+      .from('event_registrations')
+      .select('id')
+      .eq('event_id', id)
+      .eq('user_id', studentId)
+      .maybeSingle();
+
+    if (regErr) throw regErr;
+    if (existingReg) {
+      return res.status(400).json({ message: 'You are already participating as a team member for this event and cannot become an organizer or volunteer.' });
     }
 
     // Enforce role

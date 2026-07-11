@@ -518,7 +518,7 @@ exports.registerTeamForEvent = async (req, res) => {
 
     const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(id));
     if (hasOrganizer) {
-      return res.status(403).json({ message: 'One or more team members are organizers for this event and cannot register.' });
+      return res.status(403).json({ message: 'You are already part of the organizing team for this event.' });
     }
 
     // Validate existing registrations
@@ -529,7 +529,8 @@ exports.registerTeamForEvent = async (req, res) => {
       .in('user_id', allTeamUserIds);
 
     if (existingRegs && existingRegs.length > 0) {
-      return res.status(400).json({ message: 'One or more team members are already registered for this event.' });
+      // Rule 1: Student can belong to only one team per event
+      return res.status(400).json({ message: 'You are already a member of another team for this event.' });
     }
 
     // Validate Cross Department
