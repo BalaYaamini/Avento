@@ -168,14 +168,14 @@ const Workspace = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-slate-50">
-        <div className="animate-spin w-10 h-10 border-4 border-slate-900 border-t-transparent rounded-full" />
+      <div className="flex justify-center items-center h-screen bg-background transition-colors duration-300">
+        <div className="animate-spin w-10 h-10 border-4 border-pastel-lavender border-t-transparent rounded-full" />
       </div>
     );
   }
 
   if (error) {
-    return <div className="text-red-500 text-center p-8 bg-slate-50 min-h-screen">{error}</div>;
+    return <div className="text-pastel-coral text-center p-8 bg-background transition-colors duration-300 min-h-screen">{error}</div>;
   }
 
   if (!event) return null;
@@ -184,8 +184,8 @@ const Workspace = () => {
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">{event.title} - Workspace</h1>
-          <p className="text-slate-500">Manage tasks and coordinate with your team</p>
+          <h1 className="text-3xl font-bold text-text-primary">{event.title} - Workspace</h1>
+          <p className="text-text-secondary">Manage tasks and coordinate with your team</p>
         </div>
         <div className="flex items-center gap-3">
           {hasFullAccess() && event.status !== 'completed' && (
@@ -199,7 +199,7 @@ const Workspace = () => {
           {hasFullAccess() && (
             <button 
               onClick={handleCreateTask}
-              className="px-4 py-2 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 transition shadow"
+              className="px-4 py-2 btn-primary font-bold rounded-lg text-white shadow"
             >
               + Create Task
             </button>
@@ -208,26 +208,26 @@ const Workspace = () => {
       </div>
 
       {/* Event Progress */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-6">
+      <div className="glass-panel p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-slate-800">Event Progress</h2>
-            <span className="text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg border border-slate-200">
+            <h2 className="text-lg font-semibold text-text-primary">Event Progress</h2>
+            <span className="text-xs font-bold px-2.5 py-1 bg-pastel-lavender/10 text-pastel-lavender rounded-lg border border-pastel-lavender/20">
               {totalTasks} Total Tasks
             </span>
           </div>
-          <span className="text-lg font-bold text-slate-900">{progressPercent}%</span>
+          <span className="text-lg font-bold text-text-primary">{progressPercent}%</span>
         </div>
-        <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
-          <div className="bg-slate-900 h-5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+        <div className="w-full bg-slate-100 dark:bg-[#0F172A] rounded-full h-5 overflow-hidden border border-slate-200">
+          <div className="bg-pastel-lavender h-5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-100 mb-6 flex flex-wrap gap-4 items-center">
-        <span className="font-medium text-slate-700 mr-2">Filters:</span>
+      <div className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-wrap gap-4 items-center">
+        <span className="font-medium text-text-secondary mr-2">Filters:</span>
         <select 
-          className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
           value={filters.status}
           onChange={e => setFilters({...filters, status: e.target.value})}
         >
@@ -239,7 +239,7 @@ const Workspace = () => {
         </select>
 
         <select 
-          className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
           value={filters.priority}
           onChange={e => setFilters({...filters, priority: e.target.value})}
         >
@@ -250,7 +250,7 @@ const Workspace = () => {
         </select>
 
         <select 
-          className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
           value={filters.assignedTo}
           onChange={e => setFilters({...filters, assignedTo: e.target.value})}
         >
@@ -261,7 +261,7 @@ const Workspace = () => {
         </select>
 
         <select 
-          className="px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
           value={filters.category}
           onChange={e => setFilters({...filters, category: e.target.value})}
         >
@@ -274,7 +274,7 @@ const Workspace = () => {
         {(filters.status || filters.priority || filters.assignedTo || filters.category) && (
           <button 
             onClick={() => setFilters({status: '', priority: '', assignedTo: '', category: ''})}
-            className="text-sm text-red-500 hover:text-red-700 font-medium"
+            className="text-sm text-pastel-coral hover:text-red-700 font-bold"
           >
             Clear Filters
           </button>
@@ -283,21 +283,21 @@ const Workspace = () => {
 
       {/* Task Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-amber-50 p-4 rounded-xl text-center border border-amber-100 shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-2xl font-black text-amber-700">{pendingTasks}</div>
-          <div className="text-sm text-amber-600 font-bold uppercase tracking-wider mt-1">To Do</div>
+        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-amber-400 shadow-sm transition-transform hover:-translate-y-1">
+          <div className="text-3xl font-black text-amber-500">{pendingTasks}</div>
+          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">To Do</div>
         </div>
-        <div className="bg-blue-50 p-4 rounded-xl text-center border border-blue-100 shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-2xl font-black text-blue-700">{inProgressTasks}</div>
-          <div className="text-sm text-blue-600 font-bold uppercase tracking-wider mt-1">In Progress</div>
+        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-blue-400 shadow-sm transition-transform hover:-translate-y-1">
+          <div className="text-3xl font-black text-blue-500">{inProgressTasks}</div>
+          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">In Progress</div>
         </div>
-        <div className="bg-red-50 p-4 rounded-xl text-center border border-red-100 shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-2xl font-black text-red-700">{blockedTasks}</div>
-          <div className="text-sm text-red-600 font-bold uppercase tracking-wider mt-1">Blocked</div>
+        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-pastel-coral shadow-sm transition-transform hover:-translate-y-1">
+          <div className="text-3xl font-black text-pastel-coral">{blockedTasks}</div>
+          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">Blocked</div>
         </div>
-        <div className="bg-emerald-50 p-4 rounded-xl text-center border border-emerald-100 shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-2xl font-black text-emerald-700">{completedTasks}</div>
-          <div className="text-sm text-emerald-600 font-bold uppercase tracking-wider mt-1">Completed</div>
+        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-pastel-mint shadow-sm transition-transform hover:-translate-y-1">
+          <div className="text-3xl font-black text-pastel-mint">{completedTasks}</div>
+          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">Completed</div>
         </div>
       </div>
       {/* Task Board */}
@@ -314,8 +314,8 @@ const Workspace = () => {
 
       {/* Feedback Analytics (Only for completed events) */}
       {event.status === 'completed' && (
-        <div className="mb-8 mt-8">
-          <h2 className="text-xl font-bold text-slate-800 mb-4">Post-Event Feedback Analytics</h2>
+        <div className="mb-8 mt-8 glass-panel p-6 rounded-[2rem] border border-slate-200">
+          <h2 className="text-xl font-bold text-text-primary mb-4">Post-Event Feedback Analytics</h2>
           <FeedbackAnalytics eventId={eventId} />
         </div>
       )}

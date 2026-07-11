@@ -9,7 +9,7 @@ const TaskCard = ({ task, onClick, onEdit }) => {
 
   return (
     <div 
-      className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition cursor-pointer relative group"
+      className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:-translate-y-1 hover:border-slate-300 transition-all cursor-pointer relative group"
       onClick={onClick}
     >
       <div className="flex justify-between items-start mb-2">
@@ -29,16 +29,16 @@ const TaskCard = ({ task, onClick, onEdit }) => {
         )}
       </div>
       
-      <h4 className="font-semibold text-slate-800 text-sm mb-1 leading-tight">{task.title}</h4>
+      <h4 className="font-semibold text-text-primary text-sm mb-1 leading-tight">{task.title}</h4>
       
       {task.category && (
-        <span className="inline-block text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded mt-1 mb-3">
+        <span className="inline-block text-xs font-bold text-pastel-lavender bg-pastel-lavender/10 border border-pastel-lavender/20 px-2 py-0.5 rounded-lg mt-1 mb-3">
           {task.category}
         </span>
       )}
       
       <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-100">
-        <div className="flex items-center text-xs text-slate-500">
+        <div className="flex items-center text-xs text-text-secondary">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
@@ -46,7 +46,7 @@ const TaskCard = ({ task, onClick, onEdit }) => {
         </div>
         
         {task.deadline && (
-          <div className={`text-xs ${new Date(task.deadline) < new Date() && task.status !== 'Completed' ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
+          <div className={`text-xs ${new Date(task.deadline) < new Date() && task.status !== 'Completed' ? 'text-pastel-coral font-bold' : 'text-text-secondary'}`}>
             {new Date(task.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
           </div>
         )}

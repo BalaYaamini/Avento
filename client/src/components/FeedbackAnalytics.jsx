@@ -6,11 +6,11 @@ const RatingCard = ({ title, value, max = 5 }) => {
   const percentage = (numericValue / max) * 100;
   
   return (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{title}</h4>
+    <div className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200">
+      <h4 className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-2">{title}</h4>
       <div className="flex items-end gap-2 mb-2">
-        <span className="text-3xl font-black text-slate-800">{value}</span>
-        <span className="text-sm font-bold text-slate-400 mb-1">/ {max}</span>
+        <span className="text-3xl font-black text-text-primary">{value}</span>
+        <span className="text-sm font-bold text-text-secondary mb-1">/ {max}</span>
       </div>
       
       {/* Visual Stars Representation */}
@@ -84,33 +84,33 @@ const FeedbackAnalytics = ({ eventId }) => {
       
       {/* Participation Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <div className="text-xs font-bold text-slate-500 uppercase">Registered</div>
-          <div className="text-2xl font-black text-slate-800 mt-1">{participation.registered}</div>
+        <div className="glass-panel p-4 rounded-xl border border-slate-200">
+          <div className="text-xs font-bold text-text-secondary uppercase">Registered</div>
+          <div className="text-2xl font-black text-text-primary mt-1">{participation.registered}</div>
         </div>
-        <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-          <div className="text-xs font-bold text-emerald-600 uppercase">Submitted</div>
-          <div className="text-2xl font-black text-emerald-700 mt-1">{participation.submitted}</div>
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-emerald-400 border-slate-200">
+          <div className="text-xs font-bold text-emerald-500 uppercase">Submitted</div>
+          <div className="text-2xl font-black text-emerald-500 mt-1">{participation.submitted}</div>
         </div>
-        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-          <div className="text-xs font-bold text-amber-600 uppercase">Pending</div>
-          <div className="text-2xl font-black text-amber-700 mt-1">{participation.pending}</div>
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-amber-400 border-slate-200">
+          <div className="text-xs font-bold text-amber-500 uppercase">Pending</div>
+          <div className="text-2xl font-black text-amber-500 mt-1">{participation.pending}</div>
         </div>
-        <div className="bg-violet-50 p-4 rounded-xl border border-violet-100">
-          <div className="text-xs font-bold text-violet-600 uppercase">Response Rate</div>
-          <div className="text-2xl font-black text-violet-700 mt-1">{participation.responseRate}%</div>
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-violet-400 border-slate-200">
+          <div className="text-xs font-bold text-violet-500 uppercase">Response Rate</div>
+          <div className="text-2xl font-black text-violet-500 mt-1">{participation.responseRate}%</div>
         </div>
       </div>
 
       {totalSubmissions === 0 ? (
-        <div className="bg-white p-10 rounded-xl border border-slate-200 text-center">
-          <div className="text-slate-400 mb-2">
+        <div className="glass-panel p-10 rounded-xl border border-slate-200 text-center">
+          <div className="text-text-secondary mb-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-slate-700">No Feedback Yet</h3>
-          <p className="text-sm text-slate-500">Analytics will appear here once participants start submitting feedback.</p>
+          <h3 className="text-lg font-bold text-text-primary">No Feedback Yet</h3>
+          <p className="text-sm text-text-secondary">Analytics will appear here once participants start submitting feedback.</p>
         </div>
       ) : (
         <>
@@ -125,24 +125,24 @@ const FeedbackAnalytics = ({ eventId }) => {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Distribution Chart */}
-            <div className="lg:col-span-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-800 mb-6">Rating Distribution (Overall)</h3>
+            <div className="lg:col-span-1 glass-panel p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="text-sm font-bold text-text-primary mb-6">Rating Distribution (Overall)</h3>
               <div className="space-y-4">
                 {[5, 4, 3, 2, 1].map(star => {
                   const count = distribution[star] || 0;
                   const percentage = totalSubmissions > 0 ? (count / totalSubmissions) * 100 : 0;
                   return (
                     <div key={star} className="flex items-center gap-3">
-                      <div className="w-12 text-xs font-bold text-slate-600 flex items-center gap-1">
+                      <div className="w-12 text-xs font-bold text-text-secondary flex items-center gap-1">
                         {star} <span className="text-amber-400">★</span>
                       </div>
-                      <div className="flex-grow bg-slate-100 rounded-full h-3 overflow-hidden">
+                      <div className="flex-grow bg-slate-100 dark:bg-[#0F172A] border border-slate-200 rounded-full h-3 overflow-hidden">
                         <div 
                           className="bg-amber-400 h-3 rounded-full" 
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
-                      <div className="w-8 text-right text-xs font-bold text-slate-500">{count}</div>
+                      <div className="w-8 text-right text-xs font-bold text-text-secondary">{count}</div>
                     </div>
                   );
                 })}
@@ -150,24 +150,24 @@ const FeedbackAnalytics = ({ eventId }) => {
             </div>
 
             {/* Suggestions List */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <div className="lg:col-span-2 glass-panel p-6 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-sm font-bold text-slate-800">Participant Suggestions</h3>
-                <span className="text-xs font-bold bg-violet-100 text-violet-700 px-2 py-1 rounded-md">
+                <h3 className="text-sm font-bold text-text-primary">Participant Suggestions</h3>
+                <span className="text-xs font-bold bg-violet-500/10 text-violet-500 border border-violet-500/20 px-2 py-1 rounded-md">
                   {suggestions.length} Comments
                 </span>
               </div>
               
               {suggestions.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-sm italic">
+                <div className="text-center py-8 text-text-secondary text-sm italic">
                   No written suggestions provided yet.
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
                   {suggestions.map((suggestion, idx) => (
-                    <div key={suggestion.id || idx} className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                      <p className="text-sm text-slate-700 leading-relaxed">"{suggestion.text}"</p>
-                      <div className="text-[10px] text-slate-400 mt-2 font-medium">
+                    <div key={suggestion.id || idx} className="glass-panel p-4 rounded-lg border border-slate-200">
+                      <p className="text-sm text-text-primary leading-relaxed">"{suggestion.text}"</p>
+                      <div className="text-[10px] text-text-secondary mt-2 font-medium">
                         Submitted on {new Date(suggestion.date).toLocaleDateString()}
                       </div>
                     </div>

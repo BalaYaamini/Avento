@@ -124,7 +124,7 @@ const FacultyOrgDashboard = () => {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="polaroid h-36 animate-pulse bg-white" />
+              <div key={i} className="polaroid h-36 animate-pulse glass-panel" />
             ))}
           </div>
         ) : error ? (
@@ -167,11 +167,11 @@ const FacultyOrgDashboard = () => {
           {loading ? (
              <div className="space-y-4 animate-pulse">
                {[...Array(2)].map((_, i) => (
-                 <div key={i} className="h-20 bg-gray-100 rounded-2xl border-2 border-gray-200" />
+                 <div key={i} className="h-20 glass-panel rounded-2xl border-2 border-slate-200" />
                ))}
              </div>
           ) : recentEvents.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-2xl border-2 border-gray-200 border-dashed">
+            <div className="text-center py-12 glass-panel rounded-2xl border-2 border-slate-200 border-dashed">
               <p className="text-sm font-bold font-quicksand text-text-secondary">No assigned proposals found.</p>
             </div>
           ) : (
@@ -179,11 +179,11 @@ const FacultyOrgDashboard = () => {
               {recentEvents.map((evt, i) => (
                 <div 
                   key={evt._id || evt.id} 
-                  className="animate-fade-in-up flex items-center justify-between p-4 bg-white rounded-2xl border-2 border-gray-200 hover:border-pastel-lavender/50 hover:bg-pastel-lavender/5 shadow-sm transition-all duration-300 group"
+                  className="animate-fade-in-up flex items-center justify-between p-4 glass-panel rounded-2xl border-2 border-slate-200 hover:border-pastel-lavender/50 hover:bg-pastel-lavender/5 shadow-sm transition-all duration-300 group"
                   style={{ animationDelay: `${i * 80 + 400}ms` }}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="h-12 w-16 rounded-xl overflow-hidden border-2 border-gray-100">
+                    <div className="h-12 w-16 rounded-xl overflow-hidden border-2 border-slate-200">
                       <img src={evt.imageUrl} alt="" className="h-full w-full object-cover" />
                     </div>
                     <div>
@@ -197,7 +197,7 @@ const FacultyOrgDashboard = () => {
                         ? 'bg-pastel-mint/30 text-green-700 border-pastel-mint' 
                         : evt.status === 'pending_approval'
                         ? 'bg-pastel-yellow/30 text-yellow-700 border-pastel-yellow'
-                        : 'bg-gray-100 text-text-secondary border-gray-200'
+                        : 'glass-panel text-text-secondary border-slate-200'
                     }`}>
                       {evt.status.replace('_', ' ')}
                     </span>

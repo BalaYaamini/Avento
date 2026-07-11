@@ -546,7 +546,7 @@ const StudentRegistrations = () => {
                 <h3 className="font-display font-bold text-lg text-slate-800">{qrModalData.eventId?.title}</h3>
                 <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
               </div>
-              <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 flex items-center justify-center">
+              <div className="bg-[#FFFFFF] dark:bg-[#FFFFFF] !bg-[#FFFFFF] p-4 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center">
                 <QRCodeSVG value={qrModalData.id} size={200} />
               </div>
               <div className="text-center">

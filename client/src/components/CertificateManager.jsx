@@ -126,9 +126,9 @@ const CertificateManager = ({ eventId, eventStatus }) => {
 
   if (eventStatus !== 'completed') {
     return (
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
-        <h2 className="text-lg font-semibold text-slate-800 mb-2">Certificate Management</h2>
-        <p className="text-sm text-slate-500">Certificates can only be managed once the event is marked as Completed.</p>
+      <div className="glass-panel p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+        <h2 className="text-lg font-semibold text-text-primary mb-2">Certificate Management</h2>
+        <p className="text-sm text-text-secondary">Certificates can only be managed once the event is marked as Completed.</p>
       </div>
     );
   }
@@ -205,8 +205,8 @@ const CertificateManager = ({ eventId, eventStatus }) => {
   };
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8 animate-fade-in-up">
-      <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+    <div className="glass-panel p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-8 animate-fade-in-up">
+      <h2 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
         </svg>
@@ -223,9 +223,9 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       )}
 
       {/* STEP 1: Upload Template */}
-      <div className="mb-8 border border-slate-200 p-5 rounded-xl bg-slate-50">
-        <h3 className="font-medium text-slate-700 mb-2">1. Upload Template Image</h3>
-        <p className="text-xs text-slate-500 mb-4">Provide a high-quality blank certificate (PNG or JPG recommended).</p>
+      <div className="mb-8 border border-slate-200 p-5 rounded-xl glass-panel">
+        <h3 className="font-medium text-text-primary mb-2">1. Upload Template Image</h3>
+        <p className="text-xs text-text-secondary mb-4">Provide a high-quality blank certificate (PNG or JPG recommended).</p>
         <div className="flex gap-2">
           <input 
             type="file" 
@@ -246,7 +246,7 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       {/* STEP 2: Visual Editor */}
       {templateUrl && (
         <div className="mb-8">
-          <h3 className="font-medium text-slate-700 mb-4">2. Visual Designer</h3>
+          <h3 className="font-medium text-text-primary mb-4">2. Visual Designer</h3>
           
           <div className="flex flex-col lg:flex-row gap-6">
             
@@ -303,8 +303,8 @@ const CertificateManager = ({ eventId, eventStatus }) => {
 
             {/* Properties Panel */}
             <div className="w-full lg:w-72 flex-shrink-0 space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <h4 className="text-sm font-bold text-slate-700 mb-4 border-b border-slate-200 pb-2">Placeholder Styling</h4>
+              <div className="glass-panel border border-slate-200 rounded-xl p-4">
+                <h4 className="text-sm font-bold text-text-primary mb-4 border-b border-slate-200/50 pb-2">Placeholder Styling</h4>
                 
                 {!activeField ? (
                   <p className="text-xs text-slate-500 italic text-center py-8">Click on a placeholder in the template to edit its styles.</p>
@@ -387,9 +387,9 @@ const CertificateManager = ({ eventId, eventStatus }) => {
 
       {/* STEP 3: Generate */}
       {templateUrl && (
-        <div className="border border-emerald-200 p-5 rounded-xl bg-emerald-50">
-          <h3 className="font-medium text-emerald-800 mb-2">3. Issue Certificates</h3>
-          <p className="text-xs text-emerald-600 mb-4">Ensure you have saved your layout configuration before generating. This will generate personalized PDFs for all registered/attended participants.</p>
+        <div className="border border-slate-200 border-t-4 border-t-emerald-400 p-5 rounded-xl scrapbook-panel">
+          <h3 className="font-medium text-emerald-500 mb-2">3. Issue Certificates</h3>
+          <p className="text-xs text-text-secondary mb-4">Ensure you have saved your layout configuration before generating. This will generate personalized PDFs for all registered/attended participants.</p>
           <div className="flex flex-col sm:flex-row gap-4">
             <button 
               onClick={handleGenerateTest}
