@@ -312,11 +312,11 @@ exports.generateAllCertificates = async (req, res) => {
     // Get all approved/registered participants
     const { data: registrations } = await supabase
       .from('event_registrations')
-      .select('user_id, status')
+      .select('user_id, status, attendance_status')
       .eq('event_id', eventId);
 
     const eligibleUserIds = registrations
-      .filter(r => r.status === 'approved' || r.status === 'registered' || r.status === 'attended') // depending on flow
+      .filter(r => r.attendance_status === 'Present')
       .map(r => r.user_id);
 
     if (eligibleUserIds.length === 0) {
@@ -391,6 +391,18 @@ exports.generateSingleCertificate = async (req, res) => {
     }
     if (!event.certificate_template) {
       return res.status(400).json({ message: 'No certificate template uploaded.' });
+    }
+
+    // Verify attendance
+    const { data: reg, error: regErr } = await supabase
+      .from('event_registrations')
+      .select('attendance_status')
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (regErr || !reg || reg.attendance_status !== 'Present') {
+      return res.status(403).json({ message: "Certificate can only be generated for students marked Present." });
     }
 
     // Check if already generated

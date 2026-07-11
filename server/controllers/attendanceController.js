@@ -3,8 +3,9 @@ const supabase = require('../config/supabaseClient');
 // Verify QR token and mark attendance
 exports.verifyQrToken = async (req, res) => {
   try {
-    const { registrationId } = req.body;
+    const { registrationId, eventId } = req.body;
     if (!registrationId) return res.status(400).json({ message: 'Registration ID is required.' });
+    if (!eventId) return res.status(400).json({ message: 'Event ID is required.' });
 
     const { data: registration, error: regErr } = await supabase
       .from('event_registrations')
@@ -13,6 +14,11 @@ exports.verifyQrToken = async (req, res) => {
       .maybeSingle();
 
     if (regErr || !registration) return res.status(404).json({ message: 'Invalid Registration ID.' });
+    
+    // Phase 2 Validation: Check if QR belongs to the currently selected event
+    if (registration.event_id !== eventId) {
+      return res.status(400).json({ message: 'This QR code belongs to a different event.' });
+    }
 
     // Verify ownership
     const { data: event } = await supabase.from('events').select('*').eq('id', registration.event_id).single();
@@ -35,11 +41,28 @@ exports.verifyQrToken = async (req, res) => {
       .from('event_registrations')
       .update({ attendance_status: 'Present' })
       .eq('id', registration.id)
+      .select()
       .single();
 
     if (updateErr) throw updateErr;
 
-    res.json({ message: 'Attendance recorded.', registration: updatedReg });
+    // Fetch student info
+    const { data: studentProfile } = await supabase
+      .from('profiles')
+      .select('name, roll_number')
+      .eq('id', registration.user_id)
+      .single();
+
+    res.json({ 
+      success: true,
+      message: 'Attendance marked successfully', 
+      student: {
+        name: studentProfile?.name || 'Unknown',
+        rollNumber: studentProfile?.roll_number || 'N/A',
+        event: event.title,
+        attendance_status: 'Present'
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error.', error: err.message });
