@@ -3,16 +3,16 @@ const supabase = require('../config/supabaseClient');
 // Verify QR token and mark attendance
 exports.verifyQrToken = async (req, res) => {
   try {
-    const { qrToken } = req.body;
-    if (!qrToken) return res.status(400).json({ message: 'QR token is required.' });
+    const { registrationId } = req.body;
+    if (!registrationId) return res.status(400).json({ message: 'Registration ID is required.' });
 
     const { data: registration, error: regErr } = await supabase
       .from('event_registrations')
       .select('*, eventId:events(*)')
-      .eq('qr_token', qrToken)
+      .eq('id', registrationId)
       .maybeSingle();
 
-    if (regErr || !registration) return res.status(404).json({ message: 'Invalid QR token.' });
+    if (regErr || !registration) return res.status(404).json({ message: 'Invalid Registration ID.' });
 
     // Verify ownership
     const { data: event } = await supabase.from('events').select('*').eq('id', registration.event_id).single();
@@ -26,10 +26,14 @@ exports.verifyQrToken = async (req, res) => {
     
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
+    if (registration.attendance_status === 'Present') {
+      return res.status(400).json({ message: 'Attendance already marked.' });
+    }
+
     // Mark as attended
     const { data: updatedReg, error: updateErr } = await supabase
       .from('event_registrations')
-      .update({ status: 'attended' }) // Using 'status' based on analytics fetch
+      .update({ attendance_status: 'Present' })
       .eq('id', registration.id)
       .single();
 
@@ -60,7 +64,7 @@ exports.getEventAttendance = async (req, res) => {
       .from('event_registrations')
       .select('*, userId:profiles(*), eventId:events(*)')
       .eq('event_id', eventId)
-      .eq('status', 'attended');
+      .eq('attendance_status', 'Present');
 
     if (error) throw error;
     res.json(attendance);

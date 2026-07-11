@@ -1,38 +1,43 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 const supabase = require('../config/supabaseClient');
 const path = require('path');
 
 /**
- * Configure Resend Client
+ * Configure Nodemailer Transporter
  */
-const resend = new Resend(process.env.RESEND_API_KEY || 're_mock_key_for_local_testing');
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 /**
- * Sends an email notification. If API key isn't configured, logs it.
+ * Sends an email notification. If SMTP isn't configured, logs it.
  */
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
-  if (!process.env.RESEND_API_KEY) {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}`);
     // console.log(`Body: ${htmlBody}`);
     return;
   }
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'AVENTO <onboarding@resend.dev>', // Update this with verified domain for production
-      to: [recipientEmail],
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: recipientEmail,
       subject: subject,
       html: htmlBody,
-    });
-
-    if (error) {
-      console.error('Error sending email via Resend API:', error);
-      return;
-    }
-
-    console.log(`Email sent to ${recipientEmail} with subject: ${subject}. ID:`, data.id);
+    };
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
+    );
+    await Promise.race([sendMailPromise, timeoutPromise]);
+    console.log(`Email sent to ${recipientEmail} with subject: ${subject}`);
   } catch (err) {
-    console.error('Exception sending email:', err.message);
+    console.error('Error sending email:', err.message);
   }
 };
 
