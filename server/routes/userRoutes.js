@@ -11,6 +11,13 @@ router.get('/students', authMiddleware, userController.getStudents);
 // Admin-only route
 router.get('/', authMiddleware, adminMiddleware, userController.getUsers);
 
+router.post('/import', authMiddleware, adminMiddleware, userController.importUsers);
+router.post('/profile/complete-first-login', authMiddleware, userController.completeFirstLogin);
+router.put('/:id/reset-password', authMiddleware, adminMiddleware, userController.resetPassword);
+router.put('/:id/deactivate', authMiddleware, adminMiddleware, userController.deactivateUser);
+router.put('/:id/activate', authMiddleware, adminMiddleware, userController.activateUser);
+router.put('/:id', authMiddleware, adminMiddleware, userController.updateUserDetails);
+
 // Authenticated user: update display name only
 router.put('/profile/name', authMiddleware, userController.updateDisplayName);
 

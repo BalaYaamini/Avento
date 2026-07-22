@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import ImportUsersModal from '../components/ImportUsersModal';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
@@ -8,7 +9,18 @@ const AdminUsers = () => {
 
   // Filters
   const [selectedRole, setSelectedRole] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Modals state
+  const [actionUser, setActionUser] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [tempPassword, setTempPassword] = useState('');
+  
+  // Edit form state
+  const [editForm, setEditForm] = useState({ fullName: '', department: '', role: '' });
 
   const fetchUsers = async () => {
     try {
@@ -33,13 +45,70 @@ const AdminUsers = () => {
       ? user.roles?.some(r => r.toLowerCase().includes(selectedRole.toLowerCase())) 
       : true;
     
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = searchQuery
-      ? user.fullName.toLowerCase().includes(query) || user.email.toLowerCase().includes(query)
+    const matchesStatus = selectedStatus
+      ? user.status === selectedStatus
       : true;
 
-    return matchesRole && matchesSearch;
+    const query = searchQuery.toLowerCase();
+    const matchesSearch = searchQuery
+      ? user.fullName?.toLowerCase().includes(query) || 
+        user.email?.toLowerCase().includes(query) || 
+        user.employeeId?.toLowerCase().includes(query) || 
+        user.rollNumber?.toLowerCase().includes(query)
+      : true;
+
+    return matchesRole && matchesSearch && matchesStatus;
   });
+
+  const handleDeactivate = async (id) => {
+    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
+    try {
+      await axios.put(`/api/users/${id}/deactivate`);
+      fetchUsers();
+    } catch (err) {
+      alert('Failed to deactivate user.');
+    }
+  };
+
+  const handleActivate = async (id) => {
+    try {
+      await axios.put(`/api/users/${id}/activate`);
+      fetchUsers();
+    } catch (err) {
+      alert('Failed to activate user.');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    try {
+      const res = await axios.put(`/api/users/${actionUser.id || actionUser._id}/reset-password`);
+      setTempPassword(res.data.tempPassword);
+      fetchUsers();
+    } catch (err) {
+      alert('Failed to reset password.');
+    }
+  };
+
+  const openEditModal = (user) => {
+    setActionUser(user);
+    setEditForm({
+      fullName: user.fullName || '',
+      department: user.department || '',
+      role: user.roles?.[0] || 'student'
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`/api/users/${actionUser.id || actionUser._id}`, editForm);
+      setIsEditModalOpen(false);
+      fetchUsers();
+    } catch (err) {
+      alert('Failed to update user.');
+    }
+  };
 
   return (
     <div className="flex-grow py-20 text-slate-700">
@@ -47,30 +116,46 @@ const AdminUsers = () => {
         
         {/* Header */}
         <div className="mb-10 animate-fade-in-up">
-          <h1 className="font-display text-3xl font-black text-text-primary">Registered <span className="heading-gradient">Accounts</span></h1>
-          <p className="font-body text-slate-600 text-sm mt-1.5">Audit and search registered students and administrators</p>
+          <h1 className="font-display text-3xl font-black text-text-primary">User <span className="heading-gradient">Management</span></h1>
+          <p className="font-body text-slate-600 text-sm mt-1.5">Audit, import, and manage registered students and faculty</p>
         </div>
 
         {/* Filters Panel */}
-        <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-5 sm:p-6 mb-10 flex flex-col md:flex-row items-center gap-5 justify-between">
+        <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-5 sm:p-6 mb-10 flex flex-col lg:flex-row items-center gap-4 justify-between">
           
-          {/* Role Filter */}
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] whitespace-nowrap">Filter Role</label>
-            <select
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-violet-500/60 transition-all duration-300 w-full md:w-48 cursor-pointer"
-            >
-              <option value="">All Roles</option>
-              <option value="student">Student</option>
-              <option value="faculty">Faculty</option>
-              <option value="admin">Administrator</option>
-            </select>
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto">
+            {/* Role Filter */}
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] whitespace-nowrap">Role</label>
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-violet-500/60 transition-all duration-300 w-full sm:w-32 cursor-pointer"
+              >
+                <option value="">All</option>
+                <option value="student">Student</option>
+                <option value="faculty">Faculty</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] whitespace-nowrap">Status</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-violet-500/60 transition-all duration-300 w-full sm:w-32 cursor-pointer"
+              >
+                <option value="">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
           </div>
 
           {/* User Search */}
-          <div className="relative w-full md:w-80 group">
+          <div className="relative w-full lg:w-80 group">
             <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-600 group-focus-within:text-violet-400 transition-colors duration-300">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -78,11 +163,24 @@ const AdminUsers = () => {
             </span>
             <input
               type="text"
-              placeholder="Search user name or email..."
+              placeholder="Search by name, email, or ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white/60 text-slate-800 placeholder-slate-600 border border-slate-300/50 rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium focus:outline-none focus:border-violet-500/60 transition-all duration-300"
             />
+          </div>
+
+          {/* Import Users Button */}
+          <div className="w-full lg:w-auto mt-4 lg:mt-0">
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="w-full lg:w-auto btn-primary px-6 py-2.5 rounded-xl text-sm font-bold shadow-pastel-glow flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Import Users
+            </button>
           </div>
 
         </div>
@@ -118,12 +216,13 @@ const AdminUsers = () => {
                 <thead>
                   <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
                     <th className="px-6 py-4">Full Name</th>
-                    <th className="px-6 py-4">Email Address</th>
+                    <th className="px-6 py-4">Email / ID</th>
                     <th className="px-6 py-4">Role</th>
-                    <th className="px-6 py-4">Proposed</th>
-                    <th className="px-6 py-4">Organizing</th>
-                    <th className="px-6 py-4">Registered</th>
+                    <th className="px-6 py-4">Department</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">First Login</th>
                     <th className="px-6 py-4">Joined Date</th>
+                    <th className="px-6 py-4 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/30 text-sm font-body">
@@ -131,13 +230,14 @@ const AdminUsers = () => {
                     <tr 
                       key={user.id || user._id} 
                       className="hover:bg-white/20 transition-all duration-300 animate-fade-in-up"
-                      style={{ animationDelay: `${i * 40 + 250}ms` }}
+                      style={{ animationDelay: `${i * 20 + 100}ms` }}
                     >
                       <td className="px-6 py-4 font-display font-bold text-slate-800">
                         {user.fullName}
                       </td>
-                      <td className="px-6 py-4 font-medium text-slate-600 text-xs">
-                        {user.email}
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-600 text-xs">{user.email}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{user.rollNumber || user.employeeId || 'No ID'}</div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
@@ -152,21 +252,43 @@ const AdminUsers = () => {
                            : 'Student'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-semibold text-slate-600 text-xs">
-                        {user.roles?.some(r => r.includes('admin')) || user.roles?.some(r => r.includes('faculty')) ? '—' : `${user.proposedCount || 0} events`}
-                      </td>
-                      <td className="px-6 py-4 font-semibold text-slate-600 text-xs">
-                        {user.roles?.some(r => r.includes('admin')) || user.roles?.some(r => r.includes('faculty')) ? '—' : `${user.organizedCount || 0} events`}
-                      </td>
-                      <td className="px-6 py-4 font-semibold text-slate-600 text-xs">
-                        {user.roles?.some(r => r.includes('admin')) ? '—' : `${user.registrationCount || 0} bookings`}
-                      </td>
                       <td className="px-6 py-4 text-slate-600 text-xs">
-                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        }) : 'Predefined'}
+                        {user.department || '—'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
+                          user.status === 'active' 
+                            ? 'bg-green-500/10 text-green-600 border-green-500/20' 
+                            : 'bg-red-500/10 text-red-500 border-red-500/20'
+                        }`}>
+                          {user.status || 'active'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {user.first_login ? (
+                          <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-md border border-yellow-200">Pending</span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400">Completed</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 text-xs">
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="relative group inline-block">
+                          <button className="text-slate-400 hover:text-violet-500 transition-colors p-1">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+                          </button>
+                          <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-xl border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 overflow-hidden">
+                            <button onClick={() => openEditModal(user)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Edit User</button>
+                            <button onClick={() => { setActionUser(user); setIsResetModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Reset Password</button>
+                            {user.status === 'inactive' ? (
+                              <button onClick={() => handleActivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-green-600 hover:bg-green-50 transition-colors">Activate</button>
+                            ) : (
+                              <button onClick={() => handleDeactivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors">Deactivate</button>
+                            )}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -177,6 +299,83 @@ const AdminUsers = () => {
         )}
 
       </div>
+      
+      <ImportUsersModal 
+        isOpen={isImportModalOpen} 
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={() => {
+          setIsImportModalOpen(false);
+          fetchUsers();
+        }}
+      />
+
+      {/* Edit User Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h2 className="font-heading text-lg font-bold text-slate-800">Edit User</h2>
+              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Full Name</label>
+                <input type="text" required value={editForm.fullName} onChange={(e) => setEditForm({...editForm, fullName: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-violet-500" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Department</label>
+                <input type="text" value={editForm.department} onChange={(e) => setEditForm({...editForm, department: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-violet-500" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Role</label>
+                <select value={editForm.role} onChange={(e) => setEditForm({...editForm, role: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-violet-500">
+                  <option value="student">Student</option>
+                  <option value="faculty">Faculty</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div className="pt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+                <button type="submit" className="btn-primary px-5 py-2 rounded-xl text-sm font-bold shadow-pastel-glow">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden text-center p-8">
+            {!tempPassword ? (
+              <>
+                <div className="w-16 h-16 bg-yellow-100 text-yellow-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                </div>
+                <h2 className="font-heading text-xl font-bold text-slate-800 mb-2">Reset Password</h2>
+                <p className="text-sm text-slate-500 mb-6 font-quicksand">Are you sure you want to generate a new temporary password for <strong>{actionUser?.fullName}</strong>?</p>
+                <div className="flex justify-center gap-3">
+                  <button onClick={() => setIsResetModalOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+                  <button onClick={handleResetPassword} className="btn-primary px-5 py-2 rounded-xl text-sm font-bold shadow-pastel-glow">Yes, Reset</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                </div>
+                <h2 className="font-heading text-xl font-bold text-slate-800 mb-2">Password Reset!</h2>
+                <p className="text-sm text-slate-500 mb-4 font-quicksand">The temporary password for <strong>{actionUser?.fullName}</strong> is:</p>
+                <div className="bg-slate-100 p-4 rounded-xl text-2xl font-mono font-bold text-slate-800 tracking-wider mb-6">
+                  {tempPassword}
+                </div>
+                <button onClick={() => { setIsResetModalOpen(false); setTempPassword(''); }} className="btn-primary w-full py-3 rounded-xl text-sm font-bold shadow-pastel-glow">Done</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

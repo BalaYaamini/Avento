@@ -361,12 +361,6 @@ const Navbar = () => {
                  >
                    Sign In
                  </Link>
-                 <Link
-                   to="/register"
-                   className="btn-primary px-6 py-2.5 text-sm font-bold shadow-pastel-glow"
-                 >
-                   Sign Up
-                 </Link>
                </div>
              )}
            </div>
@@ -504,13 +498,6 @@ const Navbar = () => {
                 className="w-full text-center px-4 py-3 text-sm font-bold rounded-2xl btn-secondary"
               >
                 Sign In
-              </Link>
-              <Link
-                to="/register"
-                onClick={() => setIsOpen(false)}
-                className="w-full text-center px-4 py-3 text-sm font-bold rounded-2xl btn-primary"
-              >
-                Sign Up
               </Link>
             </div>
           )}

@@ -22,6 +22,14 @@ const Login = () => {
   // Redirect when user is resolved after login
   useEffect(() => {
     if (user) {
+      const isAdmin = user.roles?.includes('admin');
+      
+      // Force password change for imported Students and Faculty only
+      if (user.first_login && !isAdmin) {
+        navigate('/change-password', { replace: true });
+        return;
+      }
+      
       const defaultPath = getRedirectPath(user.roles || []);
       const origin = location.state?.from?.pathname || defaultPath;
       navigate(origin, { replace: true });
@@ -128,14 +136,11 @@ const Login = () => {
             </button>
           </form>
 
-          {/* Register link */}
+          {/* Forgot Password link */}
           <div className="text-center mt-6">
-            <p className="text-xs font-quicksand font-bold text-text-secondary">
-              New to the platform?{' '}
-              <Link to="/register" className="text-pastel-lavender hover:text-pastel-pink transition-colors">
-                Register here
-              </Link>
-            </p>
+            <Link to="/forgot-password" className="text-xs font-quicksand font-bold text-pastel-lavender hover:text-pastel-pink transition-colors">
+              Forgot Password?
+            </Link>
           </div>
         </div>
       </div>

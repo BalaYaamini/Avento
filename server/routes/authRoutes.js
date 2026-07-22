@@ -16,4 +16,7 @@ router.post('/login', authController.login);
 // Get authenticated user profile (requires valid Bearer token)
 router.get('/profile', authMiddleware, authController.getProfile);
 
+// Sync password from Supabase to MongoDB (used by Forgot Password)
+router.post('/sync-password', authController.syncPassword);
+
 module.exports = router;

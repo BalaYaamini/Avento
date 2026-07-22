@@ -52,6 +52,15 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setLoading(true);
+
+      // Sign in with Supabase Auth to establish the client-side session
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
+      });
+      // We don't throw authError here to allow the backend logic to be the final decider,
+      // but it establishes the session if successful!
+
       const res = await axios.post('/api/auth/login', { email: email.trim(), password });
       
       const { token, user: userData } = res.data;

@@ -181,6 +181,17 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Please verify OTP before login' });
     }
 
+    // Check status in Supabase profiles
+    const { data: profileData, error: profileErr } = await supabase
+      .from('profiles')
+      .select('status, first_login')
+      .eq('email', emailLower)
+      .single();
+
+    if (profileData && profileData.status === 'inactive') {
+      return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
+    }
+
     // Role override for admin
     let userRole = user.role;
     if (emailLower === 'admin.avento@gmail.com') {
@@ -220,6 +231,7 @@ exports.login = async (req, res) => {
         roles: roles,
         employeeId: null, // Update when employee ID is supported in MongoDB
         rollNumber: null, // Update when roll number is supported in MongoDB
+        first_login: profileData ? profileData.first_login : false
       }
     });
   } catch (err) {
@@ -416,5 +428,36 @@ exports.sendOtp = async (req, res) => {
       error: err.message,
       stack: err.stack
     });
+  }
+};
+
+// ─── SYNC PASSWORD ──────────────────────────────────────────────────────────
+// Synchronizes the password in MongoDB when updated via Supabase client session (e.g. Forgot Password)
+exports.syncPassword = async (req, res) => {
+  try {
+    const { access_token, password } = req.body;
+    if (!access_token || !password) {
+      return res.status(400).json({ message: 'Missing token or password' });
+    }
+
+    // Verify the Supabase access token
+    const { data: { user }, error } = await supabase.auth.getUser(access_token);
+    if (error || !user) {
+      return res.status(401).json({ message: 'Invalid or expired session' });
+    }
+
+    // Update password in MongoDB
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    await User.findByIdAndUpdate(user.id, { password: hashedPassword });
+    
+    // Ensure first_login flag is cleared in profiles
+    await supabase.from('profiles').update({ first_login: false }).eq('id', user.id);
+    
+    res.json({ success: true, message: 'Password synced successfully' });
+  } catch (err) {
+    console.error('syncPassword error:', err.message);
+    res.status(500).json({ message: 'Server error syncing password', error: err.message });
   }
 };

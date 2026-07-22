@@ -40,7 +40,9 @@ exports.getUsers = async (req, res) => {
         proposedCount: pCount,
         organizedCount: oCount,
         registrationCount: rCount,
-        createdAt: user.created_at
+        createdAt: user.created_at,
+        status: user.status || 'active',
+        first_login: user.first_login !== false
       };
     });
 
@@ -62,7 +64,9 @@ exports.getUsers = async (req, res) => {
         proposedCount: pCount,
         organizedCount: oCount,
         registrationCount: rCount,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        status: 'active',
+        first_login: false
       };
     });
 
@@ -212,5 +216,199 @@ exports.submitContactForm = async (req, res) => {
   } catch (err) {
     console.error('submitContactForm error:', err.message);
     res.status(500).json({ message: 'Server error sending message.', error: err.message });
+  }
+};
+
+exports.importUsers = async (req, res) => {
+  try {
+    const { users } = req.body;
+    if (!users || !Array.isArray(users)) {
+      return res.status(400).json({ message: 'Invalid users array provided.' });
+    }
+    
+    let successful = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const user of users) {
+      try {
+        const emailLower = user.email.toLowerCase().trim();
+        const role = user.role ? user.role.toLowerCase() : 'student';
+        const defaultPassword = 'Student@123';
+        
+        const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
+        if (listErr) throw listErr;
+        
+        const existingAuth = usersData.users.find((u) => u.email.toLowerCase() === emailLower);
+        if (existingAuth) {
+          skipped++;
+          continue;
+        }
+
+        const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
+          email: emailLower,
+          password: defaultPassword,
+          email_confirm: true,
+          user_metadata: { full_name: user.fullName, role: role },
+        });
+
+        if (createErr) throw createErr;
+        const userId = newUser.user.id;
+
+        const profile = {
+          id: userId,
+          email: emailLower,
+          name: user.fullName,
+          role: role,
+          department: user.department || null,
+          created_at: new Date().toISOString(),
+          first_login: true,
+          status: 'active'
+        };
+        
+        if (role === 'faculty') profile.employee_id = user.employeeId || null;
+        if (role === 'student') profile.roll_number = user.rollNumber || null;
+
+        await supabase.from('profiles').upsert(profile);
+        
+        const bcrypt = require('bcryptjs');
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(defaultPassword, salt);
+        const User = require('../models/User');
+        const mongoUser = new User({
+          _id: userId,
+          name: user.fullName,
+          email: emailLower,
+          password: hashedPassword,
+          role: role,
+          isVerified: true,
+        });
+        await mongoUser.save().catch(e => console.error('Mongo save error (dup):', e.message));
+
+        successful++;
+      } catch (e) {
+        console.error(`Import failed for ${user.email}:`, e.message);
+        failed++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      summary: { total: users.length, successful, skipped, failed }
+    });
+  } catch (err) {
+    console.error('importUsers error:', err.message);
+    res.status(500).json({ message: 'Server error importing users.', error: err.message });
+  }
+};
+
+exports.completeFirstLogin = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { password } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({ message: 'New password is required.' });
+    }
+
+    // Update password in Supabase Auth
+    const { error } = await supabase.auth.admin.updateUserById(String(userId), {
+      password: password
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    // Update profiles table to clear first_login flag
+    await supabase.from('profiles').update({ first_login: false }).eq('id', String(userId));
+    
+    // Also update MongoDB password
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    const User = require('../models/User');
+    await User.findByIdAndUpdate(userId, { password: hashedPassword });
+
+    res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err) {
+    console.error('completeFirstLogin error:', err.message);
+    res.status(500).json({ message: 'Server error updating password.', error: err.message });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const tempPassword = 'Student@123';
+
+    const { error } = await supabase.auth.admin.updateUserById(String(userId), {
+      password: tempPassword
+    });
+    if (error) throw error;
+
+    await supabase.from('profiles').update({ first_login: true }).eq('id', String(userId));
+    
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(tempPassword, salt);
+    const User = require('../models/User');
+    await User.findByIdAndUpdate(userId, { password: hashedPassword });
+
+    res.json({ message: 'Password reset successfully.', tempPassword });
+  } catch (err) {
+    console.error('resetPassword error:', err.message);
+    res.status(500).json({ message: 'Failed to reset password.', error: err.message });
+  }
+};
+
+exports.deactivateUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { error } = await supabase.from('profiles').update({ status: 'inactive' }).eq('id', String(userId));
+    if (error) throw error;
+    res.json({ message: 'User deactivated.' });
+  } catch (err) {
+    console.error('deactivate error:', err.message);
+    res.status(500).json({ message: 'Failed to deactivate.', error: err.message });
+  }
+};
+
+exports.activateUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { error } = await supabase.from('profiles').update({ status: 'active' }).eq('id', String(userId));
+    if (error) throw error;
+    res.json({ message: 'User activated.' });
+  } catch (err) {
+    console.error('activate error:', err.message);
+    res.status(500).json({ message: 'Failed to activate.', error: err.message });
+  }
+};
+
+exports.updateUserDetails = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { fullName, department, role } = req.body;
+    const updates = {};
+    if (fullName !== undefined) updates.name = fullName.trim();
+    if (department !== undefined) updates.department = department.trim();
+    if (role !== undefined) updates.role = role.trim();
+
+    const { error } = await supabase.from('profiles').update(updates).eq('id', String(userId));
+    if (error) throw error;
+
+    if (updates.name) {
+      await supabase.auth.admin.updateUserById(String(userId), {
+        user_metadata: { full_name: updates.name },
+      });
+      const User = require('../models/User');
+      await User.findByIdAndUpdate(userId, { name: updates.name, role: updates.role || 'student' });
+    }
+
+    res.json({ message: 'User details updated successfully.' });
+  } catch (err) {
+    console.error('updateUserDetails error:', err.message);
+    res.status(500).json({ message: 'Failed to update user details.', error: err.message });
   }
 };
