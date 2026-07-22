@@ -25,7 +25,7 @@ const StudentOrgDashboard = () => {
       const events = eventsRes.data;
 
       const totalRegs = events.reduce((sum, evt) => sum + (evt.registeredCount || 0), 0);
-      const pending = events.filter(e => e.status === 'pending_approval').length;
+      const pending = events.filter(e => ['pending_approval', 'under_review', 'needs_revision'].includes(e.status)).length;
 
       setStats({
         totalEvents: events.length,
@@ -189,11 +189,11 @@ const StudentOrgDashboard = () => {
                       <p className="text-[10px] text-text-secondary mt-1 font-bold font-quicksand uppercase tracking-wider">{evt.category} &bull; {new Date(evt.date).toLocaleDateString()}</p>
                     </div>
                   </div>
-                  <div className="text-right flex flex-col items-end justify-center">
+                  <div className="text-right flex flex-col items-end justify-center gap-2">
                     <span className={`text-[9px] font-bold uppercase tracking-widest px-3 py-1 rounded-xl border-2 ${
                       evt.status === 'active' || evt.status === 'published'
                         ? 'bg-pastel-mint/30 text-green-700 border-pastel-mint' 
-                        : evt.status === 'pending_approval'
+                        : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
                         ? 'bg-pastel-yellow/30 text-yellow-700 border-pastel-yellow'
                         : evt.status === 'draft'
                         ? 'bg-pastel-blue/30 text-blue-600 border-pastel-blue'
@@ -205,6 +205,14 @@ const StudentOrgDashboard = () => {
                        <span className="text-[9px] text-red-500 mt-1 font-bold font-quicksand max-w-[120px] line-clamp-1 text-right">
                          Rejected: {evt.approvalRemarks}
                        </span>
+                    )}
+                    {['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) && (
+                      <Link
+                        to={`/proposals/${evt._id || evt.id}`}
+                        className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-pastel-pink/10 text-pastel-pink border border-pastel-pink/20 hover:bg-pastel-pink/20 transition-all duration-300 shadow-sm"
+                      >
+                        Workspace
+                      </Link>
                     )}
                   </div>
                 </div>

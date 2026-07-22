@@ -7,6 +7,7 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 // Protected lookup routes for dropdowns
 router.get('/faculty-coordinators', authMiddleware, userController.getFacultyCoordinators);
 router.get('/students', authMiddleware, userController.getStudents);
+router.get('/search', authMiddleware, userController.searchUsers);
 
 // Admin-only route
 router.get('/', authMiddleware, adminMiddleware, userController.getUsers);

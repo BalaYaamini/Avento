@@ -491,7 +491,7 @@ const StudentOrgEvents = () => {
         <div className="flex flex-wrap gap-2 mb-8 border-b border-slate-200/10 pb-5">
           {[
             { id: 'all', label: 'All Proposals', count: myProposals.filter(e => e.status !== 'withdrawn').length },
-            { id: 'pending_approval', label: 'Pending Review', count: myProposals.filter(e => e.status === 'pending_approval').length },
+            { id: 'pending_approval', label: 'Pending Review', count: myProposals.filter(e => ['pending_approval', 'under_review', 'needs_revision'].includes(e.status)).length },
             { id: 'approved', label: 'Approved', count: myProposals.filter(e => e.status === 'approved').length },
             { id: 'published', label: 'Published Events', count: myProposals.filter(e => e.status === 'published').length },
             { id: 'rejected', label: 'Rejected', count: myProposals.filter(e => e.status === 'rejected').length },
@@ -590,7 +590,7 @@ const StudentOrgEvents = () => {
                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-lg border ${
                                   evt.status === 'active' || evt.status === 'published'
                                     ? 'bg-emerald-500/8 text-emerald-400 border-emerald-500/15' 
-                                    : evt.status === 'pending_approval'
+                                    : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
                                       ? 'bg-amber-500/8 text-amber-400 border-amber-500/15'
                                       : evt.status === 'approved'
                                         ? 'bg-sky-500/8 text-sky-400 border-sky-500/15'
@@ -639,24 +639,45 @@ const StudentOrgEvents = () => {
                                   >
                                     Del
                                   </button>
-                                </>
-                              )}
-                              {evt.status === 'pending_approval' && (
-                                <>
-                                  <button
-                                    onClick={() => openEditModal(evt)}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg btn-secondary"
-                                  >
-                                    Edit
-                                  </button>
                                   <button
                                     onClick={() => setWithdrawEvent(evt)}
                                     className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
                                   >
                                     Withdraw
                                   </button>
-                                  <span className="text-xs text-slate-600 font-medium italic">Pending Review...</span>
                                 </>
+                              )}
+                              {['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) && (
+                                <>
+                                  <Link
+                                    to={`/proposals/${evt._id || evt.id}`}
+                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
+                                  >
+                                    Workspace
+                                  </Link>
+                                  <button
+                                    onClick={() => setWithdrawEvent(evt)}
+                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
+                                  >
+                                    Withdraw
+                                  </button>
+                                </>
+                              )}
+                              {['approved', 'active', 'published', 'completed'].includes(evt.status) && (
+                                <Link
+                                  to={`/proposals/${evt._id || evt.id}`}
+                                  className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
+                                >
+                                  Workspace
+                                </Link>
+                              )}
+                              {evt.status === 'rejected' && (
+                                <Link
+                                  to={`/proposals/${evt._id || evt.id}`}
+                                  className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
+                                >
+                                  Workspace
+                                </Link>
                               )}
                               {evt.status === 'rejected' && (
                                 <button

@@ -101,6 +101,26 @@ exports.getFacultyCoordinators = async (req, res) => {
   }
 };
 
+exports.searchUsers = async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.json([]);
+
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, department, role, roll_number, employee_id, status')
+      .or(`name.ilike.%${query}%,email.ilike.%${query}%,department.ilike.%${query}%`)
+      .limit(20);
+    
+    if (error) throw error;
+    // Exclude inactive users as requested
+    const activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
+    res.json(activeProfiles);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error searching users.', error: err.message });
+  }
+};
+
 // Returns all Students for the team member picker in organizer view
 // Format: { id, fullName, email, rollNumber, displayLabel: "Bala Yaamini (2203A51001)" }
 exports.getStudents = async (req, res) => {

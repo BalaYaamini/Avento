@@ -299,6 +299,21 @@ const createEvent = async (req, res) => {
     const { data: event, error } = await supabase.from('events').insert(newEvent).select().single();
     if (error) throw error;
 
+    // Log timeline event for new proposal
+    await supabase.from('proposal_timeline').insert({
+      proposal_id: event.id,
+      user_id: req.user.id,
+      action: 'Proposal Submitted',
+      details: 'Initial proposal submitted for review.'
+    });
+
+    // Make the creator the primary student organizer and auto-add to event_members
+    const { error: memberErr } = await supabase.from('event_members').insert({
+      event_id: event.id,
+      student_id: req.user.id,
+      role: 'organizer'
+    });
+
     if (facultyId) {
       // Notify assigned faculty
       try {
@@ -384,10 +399,10 @@ const editEvent = async (req, res) => {
       }
     }
 
-    // Students must be allowed to edit their proposals only if status is pending_approval or rejected
+    // Students must be allowed to edit their proposals only if status is submitted or rejected
     if (isStudent) {
-      if (event.status !== 'pending_approval' && event.status !== 'rejected') {
-        return res.status(400).json({ message: 'You can only edit proposals that are pending approval or rejected.' });
+      if (event.status !== 'submitted' && event.status !== 'rejected') {
+        return res.status(400).json({ message: 'You can only edit proposals that are submitted or rejected.' });
       }
     }
 
@@ -440,7 +455,7 @@ const editEvent = async (req, res) => {
 
       // If a student edits ANY field, reset status to pending_approval and clear remarks
       updates.status = 'pending_approval';
-      updates.approval_remarks = '';
+      updates.approval_remarks = null;
     } else if (req.user.roles.includes('admin') && status !== undefined) {
       if (status === 'published') {
         if (event.status !== 'approved') {
@@ -1452,6 +1467,471 @@ const withdrawOrganizerRequest = async (req, res) => {
   }
 };
 
+// ==========================================
+// PROPOSAL WORKSPACE CONTROLLERS
+// ==========================================
+
+const getProposalWorkspace = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Fetch Event
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (!eventErr && event) {
+      // 1b. Fetch Faculty manually
+      if (event.faculty_id) {
+        const { data: fac } = await supabase.from('profiles').select('id, full_name, name, email, department').eq('id', event.faculty_id).maybeSingle();
+        event.faculty = fac;
+      }
+      
+      // 1c. Fetch Proposer/Student Organizer manually
+      const studentId = event.student_organizer_id || event.proposed_by;
+      if (studentId) {
+        const { data: stu } = await supabase.from('profiles').select('id, full_name, name, email, department, roll_number').eq('id', studentId).maybeSingle();
+        event.student_organizer = stu;
+      }
+    }
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Proposal not found.' });
+    }
+
+    // Access control: only assigned faculty, creator, or admin
+    const isAdmin = req.user.roles.includes('admin');
+    const isFaculty = req.user.id === event.faculty_id;
+    const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
+
+    if (!isAdmin && !isFaculty && !isCreator) {
+      return res.status(403).json({ message: 'Access denied to this proposal workspace.' });
+    }
+
+    // 2. Fetch Discussions
+    const { data: discussions, error: discErr } = await supabase
+      .from('proposal_discussions')
+      .select('*')
+      .eq('proposal_id', id)
+      .order('created_at', { ascending: true });
+
+    if (discErr && discErr.code !== '42P01') throw discErr;
+
+    // 3. Fetch Documents
+    const { data: documents, error: docErr } = await supabase
+      .from('proposal_documents')
+      .select('*')
+      .eq('proposal_id', id)
+      .order('created_at', { ascending: false });
+
+    if (docErr && docErr.code !== '42P01') throw docErr;
+
+    // 4. Fetch Timeline
+    const { data: timeline, error: timeErr } = await supabase
+      .from('proposal_timeline')
+      .select('*')
+      .eq('proposal_id', id)
+      .order('created_at', { ascending: true });
+
+    if (timeErr && timeErr.code !== '42P01') throw timeErr;
+
+    // 5. Manually attach profiles
+    const allUserIds = [...new Set([
+      ...(discussions || []).map(d => d.user_id),
+      ...(documents || []).map(d => d.user_id),
+      ...(timeline || []).map(t => t.user_id)
+    ].filter(Boolean))];
+
+    let profilesMap = {};
+    if (allUserIds.length > 0) {
+      const { data: profs } = await supabase.from('profiles').select('id, full_name, name, role, avatar_url').in('id', allUserIds);
+      (profs || []).forEach(p => { profilesMap[p.id] = p; });
+    }
+
+    const formattedDiscussions = (discussions || []).map(d => ({ ...d, sender: profilesMap[d.user_id] || {} }));
+    const formattedDocuments = (documents || []).map(d => ({ ...d, uploader: profilesMap[d.user_id] || {} }));
+    const formattedTimeline = (timeline || []).map(t => ({ ...t, actor: profilesMap[t.user_id] || {} }));
+
+    res.json({
+      event,
+      discussions: formattedDiscussions,
+      documents: formattedDocuments,
+      timeline: formattedTimeline
+    });
+
+  } catch (err) {
+    res.status(500).json({ message: 'Server error fetching proposal workspace.', error: err.message });
+  }
+};
+
+const postProposalDiscussion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+
+    if (!message) return res.status(400).json({ message: 'Message cannot be empty.' });
+
+    // Verify access
+    const { data: event, error: eventErr } = await supabase.from('events').select('faculty_id, student_organizer_id, proposed_by').eq('id', id).single();
+    if (eventErr) return res.status(404).json({ message: 'Proposal not found.' });
+
+    const isAdmin = req.user.roles.includes('admin');
+    const isFaculty = req.user.id === event.faculty_id;
+    const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
+
+    if (!isAdmin && !isFaculty && !isCreator) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const { data: discussion, error } = await supabase
+      .from('proposal_discussions')
+      .insert({
+        proposal_id: id,
+        user_id: req.user.id,
+        message
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    
+    // Attach sender profile manually
+    const { data: profile } = await supabase.from('profiles').select('id, full_name, name, role, avatar_url').eq('id', req.user.id).maybeSingle();
+    discussion.sender = profile || {};
+
+    // Add notification for the other party
+    try {
+      const targetUserId = isCreator ? event.faculty_id : (event.proposed_by || event.student_organizer_id);
+      if (targetUserId) {
+        await notifyUser({
+          userId: targetUserId,
+          type: 'new_message',
+          title: 'New Message',
+          message: `New message on proposal "${event.title || 'Event'}" from ${isCreator ? 'Student' : 'Faculty'}.`,
+          link: `/proposals/${id}`
+        });
+      }
+    } catch (notifyErr) {
+      console.error('Failed to send notification for discussion:', notifyErr.message);
+    }
+    
+    res.status(201).json(discussion);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error posting discussion.', error: err.message });
+  }
+};
+
+const uploadProposalDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ message: 'No document uploaded.' });
+    }
+
+    const fileUrl = `/uploads/proposals/${req.file.filename}`;
+    const fileType = req.file.originalname.split('.').pop().toUpperCase();
+    const fileName = req.file.originalname;
+
+    // Verify event exists to get current revision number
+    const { data: event, error: eventErr } = await supabase.from('events').select('revision_number, faculty_id, proposed_by, student_organizer_id, title').eq('id', id).single();
+    if (eventErr) throw eventErr;
+
+    const isAdmin = req.user.roles.includes('admin');
+    const isFaculty = req.user.id === event.faculty_id;
+    const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
+
+    if (!isAdmin && !isFaculty && !isCreator) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const { data: document, error } = await supabase
+      .from('proposal_documents')
+      .insert({
+        proposal_id: id,
+        user_id: req.user.id,
+        file_name: fileName,
+        file_url: fileUrl,
+        file_type: fileType,
+        version: event.revision_number || 1
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    const { data: profile } = await supabase.from('profiles').select('id, full_name, name').eq('id', req.user.id).maybeSingle();
+    document.uploader = profile || {};
+
+    if (error) throw error;
+
+    // Log to timeline
+    await supabase.from('proposal_timeline').insert({
+      proposal_id: id,
+      user_id: req.user.id,
+      action: 'Document Uploaded',
+      details: `Uploaded ${fileName}`
+    });
+
+    if (isCreator && event.faculty_id) {
+      try {
+        await notifyUser({
+          userId: event.faculty_id,
+          type: 'document_uploaded',
+          title: 'New Document Uploaded',
+          message: `Student uploaded a document for "${event.title || 'Event'}".`,
+          link: `/proposals/${id}`
+        });
+      } catch (notifyErr) {
+        console.error('Failed to notify faculty of document upload:', notifyErr.message);
+      }
+    }
+
+    res.status(201).json(document);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error uploading document.', error: err.message });
+  }
+};
+
+const updateProposalStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, remarks } = req.body;
+
+    const allowedStatuses = ['under_review', 'needs_revision', 'approved', 'rejected'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Invalid status update.' });
+    }
+
+    if (status === 'needs_revision' && !remarks) {
+      return res.status(400).json({ message: 'Remarks are required when requesting a revision.' });
+    }
+
+    const { data: event, error: eventErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (eventErr || !event) return res.status(404).json({ message: 'Proposal not found.' });
+
+    // Ensure only assigned faculty or admin
+    if (!req.user.roles.includes('admin') && req.user.id !== event.faculty_id) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    let updates = { status };
+    if (remarks) updates.approval_remarks = remarks;
+
+    const { data: updatedEvent, error } = await supabase
+      .from('events')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    let actionLabel = '';
+    if (status === 'under_review') actionLabel = 'Status changed to Under Review';
+    else if (status === 'needs_revision') actionLabel = 'Revision Requested';
+    else if (status === 'approved') actionLabel = 'Faculty Approved';
+    else if (status === 'rejected') actionLabel = 'Faculty Rejected';
+
+    await supabase.from('proposal_timeline').insert({
+      proposal_id: id,
+      user_id: req.user.id,
+      action: actionLabel,
+      details: remarks || null
+    });
+
+    // Notify student
+    const studentId = event.proposed_by || event.student_organizer_id;
+    if (studentId) {
+      try {
+        await notifyUser({
+          userId: studentId,
+          type: 'status_update',
+          title: `Proposal ${actionLabel}`,
+          message: `Your proposal for "${event.title}" has been updated: ${actionLabel}`,
+          link: `/proposals/${id}`
+        });
+      } catch (notifyErr) {
+        console.error('Failed to notify student of status update:', notifyErr.message);
+      }
+    }
+
+    res.json(updatedEvent);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error updating status.', error: err.message });
+  }
+};
+
+const resubmitProposal = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: event, error: eventErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (eventErr || !event) return res.status(404).json({ message: 'Proposal not found.' });
+
+    if (req.user.id !== event.proposed_by && req.user.id !== event.student_organizer_id) {
+      return res.status(403).json({ message: 'Only the proposal creator can resubmit.' });
+    }
+
+    if (event.status !== 'needs_revision') {
+      return res.status(400).json({ message: 'Proposal is not in Needs Revision state.' });
+    }
+
+    const newRevision = (event.revision_number || 1) + 1;
+
+    const { data: updatedEvent, error } = await supabase
+      .from('events')
+      .update({ 
+        status: 'pending_approval', 
+        revision_number: newRevision 
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await supabase.from('proposal_timeline').insert({
+      proposal_id: id,
+      user_id: req.user.id,
+      action: 'Student Resubmitted',
+      details: `Resubmitted as Revision ${newRevision}`
+    });
+
+    // Notify faculty
+    if (event.faculty_id) {
+      try {
+        await notifyUser({
+          userId: event.faculty_id,
+          type: 'resubmitted',
+          title: 'Proposal Resubmitted',
+          message: `Student resubmitted proposal "${event.title || 'Event'}" (Revision ${newRevision}).`,
+          link: `/proposals/${id}`
+        });
+      } catch (notifyErr) {
+        console.error('Failed to notify faculty of resubmission:', notifyErr.message);
+      }
+    }
+
+    res.json(updatedEvent);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error resubmitting proposal.', error: err.message });
+  }
+};
+
+const getProposalTeam = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: members, error } = await supabase
+      .from('event_members')
+      .select('*')
+      .eq('event_id', id);
+    if (error) throw error;
+    res.json(members || []);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error fetching team.', error: err.message });
+  }
+};
+
+const addProposalTeamMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, name, email, department, role } = req.body;
+    
+    const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (evErr) throw evErr;
+    
+    const isAdmin = req.user.roles.includes('admin');
+    const isFaculty = req.user.id === event.faculty_id;
+    const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
+
+    if (!isAdmin && !isFaculty && !isCreator) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+    
+    if (role === 'Faculty Coordinator' && !isAdmin && !isFaculty) {
+      return res.status(403).json({ message: 'Students cannot assign Faculty Coordinators.' });
+    }
+    
+    const { data: existing } = await supabase.from('event_members').select('id').eq('event_id', id).eq('user_id', userId).maybeSingle();
+    if (existing) {
+      return res.status(400).json({ message: 'User is already in the organizing team.' });
+    }
+
+    const { data: member, error: insErr } = await supabase.from('event_members').insert({
+      event_id: id,
+      user_id: userId,
+      name,
+      email,
+      role
+    }).select().single();
+    
+    if (insErr) throw insErr;
+    
+    try {
+      await notifyUser({
+        userId: userId,
+        type: 'assigned',
+        title: 'Assigned to Proposal',
+        message: `You have been added to the proposal "${event.title || 'Event'}" as a ${role}.`,
+        link: `/proposals/${id}`
+      });
+    } catch (nErr) {}
+    
+    res.json(member);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error adding team member.', error: err.message });
+  }
+};
+
+const removeProposalTeamMember = async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    
+    const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (evErr) throw evErr;
+    
+    const { data: member, error: memErr } = await supabase.from('event_members').select('*').eq('id', memberId).single();
+    if (memErr) throw memErr;
+    
+    const isAdmin = req.user.roles.includes('admin');
+    const isFaculty = req.user.id === event.faculty_id;
+    const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
+
+    if (!isAdmin && !isFaculty && !isCreator) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+    
+    if (member.role === 'Faculty Coordinator' && !isAdmin && !isFaculty) {
+      return res.status(403).json({ message: 'Students cannot remove Faculty Coordinators.' });
+    }
+    
+    if (member.user_id === event.proposed_by || member.user_id === event.student_organizer_id) {
+      return res.status(400).json({ message: 'Cannot remove the primary proposal creator.' });
+    }
+    
+    const { error: delErr } = await supabase.from('event_members').delete().eq('id', memberId);
+    if (delErr) throw delErr;
+    
+    if (member.user_id) {
+      try {
+        await notifyUser({
+          userId: member.user_id,
+          type: 'removed',
+          title: 'Removed from Proposal',
+          message: `You have been removed from the proposal "${event.title || 'Event'}".`,
+          link: `/proposals/${id}`
+        });
+      } catch (nErr) {}
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error removing team member.', error: err.message });
+  }
+};
+
 module.exports = {
   getEvents,
   getEventById,
@@ -1474,4 +1954,12 @@ module.exports = {
   withdrawEvent,
   getMyOrganizerRequests,
   withdrawOrganizerRequest,
+  getProposalWorkspace,
+  postProposalDiscussion,
+  uploadProposalDocument,
+  updateProposalStatus,
+  resubmitProposal,
+  getProposalTeam,
+  addProposalTeamMember,
+  removeProposalTeamMember,
 };

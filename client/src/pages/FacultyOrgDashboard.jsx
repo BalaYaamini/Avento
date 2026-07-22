@@ -26,7 +26,7 @@ const FacultyOrgDashboard = () => {
       const events = eventsRes.data;
 
       const totalRegs = events.reduce((sum, evt) => sum + (evt.registeredCount || 0), 0);
-      const pending = events.filter(e => e.status === 'pending_approval').length;
+      const pending = events.filter(e => ['pending_approval', 'under_review', 'needs_revision'].includes(e.status)).length;
 
       setStats({
         totalEvents: events.length,
@@ -195,7 +195,7 @@ const FacultyOrgDashboard = () => {
                     <span className={`text-[9px] font-bold uppercase tracking-widest px-3 py-1 rounded-xl border-2 ${
                       evt.status === 'active' || evt.status === 'published'
                         ? 'bg-pastel-mint/30 text-green-700 border-pastel-mint' 
-                        : evt.status === 'pending_approval'
+                        : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
                         ? 'bg-pastel-yellow/30 text-yellow-700 border-pastel-yellow'
                         : 'glass-panel text-text-secondary border-slate-200'
                     }`}>

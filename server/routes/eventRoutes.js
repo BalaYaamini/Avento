@@ -4,6 +4,39 @@ const router = express.Router();
 const eventController = require('../controllers/eventController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure directories exist
+const uploadDir = path.join(__dirname, '../uploads/proposals');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Set up multer for proposal document uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'proposal-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.png', '.jpg', '.jpeg', '.pdf', '.docx', '.xlsx'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOCX, XLSX, PNG, and JPG are allowed.'));
+    }
+  }
+});
 
 // Public routes
 router.get('/', eventController.getEvents);
@@ -150,6 +183,75 @@ router.put(
   authMiddleware,
   roleMiddleware(['student']),
   eventController.withdrawEvent
+);
+
+// ==========================================
+// PROPOSAL WORKSPACE ROUTES
+// ==========================================
+
+// Get Proposal Workspace Details (Aggregated data)
+router.get(
+  '/:id/proposal-workspace',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.getProposalWorkspace
+);
+
+// Post Discussion Message
+router.post(
+  '/:id/discussion',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.postProposalDiscussion
+);
+
+// Upload Proposal Document
+router.post(
+  '/:id/documents',
+  authMiddleware,
+  roleMiddleware(['student', 'faculty', 'faculty_organizer']),
+  upload.single('document'),
+  eventController.uploadProposalDocument
+);
+
+// Update Proposal Status (Faculty)
+router.put(
+  '/:id/proposal-status',
+  authMiddleware,
+  roleMiddleware(['faculty', 'faculty_organizer', 'admin']),
+  eventController.updateProposalStatus
+);
+
+// Resubmit Proposal (Student)
+router.put(
+  '/:id/proposal-resubmit',
+  authMiddleware,
+  roleMiddleware(['student']),
+  eventController.resubmitProposal
+);
+
+// Get Proposal Team
+router.get(
+  '/:id/proposal-team',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.getProposalTeam
+);
+
+// Add Proposal Team Member
+router.post(
+  '/:id/proposal-team',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.addProposalTeamMember
+);
+
+// Remove Proposal Team Member
+router.delete(
+  '/:id/proposal-team/:memberId',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.removeProposalTeamMember
 );
 
 // getEventById — must come AFTER all static subroutes

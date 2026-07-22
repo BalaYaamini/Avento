@@ -154,9 +154,9 @@ const FacultyOrgEvents = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-800/30 text-sm font-body">
                   {events.map((evt, i) => (
-                    <tr 
+                      <tr 
                       key={evt._id || evt.id} 
-                      className={`transition-all duration-300 animate-fade-in-up ${evt.status === 'pending_approval' ? 'bg-amber-900/10 hover:bg-amber-900/20' : evt.status === 'rejected' ? 'bg-red-900/5 hover:bg-red-900/10' : 'hover:bg-white/20'}`}
+                      className={`transition-all duration-300 animate-fade-in-up ${['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) ? 'bg-amber-900/10 hover:bg-amber-900/20' : evt.status === 'rejected' ? 'bg-red-900/5 hover:bg-red-900/10' : 'hover:bg-white/20'}`}
                       style={{ animationDelay: `${i * 40 + 150}ms` }}
                     >
                       <td className="px-6 py-4">
@@ -190,7 +190,7 @@ const FacultyOrgEvents = () => {
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-lg border ${
                           evt.status === 'active' || evt.status === 'published'
                             ? 'bg-emerald-500/8 text-emerald-400 border-emerald-500/15'
-                            : evt.status === 'pending_approval'
+                            : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
                               ? 'bg-amber-500/8 text-amber-400 border-amber-500/15 animate-pulse'
                               : evt.status === 'approved'
                                 ? 'bg-sky-500/8 text-sky-400 border-sky-500/15'
@@ -203,15 +203,13 @@ const FacultyOrgEvents = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {evt.status === 'pending_approval' ? (
-                            <button
-                              onClick={() => openReviewModal(evt)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-all duration-300"
+                          {['pending_approval', 'under_review', 'needs_revision', 'rejected'].includes(evt.status) ? (
+                            <Link
+                              to={`/proposals/${evt._id || evt.id}`}
+                              className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300 mr-2"
                             >
-                              ✦ Review
-                            </button>
-                          ) : evt.status === 'rejected' ? (
-                            <span className="text-xs text-slate-500 italic px-2">Rejected</span>
+                              Proposal Workspace
+                            </Link>
                           ) : evt.status === 'approved' || evt.status === 'published' || evt.status === 'active' || evt.status === 'completed' ? (
                             <>
                               {new Date(evt.date) >= new Date() && (

@@ -33,6 +33,7 @@ import StudentOrgEvents from './pages/StudentOrgEvents';
 
 // Workspace view
 import Workspace from './pages/Workspace';
+import ProposalWorkspace from './pages/ProposalWorkspace';
 
 /* Animated page wrapper — fades in content on route change */
 const AnimatedRoutes = () => {
@@ -151,6 +152,16 @@ const AnimatedRoutes = () => {
           element={
             <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
               <Workspace />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Proposal Workspace Path */}
+        <Route
+          path="/proposals/:proposalId"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
+              <ProposalWorkspace />
             </ProtectedRoute>
           }
         />
