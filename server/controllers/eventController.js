@@ -310,7 +310,7 @@ const createEvent = async (req, res) => {
     // Make the creator the primary student organizer and auto-add to event_members
     const { error: memberErr } = await supabase.from('event_members').insert({
       event_id: event.id,
-      student_id: req.user.id,
+      user_id: req.user.id,
       role: 'organizer'
     });
 
@@ -742,9 +742,6 @@ const addTeamMember = async (req, res) => {
     const member = {
       event_id: id,
       user_id: userId || null,
-      name: name,
-      roll_number: rollNumber || null,
-      email: email || null,
       role: responsibility || 'Volunteer',
     };
 
@@ -1828,7 +1825,25 @@ const getProposalTeam = async (req, res) => {
       .select('*')
       .eq('event_id', id);
     if (error) throw error;
-    res.json(members || []);
+    
+    // Fetch names and emails manually from profiles
+    const userIds = (members || []).map(m => m.user_id).filter(Boolean);
+    let profilesMap = {};
+    if (userIds.length > 0) {
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', userIds);
+      profilesMap = (profilesData || []).reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+    }
+    
+    const formattedMembers = (members || []).map(m => ({
+      ...m,
+      name: profilesMap[m.user_id]?.name || m.name || 'Unknown',
+      email: profilesMap[m.user_id]?.email || m.email || null
+    }));
+    
+    res.json(formattedMembers);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching team.', error: err.message });
   }
@@ -1842,7 +1857,7 @@ const addProposalTeamMember = async (req, res) => {
     const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
     if (evErr) throw evErr;
     
-    const isAdmin = req.user.roles.includes('admin');
+    const isAdmin = req.user.roles?.includes('admin');
     const isFaculty = req.user.id === event.faculty_id;
     const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
 
@@ -1862,10 +1877,8 @@ const addProposalTeamMember = async (req, res) => {
     const { data: member, error: insErr } = await supabase.from('event_members').insert({
       event_id: id,
       user_id: userId,
-      name,
-      email,
       role
-    }).select().single();
+    }).select('*').single();
     
     if (insErr) throw insErr;
     
@@ -1879,9 +1892,25 @@ const addProposalTeamMember = async (req, res) => {
       });
     } catch (nErr) {}
     
-    res.json(member);
+    // Fetch the name and email for the new member
+    let userEmail = null;
+    let userName = name || 'Unknown';
+    if (userId) {
+      const { data: profileData } = await supabase.from('profiles').select('name, email').eq('id', userId).maybeSingle();
+      if (profileData) {
+        userEmail = profileData.email;
+        userName = profileData.name;
+      }
+    }
+    
+    res.json({
+      ...member,
+      name: userName,
+      email: userEmail
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Server error adding team member.', error: err.message });
+    console.error('DEBUG ROOT CAUSE:', err);
+    res.status(500).json({ message: `Server error adding team member: ${err.message || JSON.stringify(err)}`, error: err.message });
   }
 };
 
@@ -1895,7 +1924,7 @@ const removeProposalTeamMember = async (req, res) => {
     const { data: member, error: memErr } = await supabase.from('event_members').select('*').eq('id', memberId).single();
     if (memErr) throw memErr;
     
-    const isAdmin = req.user.roles.includes('admin');
+    const isAdmin = req.user.roles?.includes('admin');
     const isFaculty = req.user.id === event.faculty_id;
     const isCreator = req.user.id === event.proposed_by || req.user.id === event.student_organizer_id;
 

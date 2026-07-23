@@ -831,6 +831,7 @@ const StudentOrgEvents = () => {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           title={modalMode === 'create' ? 'Draft Event Proposal' : 'Edit Event Proposal'}
+          subtitle={modalMode === 'create' ? 'Create and submit your proposal for faculty review.' : 'Update your proposal details.'}
         >
           {feedback && (
             <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${

@@ -34,6 +34,8 @@ const ProposalWorkspace = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
+  const [selectedUserForAdd, setSelectedUserForAdd] = useState(null);
+  const [selectedResponsibility, setSelectedResponsibility] = useState('');
   const searchTimeoutRef = useRef(null);
 
   const fetchWorkspace = async (silent = false) => {
@@ -86,6 +88,10 @@ const ProposalWorkspace = () => {
   }, [searchQuery]);
 
   const handleAddTeamMember = async (userRecord, roleStr) => {
+    if (!roleStr) {
+      alert('Please select a responsibility.');
+      return;
+    }
     try {
       setAddingMember(true);
       await axios.post(`/api/events/${proposalId}/proposal-team`, {
@@ -97,6 +103,8 @@ const ProposalWorkspace = () => {
       });
       setSearchQuery('');
       setSearchResults([]);
+      setSelectedUserForAdd(null);
+      setSelectedResponsibility('');
       fetchTeam();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to add team member.');
@@ -431,45 +439,78 @@ const ProposalWorkspace = () => {
                 {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
                   <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                     <h3 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-wider">Assign Organizers</h3>
-                    <div className="relative">
-                      <input 
-                        type="text" 
-                        placeholder="Search by name, email, or department..." 
-                        className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                      />
-                      {isSearching && (
-                        <div className="absolute right-3 top-3 animate-spin h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
-                      )}
-                    </div>
+                    {selectedUserForAdd ? (
+                      <div className="mt-4 p-5 border border-indigo-100 bg-indigo-50/30 rounded-xl animate-fade-in">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">{selectedUserForAdd.name || selectedUserForAdd.fullName}</p>
+                            <p className="text-xs text-slate-500">{selectedUserForAdd.email}</p>
+                          </div>
+                          <button onClick={() => setSelectedUserForAdd(null)} className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm transition-colors">Change User</button>
+                        </div>
+                        
+                        <div className="mb-4">
+                          <label className="block text-xs font-bold text-slate-700 mb-2">Responsibility <span className="text-red-500">*</span></label>
+                          <select 
+                            className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                            value={selectedResponsibility}
+                            onChange={(e) => setSelectedResponsibility(e.target.value)}
+                          >
+                            <option value="">-- Select Responsibility --</option>
+                            <option value="Event Lead">Event Lead</option>
+                            <option value="Co-Lead">Co-Lead</option>
+                            <option value="Logistics">Logistics</option>
+                            <option value="Hospitality">Hospitality</option>
+                            <option value="Registration">Registration</option>
+                            <option value="Technical">Technical</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Design">Design</option>
+                            <option value="Photography">Photography</option>
+                            <option value="Documentation">Documentation</option>
+                            {(isFaculty || user?.roles?.includes('admin')) && (
+                               <option value="Faculty Coordinator">Faculty Coordinator</option>
+                            )}
+                          </select>
+                        </div>
+                        
+                        <button 
+                          onClick={() => handleAddTeamMember(selectedUserForAdd, selectedResponsibility)}
+                          disabled={!selectedResponsibility || addingMember}
+                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
+                        >
+                          {addingMember ? 'Adding...' : 'Add to Team'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input 
+                          type="text" 
+                          placeholder="Search by name, email, or department..." 
+                          className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        {isSearching && (
+                          <div className="absolute right-3 top-3 animate-spin h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
+                        )}
+                      </div>
+                    )}
                     
-                    {searchResults.length > 0 && (
-                      <div className="mt-2 border border-slate-100 rounded-lg divide-y divide-slate-100 bg-slate-50 overflow-hidden">
+                    {!selectedUserForAdd && searchResults.length > 0 && (
+                      <div className="mt-2 border border-slate-100 rounded-lg divide-y divide-slate-100 bg-slate-50 overflow-hidden max-h-60 overflow-y-auto">
                         {searchResults.map(u => (
                           <div key={u.id} className="p-3 flex items-center justify-between hover:bg-slate-100 transition-colors">
                             <div>
                               <p className="font-bold text-sm text-slate-800">{u.name || u.fullName}</p>
                               <p className="text-xs text-slate-500">{u.email} {u.department ? `• ${u.department}` : ''}</p>
                             </div>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => handleAddTeamMember(u, 'Student Organizer')}
-                                disabled={addingMember || team.some(t => t.user_id === u.id)}
-                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-                              >
-                                Add Student
-                              </button>
-                              {(isFaculty || user?.roles?.includes('admin')) && (
-                                <button 
-                                  onClick={() => handleAddTeamMember(u, 'Faculty Coordinator')}
-                                  disabled={addingMember || team.some(t => t.user_id === u.id)}
-                                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                  Add Faculty
-                                </button>
-                              )}
-                            </div>
+                            <button 
+                              onClick={() => setSelectedUserForAdd(u)}
+                              disabled={team.some(t => t.user_id === u.id)}
+                              className="px-4 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              {team.some(t => t.user_id === u.id) ? 'Already Added' : 'Select'}
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -506,17 +547,22 @@ const ProposalWorkspace = () => {
                   <div className="p-4 bg-white">
                      <h4 className="font-bold text-sm text-indigo-600 mb-3 uppercase tracking-wider">Student Organizers</h4>
                      <ul className="divide-y divide-slate-100">
-                       {team.filter(t => t.role === 'Student Organizer').length === 0 && (
+                       {team.filter(t => t.role !== 'Faculty Coordinator').length === 0 && (
                          <li className="py-2 text-xs text-slate-400 italic">No students assigned yet.</li>
                        )}
-                       {team.filter(t => t.role === 'Student Organizer').map(t => (
+                       {team.filter(t => t.role !== 'Faculty Coordinator').map(t => (
                          <li key={t.id} className="py-3 flex justify-between items-center">
                            <div>
-                             <p className="font-bold text-sm text-slate-800">{t.name}</p>
-                             <p className="text-xs text-slate-500">{t.email}</p>
+                             <p className="font-bold text-sm text-slate-800">
+                               {t.name}
+                               <span className="ml-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full border border-slate-200">
+                                 {t.role}
+                               </span>
+                             </p>
+                             <p className="text-xs text-slate-500 mt-0.5">{t.email}</p>
                            </div>
                            {(isCreator || isFaculty || user?.roles?.includes('admin')) && t.user_id !== event.proposed_by && t.user_id !== event.student_organizer_id && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                             <button onClick={() => handleRemoveTeamMember(t.id)} className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded transition-colors">Remove</button>
+                             <button onClick={() => handleRemoveTeamMember(t.id)} className="text-xs text-red-500 hover:text-red-700 font-bold px-3 py-1.5 bg-red-50 rounded-lg border border-red-100 transition-colors">Remove</button>
                            )}
                          </li>
                        ))}
