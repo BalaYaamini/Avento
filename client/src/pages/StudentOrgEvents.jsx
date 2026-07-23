@@ -610,132 +610,123 @@ const StudentOrgEvents = () => {
                             <td className="px-6 py-4 text-slate-600 text-xs">
                               {formatDate(evt.date)}
                             </td>
-                            <td className="px-6 py-4 text-right space-x-2 flex items-center justify-end">
-                              {(evt.status === 'approved' || evt.status === 'published' || evt.status === 'active') && (
-                                <button
-                                  onClick={() => openOrgModal(evt)}
-                                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
-                                >
-                                  Manage Organizers ({evt.organizersCount || 0})
-                                </button>
-                              )}
-                              {evt.status === 'draft' && (
-                                <>
-                                  <button
-                                    onClick={() => openEditModal(evt)}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg btn-secondary"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleUpdateStatus(evt._id || evt.id, 'pending_approval')}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
-                                  >
-                                    Submit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(evt._id || evt.id, evt.title)}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
-                                  >
-                                    Del
-                                  </button>
-                                  <button
-                                    onClick={() => setWithdrawEvent(evt)}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
-                                  >
-                                    Withdraw
-                                  </button>
-                                </>
-                              )}
-                              {['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) && (
-                                <>
+                            <td className="px-6 py-4 align-middle w-[280px]">
+                              <div className="flex flex-col items-center justify-center gap-2 w-full max-w-[240px] mx-auto p-3.5 rounded-2xl bg-white/40 border border-white/60 shadow-[0_2px_10px_rgba(0,0,0,0.03)] backdrop-blur-sm">
+                                
+                                {/* Row 1: Proposal Workspace & Draft Actions */}
+                                {evt.status !== 'draft' && (
                                   <Link
                                     to={`/proposals/${evt._id || evt.id}`}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
+                                    className="w-full px-4 py-2 text-[10px] font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300 flex items-center justify-center"
                                   >
-                                    Workspace
+                                    Proposal Workspace
                                   </Link>
-                                  <button
-                                    onClick={() => setWithdrawEvent(evt)}
-                                    className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
-                                  >
-                                    Withdraw
-                                  </button>
-                                </>
-                              )}
-                              {['approved', 'active', 'published', 'completed'].includes(evt.status) && (
-                                <Link
-                                  to={`/proposals/${evt._id || evt.id}`}
-                                  className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
-                                >
-                                  Workspace
-                                </Link>
-                              )}
-                              {evt.status === 'rejected' && (
-                                <Link
-                                  to={`/proposals/${evt._id || evt.id}`}
-                                  className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
-                                >
-                                  Workspace
-                                </Link>
-                              )}
-                              {evt.status === 'rejected' && (
-                                <button
-                                  onClick={() => openEditModal(evt)}
-                                  className="px-4 py-1.5 text-[10px] font-bold rounded-lg btn-secondary"
-                                >
-                                  Edit
-                                </button>
-                              )}
-                              {evt.status === 'approved' && (
-                                 <>
-                                   <button
-                                     onClick={() => handlePublishEvent(evt._id || evt.id)}
-                                     className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300"
-                                   >
-                                     Publish Event
-                                   </button>
-                                   <button
-                                     onClick={() => setWithdrawEvent(evt)}
-                                     className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
-                                   >
-                                     Withdraw
-                                   </button>
-                                 </>
-                               )}
-                               {(evt.status === 'approved' || evt.status === 'published' || evt.status === 'active' || evt.status === 'completed') && (
-                                 <>
-                                   {new Date(evt.date) >= new Date() && (
-                                     <button
-                                       onClick={() => {
-                                         setScanFeedback(null);
-                                         setScannerModalEvent(evt);
-                                       }}
-                                       className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300"
-                                     >
-                                       Scan QR
-                                     </button>
-                                   )}
-                                   <Link
-                                       to={`/workspace/${evt._id || evt.id}`}
-                                       className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300"
-                                     >
-                                       Workspace
-                                     </Link>
-                                 </>
-                               )}
-                               {evt.status === 'published' && (
-                                 <span className="text-[12px] font-medium text-[#16a34a] opacity-80 px-2">Published</span>
-                               )}
-                               {evt.status === 'active' && (
-                                 <span className="text-[12px] font-medium text-[#16a34a] opacity-80 px-2">Active</span>
-                               )}
-                               {evt.status === 'completed' && (
-                                 <span className="text-[12px] font-medium text-slate-500 opacity-80 px-2">Completed</span>
-                               )}
-                               {evt.status === 'withdrawn' && (
-                                 <span className="text-xs text-slate-600 font-medium italic px-2">Withdrawn</span>
-                               )}
+                                )}
+
+                                {evt.status === 'draft' && (
+                                  <div className="grid grid-cols-2 gap-2 w-full">
+                                    <button
+                                      onClick={() => openEditModal(evt)}
+                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateStatus(evt._id || evt.id, 'pending_approval')}
+                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
+                                    >
+                                      Submit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDelete(evt._id || evt.id, evt.title)}
+                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                                    >
+                                      Del
+                                    </button>
+                                    <button
+                                      onClick={() => setWithdrawEvent(evt)}
+                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                                    >
+                                      Withdraw
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Row 2: Organizer Workspace & Scan QR */}
+                                {['approved', 'published', 'active', 'completed'].includes(evt.status) && (
+                                  <div className="flex gap-2 w-full">
+                                    <Link
+                                      to={`/workspace/${evt._id || evt.id}`}
+                                      className="flex-1 px-2 py-2 text-[10px] font-bold rounded-xl bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/20 transition-all duration-300 flex items-center justify-center text-center leading-tight"
+                                    >
+                                      Organizer Workspace
+                                    </Link>
+                                    {new Date(evt.date) >= new Date() && (
+                                      <button
+                                        onClick={() => {
+                                          setScanFeedback(null);
+                                          setScannerModalEvent(evt);
+                                        }}
+                                        className="flex-1 px-2 py-2 text-[10px] font-bold rounded-xl bg-teal-500/10 text-teal-600 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300 flex items-center justify-center"
+                                      >
+                                        Scan QR
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Row 3: Organizers Info Button & Additional Management */}
+                                {['approved', 'published', 'active', 'pending_approval', 'under_review', 'needs_revision', 'rejected'].includes(evt.status) && (
+                                  <div className="flex flex-col gap-2 w-full">
+                                    {['approved', 'published', 'active'].includes(evt.status) && (
+                                      <button
+                                        onClick={() => openOrgModal(evt)}
+                                        className="w-full px-3 py-1.5 text-[9px] font-bold rounded-lg border border-slate-300/60 text-slate-500 hover:bg-slate-50/50 hover:text-slate-700 transition-all duration-300 flex items-center justify-center uppercase tracking-widest"
+                                      >
+                                        Organizers ({evt.organizersCount || 0})
+                                      </button>
+                                    )}
+                                    
+                                    <div className="grid grid-cols-2 gap-2 w-full">
+                                      {evt.status === 'rejected' && (
+                                        <button
+                                          onClick={() => openEditModal(evt)}
+                                          className="w-full px-2 py-1.5 text-[9px] font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
+                                        >
+                                          Edit
+                                        </button>
+                                      )}
+                                      {evt.status === 'approved' && (
+                                        <button
+                                          onClick={() => handlePublishEvent(evt._id || evt.id)}
+                                          className="w-full px-2 py-1.5 text-[9px] font-bold rounded-lg bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300"
+                                        >
+                                          Publish
+                                        </button>
+                                      )}
+                                      {['pending_approval', 'under_review', 'needs_revision', 'approved'].includes(evt.status) && (
+                                        <button
+                                          onClick={() => setWithdrawEvent(evt)}
+                                          className="w-full px-2 py-1.5 text-[9px] font-bold rounded-lg bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                                        >
+                                          Withdraw
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Row 4: Status Badges Aligned at Bottom */}
+                                {['published', 'active', 'completed', 'withdrawn'].includes(evt.status) && (
+                                  <div className="w-full pt-2 mt-1 border-t border-slate-200/50 flex items-center justify-center">
+                                    {evt.status === 'published' && <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full uppercase tracking-widest">Published</span>}
+                                    {evt.status === 'active' && <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full uppercase tracking-widest">Active</span>}
+                                    {evt.status === 'completed' && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full uppercase tracking-widest">Completed</span>}
+                                    {evt.status === 'withdrawn' && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full uppercase tracking-widest italic">Withdrawn</span>}
+                                  </div>
+                                )}
+                                
+                              </div>
                             </td>
                           </tr>
                         ))}
