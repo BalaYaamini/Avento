@@ -127,7 +127,7 @@ const Workspace = () => {
 
   const hasFullAccess = () => {
     if (!event) return false;
-    return user.roles.includes('admin') || user.id === event.faculty_id || user.id === event.student_organizer_id;
+    return user.roles.includes('admin') || user.id === event.faculty_id || user.id === event.student_organizer_id || user.id === event.proposed_by;
   };
 
   // Stats

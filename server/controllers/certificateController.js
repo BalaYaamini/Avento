@@ -15,6 +15,22 @@ const generateCertId = () => {
   return `CERT-${year}-${random}`;
 };
 
+// Helper to fetch names
+const fetchOrganizerNames = async (event) => {
+  let facultyName = '';
+  let organizerName = '';
+  if (event.faculty_id) {
+    const { data: fac } = await supabase.from('profiles').select('name').eq('id', event.faculty_id).maybeSingle();
+    if (fac) facultyName = fac.name;
+  }
+  const orgId = event.student_organizer_id || event.organizer_id || event.proposed_by;
+  if (orgId) {
+    const { data: org } = await supabase.from('profiles').select('name').eq('id', orgId).maybeSingle();
+    if (org) organizerName = org.name;
+  }
+  return { facultyName, organizerName };
+};
+
 // 1. Upload Template
 exports.uploadTemplate = async (req, res) => {
   try {
@@ -63,19 +79,23 @@ exports.uploadTemplate = async (req, res) => {
       return res.status(500).json({ message: 'Error uploading to storage.', error: uploadErr.message });
     }
 
-    const { data: urlData } = supabase.storage
+    const { data: publicUrlData } = supabase.storage
       .from('certificates')
       .getPublicUrl(fileName);
 
-    const templatePath = urlData.publicUrl;
+    // Append timestamp to bust browser and CDN caches so the user sees the latest position
+    const templatePath = `${publicUrlData.publicUrl}?t=${Date.now()}`;
     
     // Default config (A4 Landscape roughly: 842 x 595)
     const defaultConfig = {
       STUDENT_NAME: { x: 421, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       EVENT_NAME: { x: 421, y: 380, fontSize: 24, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       EVENT_DATE: { x: 421, y: 420, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
+      EVENT_VENUE: { x: 421, y: 460, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       ISSUE_DATE: { x: 150, y: 500, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
-      CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000' }
+      CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
+      ORGANIZER_NAME: { x: 150, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
+      FACULTY_COORDINATOR: { x: 692, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'right', color: '#000000' }
     };
 
     const { error: updateErr } = await supabase
@@ -161,7 +181,7 @@ exports.saveTemplateConfig = async (req, res) => {
 };
 
 // Internal function to generate PDF
-const createPdfCertificate = async (event, student, certId) => {
+const createPdfCertificate = async (event, student, certId, facultyName = '', organizerName = '') => {
   const templatePathStr = event.certificate_template;
   let fileBytes;
   let ext;
@@ -225,8 +245,11 @@ const createPdfCertificate = async (event, student, certId) => {
       STUDENT_NAME: { x: width/2, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       EVENT_NAME: { x: width/2, y: 380, fontSize: 24, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       EVENT_DATE: { x: width/2, y: 420, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
+      EVENT_VENUE: { x: width/2, y: 460, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       ISSUE_DATE: { x: 150, y: 500, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
-      CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000' }
+      CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
+      ORGANIZER_NAME: { x: 150, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
+      FACULTY_COORDINATOR: { x: width - 150, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'right', color: '#000000' }
     };
   }
 
@@ -244,11 +267,11 @@ const createPdfCertificate = async (event, student, certId) => {
     const fieldConfig = config[fieldKey];
     if (!text || !fieldConfig) return;
     
-    const size = fieldConfig.fontSize || 24;
+    const size = Number(fieldConfig.fontSize) || 24;
     const usedFont = fonts[fieldConfig.fontFamily] || fonts.Helvetica;
     const textWidth = usedFont.widthOfTextAtSize(text, size);
     
-    let x = fieldConfig.x;
+    let x = Number(fieldConfig.x) || 0;
     if (fieldConfig.align === 'center') {
       x = x - (textWidth / 2);
     } else if (fieldConfig.align === 'right') {
@@ -256,7 +279,8 @@ const createPdfCertificate = async (event, student, certId) => {
     }
     
     // Invert Y coordinate because pdf-lib is bottom-left (0,0) but visual editor is top-left
-    const y = height - fieldConfig.y;
+    // Adjust by `size` because HTML `top` is the top edge, but pdf-lib `y` is the baseline
+    const y = height - Number(fieldConfig.y) - size;
     
     const colorArr = hexToRgb(fieldConfig.color);
     
@@ -272,6 +296,9 @@ const createPdfCertificate = async (event, student, certId) => {
   drawText(student.name, 'STUDENT_NAME');
   drawText(event.title, 'EVENT_NAME');
   drawText(new Date(event.date).toLocaleDateString(), 'EVENT_DATE');
+  drawText(event.venue || '', 'EVENT_VENUE');
+  drawText(facultyName, 'FACULTY_COORDINATOR');
+  drawText(organizerName, 'ORGANIZER_NAME');
   drawText(new Date().toLocaleDateString(), 'ISSUE_DATE');
   drawText(certId, 'CERTIFICATE_ID');
 
@@ -329,6 +356,7 @@ exports.generateAllCertificates = async (req, res) => {
       .in('id', eligibleUserIds);
 
     let generatedCount = 0;
+    const { facultyName, organizerName } = await fetchOrganizerNames(event);
 
     for (const profile of profiles) {
       // Check if already generated
@@ -341,7 +369,7 @@ exports.generateAllCertificates = async (req, res) => {
 
       if (!existing) {
         const certId = generateCertId();
-        const certUrl = await createPdfCertificate(event, profile, certId);
+        const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
 
         await supabase.from('certificates').insert({
           event_id: eventId,
@@ -420,8 +448,9 @@ exports.generateSingleCertificate = async (req, res) => {
     const { data: profile } = await supabase.from('profiles').select('id, name').eq('id', userId).single();
     if (!profile) return res.status(404).json({ message: 'User not found.' });
 
+    const { facultyName, organizerName } = await fetchOrganizerNames(event);
     const certId = generateCertId();
-    const certUrl = await createPdfCertificate(event, profile, certId);
+    const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
 
     const { data: newCert, error: insertErr } = await supabase.from('certificates').insert({
       event_id: eventId,
@@ -476,9 +505,10 @@ exports.generateTestCertificate = async (req, res) => {
     const { data: profile } = await supabase.from('profiles').select('id, name').eq('id', userId).single();
     if (!profile) return res.status(404).json({ message: 'User not found.' });
 
+    const { facultyName, organizerName } = await fetchOrganizerNames(event);
     // Use a dummy ID for the test certificate
     const certId = 'CERT-TEST-PREVIEW';
-    const certUrl = await createPdfCertificate(event, profile, certId);
+    const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
 
     // Return the URL directly without saving to the DB
     res.json({ message: 'Test certificate generated successfully.', certificate_url: certUrl });

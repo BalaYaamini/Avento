@@ -6,8 +6,11 @@ const defaultFields = {
   STUDENT_NAME: { x: 421, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Student Name' },
   EVENT_NAME: { x: 421, y: 380, fontSize: 24, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Event Name' },
   EVENT_DATE: { x: 421, y: 420, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Event Date' },
+  EVENT_VENUE: { x: 421, y: 460, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Event Venue' },
   ISSUE_DATE: { x: 150, y: 500, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Issue Date' },
-  CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Certificate ID' }
+  CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Certificate ID' },
+  ORGANIZER_NAME: { x: 150, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Organizer Name' },
+  FACULTY_COORDINATOR: { x: 692, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'right', color: '#000000', label: 'Faculty Coordinator' }
 };
 
 const CertificateManager = ({ eventId, eventStatus }) => {

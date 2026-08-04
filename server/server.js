@@ -13,6 +13,10 @@ dotenv.config();
 const connectDB = require('./config/db');
 connectDB();
 
+// Initialize Background Jobs
+const startEventCompletionJob = require('./jobs/eventCompletionJob');
+startEventCompletionJob();
+
 const app = express();
 
 // Global Middlewares
