@@ -208,110 +208,126 @@ const StudentRegistrations = () => {
                 <Link to="/" className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white">Explore Events</Link>
               </div>
             ) : (
-              /* Table list of bookings */
-              <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
-                        <th className="px-6 py-4">Event Details</th>
-                        <th className="px-6 py-4">Category</th>
-                        <th className="px-6 py-4">Date & Time</th>
-                        <th className="px-6 py-4">Venue</th>
-                        <th className="px-6 py-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/30 text-sm font-body">
-                      {registrations.map((reg, i) => {
-                        const evt = reg.eventId;
-                        if (!evt) return null; // safety if event was deleted
+              /* Registrations Cards Container */
+              <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
+                {registrations.map((reg, i) => {
+                  const evt = reg.eventId;
+                  if (!evt) return null; // safety if event was deleted
 
-                        return (
-                          <tr 
-                            key={reg.id} 
-                            className="hover:bg-white/20 transition-all duration-300 animate-fade-in-up"
-                            style={{ animationDelay: `${i * 50 + 150}ms` }}
-                          >
-                            <td className="px-6 py-5">
-                              <div className="flex items-center gap-3">
-                                <img
-                                  src={evt.imageUrl}
-                                  alt={evt.title}
-                                  className="h-10 w-16 rounded-lg object-cover bg-white/50 flex-shrink-0"
-                                />
-                                <div>
-                                  <div className="font-display font-bold text-slate-800 line-clamp-1">{evt.title}</div>
-                                  <div className="text-[10px] text-slate-600 mt-0.5 font-medium">Booked on {new Date(reg.registrationDate).toLocaleDateString()}</div>
+                  return (
+                    <div 
+                      key={reg.id} 
+                      className="glass-panel p-6 rounded-[2rem] shadow-sm border border-slate-200/60 hover:shadow-md transition-all duration-300 animate-fade-in-up flex flex-col"
+                      style={{ animationDelay: `${i * 40 + 150}ms` }}
+                    >
+                      {/* Top Section: Image, Details, and Status */}
+                      <div className="flex flex-col sm:flex-row gap-6 items-start">
+                        {/* Event Image */}
+                        <img
+                          src={evt.image_url || evt.imageUrl || ''}
+                          alt={evt.title}
+                          className="h-24 w-36 sm:h-28 sm:w-44 rounded-2xl object-cover bg-slate-50 shrink-0 shadow-sm border border-slate-100"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22400%22%20height%3D%22300%22%20viewBox%3D%220%200%20400%20300%22%3E%3Crect%20width%3D%22400%22%20height%3D%22300%22%20fill%3D%22%23f8fafc%22%2F%3E%3Cpath%20d%3D%22M150%20200%20L200%20140%20L250%20200%20Z%22%20fill%3D%22%23e2e8f0%22%2F%3E%3Ccircle%20cx%3D%22160%22%20cy%3D%22120%22%20r%3D%2215%22%20fill%3D%22%23e2e8f0%22%2F%3E%3Ctext%20x%3D%22200%22%20y%3D%22240%22%20font-family%3D%22sans-serif%22%20font-size%3D%2218%22%20font-weight%3D%22600%22%20fill%3D%22%2394a3b8%22%20text-anchor%3D%22middle%22%3ENo%20Image%3C%2Ftext%3E%3C%2Fsvg%3E';
+                          }}
+                        />
+                        
+                        {/* Event Details */}
+                        <div className="flex-1 min-w-0 w-full">
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                            <div>
+                              <h3 className="font-display font-bold text-xl text-slate-800 line-clamp-1">{evt.title}</h3>
+                              
+                              {/* Venue and Date */}
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                  </svg>
+                                  {evt.venue}
+                                </div>
+                                <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                  </svg>
+                                  {formatDate(evt.date)}
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-6 py-5">
-                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-white/40 text-slate-600 border border-slate-300/30 uppercase tracking-wider">
+                            </div>
+                            
+                            {/* Status Badge */}
+                            <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                              <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/8 text-emerald-500 border-emerald-500/15 flex items-center gap-1.5">
+                                ✓ Registered
+                              </span>
+                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider mt-1">
                                 {evt.category}
                               </span>
-                            </td>
-                            <td className="px-6 py-5 font-medium text-slate-700 text-xs">
-                              {formatDate(evt.date)}
-                            </td>
-                            <td className="px-6 py-5 text-slate-600 text-xs">
-                              {evt.venue}
-                            </td>
-                            <td className="px-6 py-5 text-right">
-                              <div className="flex justify-end gap-2">
-                                {evt.status === 'completed' && (
-                                  feedbackStatuses[evt.id || evt._id] ? (
-                                    <span className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center">
-                                      ✓ Feedback Submitted
-                                    </span>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        setFeedbackEvent(evt);
-                                        setIsFeedbackModalOpen(true);
-                                      }}
-                                      className="px-4 py-1.5 text-xs font-bold rounded-lg bg-violet-500/10 text-violet-500 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
-                                    >
-                                      Submit Feedback
-                                    </button>
-                                  )
-                                )}
-                                {new Date(evt.date) < new Date() ? (
-                                  <span className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
-                                    Event Completed – QR Pass is no longer available.
-                                  </span>
-                                ) : (
-                                  <button
-                                    onClick={() => setQrModalData(reg)}
-                                    className="px-4 py-1.5 text-xs font-bold rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
-                                  >
-                                    View Pass
-                                  </button>
-                                )}
-                                {reg.teamId && (
-                                  <button
-                                    onClick={() => setTeamModalData(reg)}
-                                    className="px-4 py-1.5 text-xs font-bold rounded-lg bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
-                                  >
-                                    View Team
-                                  </button>
-                                )}
-                                {evt.status !== 'completed' && (
-                                  <button
-                                    onClick={() => openConfirmCancel(reg)}
-                                    disabled={cancellingId === reg.id}
-                                    className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300 disabled:opacity-50"
-                                  >
-                                    {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Seat'}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            </div>
+                          </div>
+                          
+                          <div className="mt-4 text-xs text-slate-500 font-medium italic">
+                            Booked on {new Date(reg.registrationDate).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div className="h-px bg-slate-200/60 my-5 w-full" />
+
+                      {/* Bottom Section: Actions */}
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        {evt.status === 'completed' && (
+                          feedbackStatuses[evt.id || evt._id] ? (
+                            <span className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center">
+                              ✓ Feedback Submitted
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setFeedbackEvent(evt);
+                                setIsFeedbackModalOpen(true);
+                              }}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                            >
+                              Submit Feedback
+                            </button>
+                          )
+                        )}
+                        {new Date(evt.date) < new Date() ? (
+                          <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
+                            Event Completed – Pass unavailable.
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setQrModalData(reg)}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
+                          >
+                            View Pass
+                          </button>
+                        )}
+                        {reg.teamId && (
+                          <button
+                            onClick={() => setTeamModalData(reg)}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
+                          >
+                            View Team
+                          </button>
+                        )}
+                        {evt.status !== 'completed' && (
+                          <button
+                            onClick={() => openConfirmCancel(reg)}
+                            disabled={cancellingId === reg.id}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                          >
+                            {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Seat'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
@@ -339,73 +355,88 @@ const StudentRegistrations = () => {
                 <p className="text-sm font-body text-slate-600 max-w-sm mx-auto mb-6">You have not submitted any join requests yet. Browse the homepage to request to join organizing teams.</p>
               </div>
             ) : (
-              <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
-                        <th className="px-6 py-4">Event Title</th>
-                        <th className="px-6 py-4">Requested Team</th>
-                        <th className="px-6 py-4">Status</th>
-                        <th className="px-6 py-4">Request Date</th>
-                        <th className="px-6 py-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/30 text-sm font-body">
-                      {requests.map((req, i) => (
-                        <tr 
-                          key={req.id} 
-                          className="hover:bg-white/20 transition-all duration-300 animate-fade-in-up"
-                          style={{ animationDelay: `${i * 50 + 150}ms` }}
-                        >
-                          <td className="px-6 py-5">
-                            <div className="font-display font-bold text-slate-800 line-clamp-1">{req.eventTitle}</div>
-                            <div className="text-[10px] text-slate-600 mt-0.5 font-medium">{req.eventVenue} &bull; {formatDate(req.eventDate)}</div>
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-white/40 text-slate-600 border border-slate-300/30 uppercase tracking-wider">
-                              {req.category}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-lg border ${
+              /* Organizer Requests Cards Container */
+              <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
+                {requests.map((req, i) => (
+                  <div 
+                    key={req.id} 
+                    className="glass-panel p-6 rounded-[2rem] shadow-sm border border-slate-200/60 hover:shadow-md transition-all duration-300 animate-fade-in-up flex flex-col"
+                    style={{ animationDelay: `${i * 40 + 150}ms` }}
+                  >
+                    {/* Top Section */}
+                    <div className="flex flex-col sm:flex-row gap-6 items-start">
+                      {/* Details */}
+                      <div className="flex-1 min-w-0 w-full">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                          <div>
+                            <h3 className="font-display font-bold text-xl text-slate-800 line-clamp-1">{req.eventTitle}</h3>
+                            
+                            {/* Venue and Date */}
+                            <div className="mt-3 space-y-2">
+                              <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                </svg>
+                                {req.eventVenue}
+                              </div>
+                              <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                </svg>
+                                {formatDate(req.eventDate)}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Status Badge */}
+                          <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                            <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border ${
                               req.status === 'approved'
-                                ? 'bg-emerald-500/8 text-emerald-400 border-emerald-500/15'
+                                ? 'bg-emerald-500/8 text-emerald-500 border-emerald-500/15'
                                 : req.status === 'pending'
-                                  ? 'bg-amber-500/8 text-amber-400 border-amber-500/15'
+                                  ? 'bg-amber-500/8 text-amber-500 border-amber-500/15'
                                   : req.status === 'rejected'
-                                    ? 'bg-red-500/8 text-red-400 border-red-500/15'
-                                    : 'bg-slate-500/8 text-slate-400 border-slate-500/15' // withdrawn
+                                    ? 'bg-red-500/8 text-red-500 border-red-500/15'
+                                    : 'bg-slate-100 text-slate-500 border-slate-200 italic' // withdrawn
                             }`}>
                               {req.status}
                             </span>
-                          </td>
-                          <td className="px-6 py-5 text-slate-600 text-xs">
-                            {new Date(req.requestedAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric'
-                            })}
-                          </td>
-                          <td className="px-6 py-5 text-right">
-                            {req.status === 'pending' && (
-                              <button
-                                onClick={() => setWithdrawRequestObj(req)}
-                                disabled={withdrawingId === req.id}
-                                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300 disabled:opacity-50"
-                              >
-                                {withdrawingId === req.id ? 'Withdrawing...' : 'Withdraw Request'}
-                              </button>
-                            )}
-                            {req.status !== 'pending' && (
-                              <span className="text-xs text-slate-600 font-medium italic">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider mt-1">
+                              {req.category}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 text-xs text-slate-500 font-medium italic">
+                          Requested on {new Date(req.requestedAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-px bg-slate-200/60 my-5 w-full" />
+
+                    {/* Bottom Section: Actions */}
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      {req.status === 'pending' && (
+                        <button
+                          onClick={() => setWithdrawRequestObj(req)}
+                          disabled={withdrawingId === req.id}
+                          className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                        >
+                          {withdrawingId === req.id ? 'Withdrawing...' : 'Withdraw Request'}
+                        </button>
+                      )}
+                      {req.status !== 'pending' && (
+                        <span className="text-xs text-slate-400 font-medium italic">No actions available</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </>

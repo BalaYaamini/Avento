@@ -552,187 +552,182 @@ const StudentOrgEvents = () => {
                 <p className="text-sm font-body text-slate-600">There are no proposals with the status "{activeTab.replace(/_/g, ' ')}".</p>
               </div>
             ) : (
-              /* Event Table */
-              <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-fuchsia-500/3 mb-10">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
-                        <th className="px-6 py-4">Event Details</th>
-                        <th className="px-6 py-4">Status & Remarks</th>
-                        <th className="px-6 py-4">Date & Time</th>
-                        <th className="px-6 py-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/30 text-sm font-body">
-                      {myProposals
-                        .filter(e => {
-                          if (activeTab === 'all') return e.status !== 'withdrawn';
-                          return e.status === activeTab;
-                        })
-                        .map((evt, i) => (
-                          <tr 
-                            key={evt._id || evt.id} 
-                            className={`hover:bg-white/20 transition-all duration-300 animate-fade-in-up`}
-                            style={{ animationDelay: `${i * 40 + 150}ms` }}
-                          >
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <img src={evt.image_url || evt.imageUrl} alt="" className="h-10 w-16 rounded-lg object-cover bg-white/50" />
-                                <div>
-                                  <div className="font-display font-bold text-slate-800 line-clamp-1">{evt.title}</div>
-                                  <div className="text-[10px] text-slate-600 mt-0.5 font-medium">{evt.venue}</div>
+              /* Event Cards Container */
+              <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
+                {myProposals
+                  .filter(e => {
+                    if (activeTab === 'all') return e.status !== 'withdrawn';
+                    return e.status === activeTab;
+                  })
+                  .map((evt, i) => (
+                    <div 
+                      key={evt._id || evt.id} 
+                      className="glass-panel p-6 rounded-[2rem] shadow-sm border border-slate-200/60 hover:shadow-md transition-all duration-300 animate-fade-in-up flex flex-col"
+                      style={{ animationDelay: `${i * 40 + 150}ms` }}
+                    >
+                      {/* Top Section: Image, Details, and Status */}
+                      <div className="flex flex-col sm:flex-row gap-6 items-start">
+                        {/* Event Image */}
+                        <img 
+                          src={evt.image_url || evt.imageUrl} 
+                          alt="" 
+                          className="h-24 w-36 sm:h-28 sm:w-44 rounded-2xl object-cover bg-white/50 shrink-0 shadow-sm" 
+                        />
+                        
+                        {/* Event Details */}
+                        <div className="flex-1 min-w-0 w-full">
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                            <div>
+                              <h3 className="font-display font-bold text-xl text-slate-800 line-clamp-1">{evt.title}</h3>
+                              
+                              {/* Venue and Date */}
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                  </svg>
+                                  {evt.venue}
+                                </div>
+                                <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                  </svg>
+                                  {formatDate(evt.date)}
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col items-start gap-1">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-lg border ${
-                                  evt.status === 'active' || evt.status === 'published'
-                                    ? 'bg-emerald-500/8 text-emerald-400 border-emerald-500/15' 
-                                    : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
-                                      ? 'bg-amber-500/8 text-amber-400 border-amber-500/15'
-                                      : evt.status === 'approved'
-                                        ? 'bg-sky-500/8 text-sky-400 border-sky-500/15'
-                                        : evt.status === 'rejected'
-                                          ? 'bg-red-500/8 text-red-400 border-red-500/15'
-                                          : 'bg-blue-500/8 text-blue-400 border-blue-500/15' // draft
-                                }`}>
-                                  {(evt.status || 'draft').replace(/_/g, ' ')}
-                                </span>
-                                {evt.approval_remarks && (evt.status === 'rejected') && (
-                                  <span className="text-[10px] text-red-400 font-semibold max-w-[200px] line-clamp-2">
-                                    Remarks: {evt.approval_remarks}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-slate-600 text-xs">
-                              {formatDate(evt.date)}
-                            </td>
-                            <td className="px-6 py-4 align-middle w-[280px]">
-                              <div className="flex flex-col items-center justify-center gap-2 w-full max-w-[240px] mx-auto p-3.5 rounded-2xl bg-white/40 border border-white/60 shadow-[0_2px_10px_rgba(0,0,0,0.03)] backdrop-blur-sm">
-                                
-                                {/* Row 1: Proposal Workspace & Draft Actions */}
-                                {evt.status !== 'draft' && (
-                                  <Link
-                                    to={`/proposals/${evt._id || evt.id}`}
-                                    className="w-full px-4 py-2 text-[10px] font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300 flex items-center justify-center"
-                                  >
-                                    Proposal Workspace
-                                  </Link>
-                                )}
+                            </div>
+                            
+                            {/* Status Badge */}
+                            <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                              <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border ${
+                                evt.status === 'active' || evt.status === 'published'
+                                  ? 'bg-emerald-500/8 text-emerald-500 border-emerald-500/15' 
+                                  : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
+                                    ? 'bg-amber-500/8 text-amber-500 border-amber-500/15'
+                                    : evt.status === 'approved'
+                                      ? 'bg-sky-500/8 text-sky-500 border-sky-500/15'
+                                      : evt.status === 'rejected'
+                                        ? 'bg-red-500/8 text-red-500 border-red-500/15'
+                                        : evt.status === 'completed'
+                                          ? 'bg-slate-100 text-slate-500 border-slate-200'
+                                          : evt.status === 'withdrawn'
+                                            ? 'bg-slate-100 text-slate-500 border-slate-200 italic'
+                                            : 'bg-blue-500/8 text-blue-500 border-blue-500/15' // draft
+                              }`}>
+                                {(evt.status || 'draft').replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Remarks for rejected */}
+                          {evt.approval_remarks && (evt.status === 'rejected') && (
+                            <div className="mt-4 text-xs text-red-500 bg-red-50/50 p-3 rounded-xl border border-red-100">
+                              <span className="font-bold">Remarks:</span> {evt.approval_remarks}
+                            </div>
+                          )}
+                        </div>
+                      </div>
 
-                                {evt.status === 'draft' && (
-                                  <div className="grid grid-cols-2 gap-2 w-full">
-                                    <button
-                                      onClick={() => openEditModal(evt)}
-                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={() => handleUpdateStatus(evt._id || evt.id, 'pending_approval')}
-                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
-                                    >
-                                      Submit
-                                    </button>
-                                    <button
-                                      onClick={() => handleDelete(evt._id || evt.id, evt.title)}
-                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
-                                    >
-                                      Del
-                                    </button>
-                                    <button
-                                      onClick={() => setWithdrawEvent(evt)}
-                                      className="w-full px-2 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
-                                    >
-                                      Withdraw
-                                    </button>
-                                  </div>
-                                )}
+                      {/* Divider */}
+                      <div className="h-px bg-slate-200/60 my-5 w-full" />
 
-                                {/* Row 2: Organizer Workspace & Scan QR */}
-                                {['approved', 'published', 'active', 'completed'].includes(evt.status) && (
-                                  <div className="flex gap-2 w-full">
-                                    <Link
-                                      to={`/workspace/${evt._id || evt.id}`}
-                                      className="flex-1 px-2 py-2 text-[10px] font-bold rounded-xl bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/20 transition-all duration-300 flex items-center justify-center text-center leading-tight"
-                                    >
-                                      Organizer Workspace
-                                    </Link>
-                                    {new Date(evt.date) >= new Date() && (
-                                      <button
-                                        onClick={() => {
-                                          setScanFeedback(null);
-                                          setScannerModalEvent(evt);
-                                        }}
-                                        className="flex-1 px-2 py-2 text-[10px] font-bold rounded-xl bg-teal-500/10 text-teal-600 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300 flex items-center justify-center"
-                                      >
-                                        Scan QR
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
+                      {/* Bottom Section: Actions */}
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        {evt.status !== 'draft' && (
+                          <Link
+                            to={`/proposals/${evt._id || evt.id}`}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300"
+                          >
+                            Proposal Workspace
+                          </Link>
+                        )}
 
-                                {/* Row 3: Organizers Info Button & Additional Management */}
-                                {['approved', 'published', 'active', 'pending_approval', 'under_review', 'needs_revision', 'rejected'].includes(evt.status) && (
-                                  <div className="flex flex-col gap-2 w-full">
-                                    {['approved', 'published', 'active'].includes(evt.status) && (
-                                      <button
-                                        onClick={() => openOrgModal(evt)}
-                                        className="w-full px-3 py-1.5 text-[9px] font-bold rounded-lg border border-slate-300/60 text-slate-500 hover:bg-slate-50/50 hover:text-slate-700 transition-all duration-300 flex items-center justify-center uppercase tracking-widest"
-                                      >
-                                        Organizers ({evt.organizersCount || 0})
-                                      </button>
-                                    )}
-                                    
-                                    <div className="grid grid-cols-2 gap-2 w-full">
-                                      {evt.status === 'rejected' && (
-                                        <button
-                                          onClick={() => openEditModal(evt)}
-                                          className="w-full px-2 py-1.5 text-[9px] font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
-                                        >
-                                          Edit
-                                        </button>
-                                      )}
-                                      {evt.status === 'approved' && (
-                                        <button
-                                          onClick={() => handlePublishEvent(evt._id || evt.id)}
-                                          className="w-full px-2 py-1.5 text-[9px] font-bold rounded-lg bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300"
-                                        >
-                                          Publish
-                                        </button>
-                                      )}
-                                      {['pending_approval', 'under_review', 'needs_revision', 'approved'].includes(evt.status) && (
-                                        <button
-                                          onClick={() => setWithdrawEvent(evt)}
-                                          className="w-full px-2 py-1.5 text-[9px] font-bold rounded-lg bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
-                                        >
-                                          Withdraw
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
+                        {evt.status === 'draft' && (
+                          <>
+                            <button
+                              onClick={() => openEditModal(evt)}
+                              className="px-5 py-2 text-xs font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleUpdateStatus(evt._id || evt.id, 'pending_approval')}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
+                            >
+                              Submit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(evt._id || evt.id, evt.title)}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                            >
+                              Del
+                            </button>
+                            <button
+                              onClick={() => setWithdrawEvent(evt)}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                            >
+                              Withdraw
+                            </button>
+                          </>
+                        )}
 
-                                {/* Row 4: Status Badges Aligned at Bottom */}
-                                {['published', 'active', 'completed', 'withdrawn'].includes(evt.status) && (
-                                  <div className="w-full pt-2 mt-1 border-t border-slate-200/50 flex items-center justify-center">
-                                    {evt.status === 'published' && <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full uppercase tracking-widest">Published</span>}
-                                    {evt.status === 'active' && <span className="text-[9px] font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full uppercase tracking-widest">Active</span>}
-                                    {evt.status === 'completed' && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full uppercase tracking-widest">Completed</span>}
-                                    {evt.status === 'withdrawn' && <span className="text-[9px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full uppercase tracking-widest italic">Withdrawn</span>}
-                                  </div>
-                                )}
-                                
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+                        {['approved', 'published', 'active', 'completed'].includes(evt.status) && (
+                          <Link
+                            to={`/workspace/${evt._id || evt.id}`}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/20 transition-all duration-300"
+                          >
+                            Organizer Workspace
+                          </Link>
+                        )}
+                        
+                        {['approved', 'published', 'active', 'completed'].includes(evt.status) && new Date(evt.date) >= new Date() && (
+                          <button
+                            onClick={() => {
+                              setScanFeedback(null);
+                              setScannerModalEvent(evt);
+                            }}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-teal-500/10 text-teal-600 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300"
+                          >
+                            Scan QR
+                          </button>
+                        )}
+
+                        {['approved', 'published', 'active'].includes(evt.status) && (
+                          <button
+                            onClick={() => openOrgModal(evt)}
+                            className="px-5 py-2 text-xs font-bold rounded-xl border border-slate-300/60 text-slate-500 hover:bg-slate-50/50 hover:text-slate-700 transition-all duration-300"
+                          >
+                            Organizers ({evt.organizersCount || 0})
+                          </button>
+                        )}
+
+                        {evt.status === 'rejected' && (
+                          <button
+                            onClick={() => openEditModal(evt)}
+                            className="px-5 py-2 text-xs font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {evt.status === 'approved' && (
+                          <button
+                            onClick={() => handlePublishEvent(evt._id || evt.id)}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300"
+                          >
+                            Publish
+                          </button>
+                        )}
+                        {['pending_approval', 'under_review', 'needs_revision', 'approved'].includes(evt.status) && (
+                          <button
+                            onClick={() => setWithdrawEvent(evt)}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                          >
+                            Withdraw
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
               </div>
             )}
 
