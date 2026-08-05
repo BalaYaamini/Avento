@@ -98,17 +98,24 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
       const res = await axios.post('/api/users/import', { users: previewData });
       
       setStatus('success');
-      setMessage('Import completed successfully.');
+      setMessage('Import completed.');
       setSummary(res.data.summary || {
         successful: previewData.length,
         skipped: 0,
         failed: 0
       });
       
-      // Delay closing to show success state
+      if (res.data.errors && res.data.errors.length > 0) {
+        const errorList = res.data.errors;
+        setErrors(errorList.slice(0, 5).concat(errorList.length > 5 ? [`...and ${errorList.length - 5} more errors.`] : []));
+      } else {
+        setErrors([]);
+      }
+      
+      // Delay closing to show success state, but give more time if there are errors
       setTimeout(() => {
         onImportSuccess();
-      }, 3000);
+      }, (res.data.errors && res.data.errors.length > 0) ? 6000 : 3000);
       
     } catch (err) {
       setStatus('error');
@@ -196,25 +203,38 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
           )}
 
           {status === 'success' && summary && (
-            <div className="p-4 bg-pastel-mint/30 border-2 border-pastel-mint text-green-700 rounded-2xl text-sm font-bold font-quicksand flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <span>✓</span>
-                <span>{message}</span>
+            <div className="flex flex-col gap-4">
+              <div className="p-4 bg-pastel-mint/30 border-2 border-pastel-mint text-green-700 rounded-2xl text-sm font-bold font-quicksand flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <span>✓</span>
+                  <span>{message}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center bg-white/50 rounded-xl p-3 border border-pastel-mint/30">
+                  <div>
+                    <div className="text-xl text-green-600">{summary.successful}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">Imported</div>
+                  </div>
+                  <div>
+                    <div className="text-xl text-yellow-600">{summary.skipped}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">Skipped</div>
+                  </div>
+                  <div>
+                    <div className="text-xl text-red-500">{summary.failed}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">Failed</div>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-center bg-white/50 rounded-xl p-3 border border-pastel-mint/30">
-                <div>
-                  <div className="text-xl text-green-600">{summary.successful}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">Imported</div>
+              {errors.length > 0 && (
+                <div className="p-4 bg-pastel-coral/20 border-2 border-pastel-coral text-red-500 rounded-2xl text-sm font-bold font-quicksand flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span>⚠</span>
+                    <span>Some records failed to import:</span>
+                  </div>
+                  <ul className="list-disc pl-6 text-xs mt-2 space-y-1">
+                    {errors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
                 </div>
-                <div>
-                  <div className="text-xl text-yellow-600">{summary.skipped}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">Skipped</div>
-                </div>
-                <div>
-                  <div className="text-xl text-red-500">{summary.failed}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 mt-1">Failed</div>
-                </div>
-              </div>
+              )}
             </div>
           )}
 

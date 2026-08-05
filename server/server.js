@@ -17,6 +17,9 @@ connectDB();
 const startEventCompletionJob = require('./jobs/eventCompletionJob');
 startEventCompletionJob();
 
+const startRegistrationClosingJob = require('./jobs/registrationClosingJob');
+startRegistrationClosingJob();
+
 const app = express();
 
 // Global Middlewares

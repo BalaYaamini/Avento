@@ -50,6 +50,8 @@ exports.getUsers = async (req, res) => {
       const pCount = (events || []).filter(e => e.proposed_by && String(e.proposed_by) === String(user._id)).length;
       const oCount = (organizers || []).filter(o => o.student_id && String(o.student_id) === String(user._id)).length;
       const rCount = (registrations || []).filter(reg => String(reg.user_id) === String(user._id)).length;
+      
+      const supUser = usersWithStats.find(u => u.email.toLowerCase() === user.email.toLowerCase());
 
       return {
         id: user._id,
@@ -65,8 +67,8 @@ exports.getUsers = async (req, res) => {
         organizedCount: oCount,
         registrationCount: rCount,
         createdAt: user.createdAt,
-        status: 'active',
-        first_login: false
+        status: supUser ? supUser.status : 'active',
+        first_login: supUser ? supUser.first_login : false
       };
     });
 
@@ -249,11 +251,28 @@ exports.importUsers = async (req, res) => {
     let successful = 0;
     let failed = 0;
     let skipped = 0;
+    const errors = [];
+
+    const studentDomains = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@sap.suh.edu.in', '@ds.suh.edu.in', '@cs.suh.edu.in'];
+    const facultyDomain = '@suh.edu.in';
 
     for (const user of users) {
       try {
         const emailLower = user.email.toLowerCase().trim();
-        const role = user.role ? user.role.toLowerCase() : 'student';
+        
+        let role = null;
+        if (studentDomains.some(domain => emailLower.endsWith(domain))) {
+          role = 'student';
+        } else if (emailLower.endsWith(facultyDomain)) {
+          role = 'faculty';
+        }
+
+        if (!role) {
+          failed++;
+          errors.push(`Row with email ${user.email} has an unsupported domain.`);
+          continue;
+        }
+
         const defaultPassword = 'Student@123';
         
         const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
@@ -309,12 +328,14 @@ exports.importUsers = async (req, res) => {
       } catch (e) {
         console.error(`Import failed for ${user.email}:`, e.message);
         failed++;
+        errors.push(`Failed to import ${user.email}: ${e.message}`);
       }
     }
     
     res.json({
       success: true,
-      summary: { total: users.length, successful, skipped, failed }
+      summary: { total: users.length, successful, skipped, failed },
+      errors
     });
   } catch (err) {
     console.error('importUsers error:', err.message);
@@ -385,6 +406,12 @@ exports.resetPassword = async (req, res) => {
 exports.deactivateUser = async (req, res) => {
   try {
     const userId = req.params.id;
+    
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
+    if (profile && profile.role === 'admin') {
+      return res.status(403).json({ message: 'Action restricted: Cannot deactivate an administrator account.' });
+    }
+
     const { error } = await supabase.from('profiles').update({ status: 'inactive' }).eq('id', String(userId));
     if (error) throw error;
     res.json({ message: 'User deactivated.' });
@@ -397,6 +424,12 @@ exports.deactivateUser = async (req, res) => {
 exports.activateUser = async (req, res) => {
   try {
     const userId = req.params.id;
+    
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
+    if (profile && profile.role === 'admin') {
+      return res.status(403).json({ message: 'Action restricted: Cannot modify administrator account status.' });
+    }
+
     const { error } = await supabase.from('profiles').update({ status: 'active' }).eq('id', String(userId));
     if (error) throw error;
     res.json({ message: 'User activated.' });
@@ -430,5 +463,35 @@ exports.updateUserDetails = async (req, res) => {
   } catch (err) {
     console.error('updateUserDetails error:', err.message);
     res.status(500).json({ message: 'Failed to update user details.', error: err.message });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    
+    // Protect Admin Accounts
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
+    if (profile && profile.role === 'admin') {
+      return res.status(403).json({ message: 'Action restricted: Cannot delete an administrator account.' });
+    }
+    
+    // Delete from Supabase Auth (this usually cascades to profiles)
+    const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
+    if (authErr) {
+      console.warn('Supabase Auth delete warning:', authErr.message);
+    }
+    
+    // Explicitly delete from profiles just in case
+    await supabase.from('profiles').delete().eq('id', String(userId));
+    
+    // Delete from MongoDB
+    const User = require('../models/User');
+    await User.findByIdAndDelete(userId);
+    
+    res.json({ message: 'User deleted successfully.' });
+  } catch (err) {
+    console.error('deleteUser error:', err.message);
+    res.status(500).json({ message: 'Failed to delete user.', error: err.message });
   }
 };

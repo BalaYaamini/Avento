@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import ImportUsersModal from '../components/ImportUsersModal';
+import { useAuth } from '../context/AuthContext';
 
 const AdminUsers = () => {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,6 +19,7 @@ const AdminUsers = () => {
   const [actionUser, setActionUser] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [tempPassword, setTempPassword] = useState('');
   
   // Edit form state
@@ -107,6 +110,16 @@ const AdminUsers = () => {
       fetchUsers();
     } catch (err) {
       alert('Failed to update user.');
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await axios.delete(`/api/users/${actionUser.id || actionUser._id}`);
+      setIsDeleteModalOpen(false);
+      fetchUsers();
+    } catch (err) {
+      alert('Failed to delete user.');
     }
   };
 
@@ -240,20 +253,20 @@ const AdminUsers = () => {
                         <div className="text-[10px] text-slate-400 mt-0.5">{user.rollNumber || user.employeeId || 'No ID'}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
-                          user.roles?.some(r => r.includes('admin')) 
-                            ? 'bg-violet-500/8 text-violet-400 border-violet-500/15' 
-                            : user.roles?.some(r => r.includes('faculty'))
+                        {user.roles?.some(r => r.includes('admin')) ? (
+                          <span className="text-slate-400 font-bold">—</span>
+                        ) : (
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
+                            user.roles?.some(r => r.includes('faculty'))
                               ? 'bg-sky-500/8 text-sky-400 border-sky-500/15'
                               : 'bg-white/40 text-slate-600 border-slate-300/30'
-                        }`}>
-                          {user.roles?.some(r => r.includes('admin')) ? 'Admin' 
-                           : user.roles?.some(r => r.includes('faculty')) ? 'Faculty' 
-                           : 'Student'}
-                        </span>
+                          }`}>
+                            {user.roles?.some(r => r.includes('faculty')) ? 'Faculty' : 'Student'}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-6 py-4 text-slate-600 text-xs">
-                        {user.department || '—'}
+                      <td className="px-6 py-4 text-slate-600 text-xs font-bold">
+                        {user.roles?.some(r => r.includes('admin')) ? '—' : (user.department || '—')}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
@@ -271,7 +284,7 @@ const AdminUsers = () => {
                           <span className="text-[10px] font-bold text-slate-400">Completed</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-slate-500 text-xs">
+                      <td className="px-6 py-4 text-slate-500 text-xs font-bold">
                         {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
                       </td>
                       <td className="px-6 py-4 text-center">
@@ -282,10 +295,16 @@ const AdminUsers = () => {
                           <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-xl border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 overflow-hidden">
                             <button onClick={() => openEditModal(user)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Edit User</button>
                             <button onClick={() => { setActionUser(user); setIsResetModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Reset Password</button>
-                            {user.status === 'inactive' ? (
-                              <button onClick={() => handleActivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-green-600 hover:bg-green-50 transition-colors">Activate</button>
-                            ) : (
-                              <button onClick={() => handleDeactivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors">Deactivate</button>
+                            {/* Admin Accounts Protection: Do not allow Deactivate, Activate, or Delete on any admin account */}
+                            {(!user.roles || !user.roles.some(r => r.includes('admin'))) && (
+                              <>
+                                {user.status === 'inactive' ? (
+                                  <button onClick={() => handleActivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-green-600 hover:bg-green-50 transition-colors">Activate</button>
+                                ) : (
+                                  <button onClick={() => handleDeactivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-amber-500 hover:bg-amber-50 transition-colors">Deactivate</button>
+                                )}
+                                <button onClick={() => { setActionUser(user); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors">Delete User</button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -372,6 +391,26 @@ const AdminUsers = () => {
                 <button onClick={() => { setIsResetModalOpen(false); setTempPassword(''); }} className="btn-primary w-full py-3 rounded-xl text-sm font-bold shadow-pastel-glow">Done</button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden text-center p-8">
+            <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h2 className="font-heading text-xl font-bold text-slate-800 mb-2">Delete User?</h2>
+            <p className="text-sm text-slate-500 mb-2 font-quicksand">Are you sure you want to permanently delete <strong>{actionUser?.fullName}</strong>?</p>
+            <p className="text-xs text-red-500 font-bold mb-6">This action cannot be undone.</p>
+            <div className="flex justify-center gap-3">
+              <button onClick={() => setIsDeleteModalOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
+              <button onClick={handleDelete} className="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-pastel-glow transition-colors">Delete</button>
+            </div>
           </div>
         </div>
       )}

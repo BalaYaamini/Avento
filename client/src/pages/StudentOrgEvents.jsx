@@ -29,12 +29,14 @@ const StudentOrgEvents = () => {
   const [category, setCategory] = useState('Technical');
   const [venue, setVenue] = useState('');
   const [date, setDate] = useState('');
+  const [registrationDeadline, setRegistrationDeadline] = useState('');
   const [capacity, setCapacity] = useState('50');
   const [imageUrl, setImageUrl] = useState('');
   
   // Team configuration states
   const [registrationType, setRegistrationType] = useState('individual'); // 'individual', 'team'
   const [maxTeams, setMaxTeams] = useState('10');
+  const [minTeamSize, setMinTeamSize] = useState('1');
   const [maxTeamSize, setMaxTeamSize] = useState('4');
   const [allowCrossDepartment, setAllowCrossDepartment] = useState(true);
   const [teamLeaderRegistrationRequired, setTeamLeaderRegistrationRequired] = useState(true);
@@ -120,10 +122,12 @@ const StudentOrgEvents = () => {
     setCategory('Technical');
     setVenue('');
     setDate('');
+    setRegistrationDeadline('');
     setCapacity('50');
     setImageUrl('');
     setRegistrationType('individual');
     setMaxTeams('10');
+    setMinTeamSize('1');
     setMaxTeamSize('4');
     setAllowCrossDepartment(true);
     setTeamLeaderRegistrationRequired(true);
@@ -148,11 +152,20 @@ const StudentOrgEvents = () => {
     } else {
       setDate('');
     }
+
+    if (event.registration_deadline) {
+      const rd = new Date(event.registration_deadline);
+      const tzOffset = rd.getTimezoneOffset() * 60000;
+      setRegistrationDeadline((new Date(rd.getTime() - tzOffset)).toISOString().slice(0, 16));
+    } else {
+      setRegistrationDeadline('');
+    }
     
     setCapacity(String(event.capacity || 50));
     setImageUrl(event.imageUrl || event.image_url || '');
     setRegistrationType(event.registration_type || 'individual');
     setMaxTeams(String(event.max_teams || 10));
+    setMinTeamSize(String(event.min_team_size || 1));
     setMaxTeamSize(String(event.max_team_size || 4));
     setAllowCrossDepartment(event.allow_cross_department !== false);
     setTeamLeaderRegistrationRequired(event.team_leader_registration_required !== false);
@@ -165,9 +178,23 @@ const StudentOrgEvents = () => {
     e.preventDefault();
     setFeedback(null);
 
-    if (!title || !description || !category || !venue || !date || !capacity || !assignedFaculty) {
+    if (!title || !description || !category || !venue || !date || (registrationType !== 'team' && !capacity) || !assignedFaculty) {
       setFeedback({ type: 'error', message: 'Please enter all required fields including Faculty Coordinator.' });
       return;
+    }
+
+    if (registrationType === 'team') {
+      const minSize = Number(minTeamSize);
+      const maxSize = Number(maxTeamSize);
+      
+      if (minSize < 1) {
+        setFeedback({ type: 'error', message: 'Minimum Team Size must be at least 1.' });
+        return;
+      }
+      if (maxSize < minSize) {
+        setFeedback({ type: 'error', message: 'Maximum Team Size must be greater than or equal to Minimum Team Size.' });
+        return;
+      }
     }
 
     const selectedDate = new Date(date);
@@ -187,12 +214,13 @@ const StudentOrgEvents = () => {
         category,
         venue,
         date,
+        registrationDeadline: registrationDeadline || undefined,
         capacity: registrationType === 'team' ? undefined : Number(capacity),
         imageUrl: imageUrl || undefined,
         assignedFacultyId: assignedFaculty,
         registrationType,
         maxTeams: registrationType === 'team' ? Number(maxTeams) : undefined,
-        minTeamSize: 1, // Fixed to 1 as per new UI simplification
+        minTeamSize: registrationType === 'team' ? Number(minTeamSize) : 1,
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : 1,
         allowCrossDepartment,
         teamLeaderRegistrationRequired
@@ -880,6 +908,17 @@ const StudentOrgEvents = () => {
                   className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
                 />
               </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Registration Closing / Team Approval Deadline</label>
+                <input
+                  type="datetime-local"
+                  value={registrationDeadline}
+                  onChange={(e) => setRegistrationDeadline(e.target.value)}
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                />
+              </div>
+
               <div>
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Expected Capacity *</label>
                 <input
@@ -920,6 +959,17 @@ const StudentOrgEvents = () => {
                       min="1"
                       value={maxTeams}
                       onChange={(e) => setMaxTeams(e.target.value)}
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Min Members Per Team *</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={minTeamSize}
+                      onChange={(e) => setMinTeamSize(e.target.value)}
                       className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
                     />
                   </div>

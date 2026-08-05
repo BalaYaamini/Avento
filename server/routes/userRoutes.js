@@ -18,6 +18,7 @@ router.put('/:id/reset-password', authMiddleware, adminMiddleware, userControlle
 router.put('/:id/deactivate', authMiddleware, adminMiddleware, userController.deactivateUser);
 router.put('/:id/activate', authMiddleware, adminMiddleware, userController.activateUser);
 router.put('/:id', authMiddleware, adminMiddleware, userController.updateUserDetails);
+router.delete('/:id', authMiddleware, adminMiddleware, userController.deleteUser);
 
 // Authenticated user: update display name only
 router.put('/profile/name', authMiddleware, userController.updateDisplayName);

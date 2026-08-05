@@ -34,7 +34,8 @@ ALTER TABLE public.events
   ADD COLUMN IF NOT EXISTS approval_remarks TEXT,
   ADD COLUMN IF NOT EXISTS image_url TEXT,
   ADD COLUMN IF NOT EXISTS registered_count INTEGER DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS attendance_count INTEGER DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS attendance_count INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS registration_deadline TIMESTAMPTZ;
 
 -- ─── EVENT_MEMBERS TABLE ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.event_members (

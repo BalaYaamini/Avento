@@ -227,6 +227,23 @@ const Home = () => {
   const handleTeamRegister = async (e) => {
     e.preventDefault();
     const eventId = teamRegEvent._id || teamRegEvent.id;
+    
+    const leaderCount = teamRegEvent.team_leader_registration_required !== false ? 1 : 0;
+    const totalMembers = selectedTeamMembers.length + leaderCount;
+    const minSize = teamRegEvent.min_team_size || 1;
+    const maxSize = teamRegEvent.max_team_size || 4;
+
+    if (totalMembers < minSize) {
+      setFeedback({ type: 'error', message: `Team must have at least ${minSize} members.` });
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+    if (totalMembers > maxSize) {
+      setFeedback({ type: 'error', message: `Team cannot exceed ${maxSize} members.` });
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
@@ -624,9 +641,14 @@ const Home = () => {
 
               <div>
                 <h3 className="text-lg font-display font-black text-slate-800">{teamRegEvent.title}</h3>
-                <p className="text-[10px] text-fuchsia-600 font-bold uppercase tracking-wider mt-1 border border-fuchsia-500/20 bg-fuchsia-500/10 px-2 py-0.5 rounded inline-block">
-                  Maximum Members: {teamRegEvent.max_team_size} 
-                </p>
+                <div className="flex gap-2 mt-1">
+                  <p className="text-[10px] text-teal-600 font-bold uppercase tracking-wider border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 rounded inline-block">
+                    Minimum Members: {teamRegEvent.min_team_size || 1}
+                  </p>
+                  <p className="text-[10px] text-fuchsia-600 font-bold uppercase tracking-wider border border-fuchsia-500/20 bg-fuchsia-500/10 px-2 py-0.5 rounded inline-block">
+                    Maximum Members: {teamRegEvent.max_team_size} 
+                  </p>
+                </div>
                 {!teamRegEvent.allow_cross_department && (
                   <p className="text-[10px] text-red-500 font-bold uppercase tracking-wider mt-1 ml-2 border border-red-500/20 bg-red-500/10 px-2 py-0.5 rounded inline-block">
                     Same Department Only
@@ -715,8 +737,12 @@ const Home = () => {
                       </div>
                     ))}
                   </div>
+                  <div className="mt-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                    <p className="text-xs text-indigo-700 font-medium">
+                      <strong className="font-bold">Note:</strong> Upon registration, all selected members will receive an invitation to join this team. They must accept the invitation before the event's Registration Closing Date to finalize the team.
+                    </p>
+                  </div>
                 </div>
-
               </div>
 
               {/* Modal Buttons */}

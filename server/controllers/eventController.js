@@ -203,7 +203,8 @@ const createEvent = async (req, res) => {
   try {
     const {
       title, description, category, venue, date, capacity, imageUrl, assignedFacultyId,
-      registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired
+      registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
+      registrationDeadline
     } = req.body;
 
     if (!title || !description || !category || !venue || !date) {
@@ -225,6 +226,14 @@ const createEvent = async (req, res) => {
       tomorrow.setHours(0, 0, 0, 0);
       if (selectedDate < tomorrow) {
         return res.status(400).json({ message: 'Event date must be at least one day in the future.' });
+      }
+    }
+    
+    if (registrationDeadline) {
+      const deadlineDate = new Date(registrationDeadline);
+      const eventDate = new Date(date);
+      if (deadlineDate > eventDate) {
+        return res.status(400).json({ message: 'Registration Closing Date must be before or equal to the Event Date.' });
       }
     }
 
@@ -290,6 +299,7 @@ const createEvent = async (req, res) => {
       max_team_size: maxTeamSize ? Number(maxTeamSize) : 1,
       allow_cross_department: allowCrossDepartment !== undefined ? allowCrossDepartment : true,
       team_leader_registration_required: teamLeaderRegistrationRequired !== undefined ? teamLeaderRegistrationRequired : true,
+      registration_deadline: registrationDeadline || null,
     };
 
     if (proposedBy) newEvent.proposed_by = proposedBy;
@@ -363,7 +373,8 @@ const editEvent = async (req, res) => {
     const { id } = req.params;
     const { 
       title, description, category, venue, date, capacity, imageUrl, status, assignedFacultyId,
-      registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired
+      registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
+      registrationDeadline
     } = req.body;
 
     const { data: event, error: fetchErr } = await supabase
@@ -421,6 +432,7 @@ const editEvent = async (req, res) => {
     if (maxTeamSize !== undefined) updates.max_team_size = Number(maxTeamSize);
     if (allowCrossDepartment !== undefined) updates.allow_cross_department = allowCrossDepartment;
     if (teamLeaderRegistrationRequired !== undefined) updates.team_leader_registration_required = teamLeaderRegistrationRequired;
+    if (registrationDeadline !== undefined) updates.registration_deadline = registrationDeadline || null;
 
     if (assignedFacultyId !== undefined) {
       // Verify assigned faculty exists and has faculty role

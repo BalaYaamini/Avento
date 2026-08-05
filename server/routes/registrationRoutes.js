@@ -13,6 +13,9 @@ router.get('/event/:id/eligible-students', authMiddleware, registrationControlle
 router.delete('/event/:eventId', authMiddleware, registrationController.cancelRegistrationByEventId);
 router.delete('/:id', authMiddleware, registrationController.cancelRegistration);
 
+router.post('/:registrationId/accept', authMiddleware, registrationController.acceptTeamInvitation);
+router.post('/:registrationId/reject', authMiddleware, registrationController.rejectTeamInvitation);
+
 // Admin-only features (protected)
 router.get('/all', authMiddleware, adminMiddleware, registrationController.getAllRegistrations);
 router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);

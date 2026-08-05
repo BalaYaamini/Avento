@@ -26,6 +26,11 @@ exports.registerForEvent = async (req, res) => {
       return res.status(400).json({ message: 'Registration is closed because the event is not active/published.' });
     }
 
+    // Validate registration deadline
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'The registration deadline for this event has passed.' });
+    }
+
     if (event.registration_type === 'team') {
       return res.status(400).json({ message: 'This event requires team registration.' });
     }
@@ -477,6 +482,11 @@ exports.registerTeamForEvent = async (req, res) => {
       return res.status(400).json({ message: 'Registration is closed because the event is not active/published.' });
     }
 
+    // Validate registration deadline
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'The registration deadline for this event has passed.' });
+    }
+
     if (event.registration_type !== 'team') {
       return res.status(400).json({ message: 'This event does not support team registration.' });
     }
@@ -569,7 +579,7 @@ exports.registerTeamForEvent = async (req, res) => {
       user_id: uid,
       event_id: eventId,
       team_id: team.id,
-      status: 'registered',
+      status: uid === leaderId ? 'registered' : 'pending',
       created_at: new Date().toISOString()
     }));
 
@@ -579,8 +589,11 @@ exports.registerTeamForEvent = async (req, res) => {
 
     if (regErr) throw regErr;
 
-    // Update event registered count
-    await supabase.from('events').update({ registered_count: event.registered_count + teamSize }).eq('id', eventId);
+    // Update event registered count ONLY for the team leader if they are registered immediately
+    const initiallyRegisteredCount = event.team_leader_registration_required !== false ? 1 : 0;
+    if (initiallyRegisteredCount > 0) {
+      await supabase.from('events').update({ registered_count: event.registered_count + initiallyRegisteredCount }).eq('id', eventId);
+    }
 
     // Notify all team members
     try {
@@ -606,18 +619,24 @@ exports.registerTeamForEvent = async (req, res) => {
       teamMembers.sort((a, b) => (a.role === 'Team Lead' ? -1 : b.role === 'Team Lead' ? 1 : 0));
 
       for (const uid of allTeamUserIds) {
+        const isLeader = uid === leaderId;
+        const statusText = isLeader ? 'Confirmed' : 'Pending Approval';
+        const msg = isLeader 
+          ? `Your team "${teamName}" has been successfully registered for "${event.title}".`
+          : `You have been invited by ${teamLeaderName} to join the team "${teamName}" for "${event.title}". Please accept the invitation before the deadline.`;
+
         await notifyUser({
           recipientId: uid,
-          title: 'Team Registration Successful',
-          message: `Your team "${teamName}" has been successfully registered for "${event.title}". The following members are registered for this event.`,
-          type: 'success',
+          title: isLeader ? 'Team Registration Successful' : 'Team Invitation Received',
+          message: msg,
+          type: isLeader ? 'success' : 'info',
           eventId: event.id,
-          emailSubject: `Team Registration Confirmed – ${event.title}`,
+          emailSubject: isLeader ? `Team Registration Confirmed – ${event.title}` : `Team Invitation – ${event.title}`,
           emailData: {
             eventName: event.title,
             date: dateStrTeam,
             venue: event.venue || 'TBA',
-            status: 'Confirmed',
+            status: statusText,
             teamName: teamName,
             teamLeader: teamLeaderName,
             teamMembers: teamMembers
@@ -701,3 +720,94 @@ exports.getEligibleStudents = async (req, res) => {
     res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });
   }
 };
+
+exports.acceptTeamInvitation = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const userId = req.user.id;
+
+    // Fetch registration
+    const { data: reg, error: regErr } = await supabase
+      .from('event_registrations')
+      .select('*, events(id, title, registration_deadline)')
+      .eq('id', registrationId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (regErr || !reg) {
+      return res.status(404).json({ message: 'Registration not found or not authorized.' });
+    }
+
+    if (reg.status !== 'pending') {
+      return res.status(400).json({ message: 'This registration is not pending.' });
+    }
+
+    const event = reg.events;
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'The registration deadline has passed. You can no longer accept this invitation.' });
+    }
+
+    // Update status to registered
+    const { error: updateErr } = await supabase
+      .from('event_registrations')
+      .update({ status: 'registered' })
+      .eq('id', registrationId);
+
+    if (updateErr) throw updateErr;
+
+    // Increment registered_count on the event
+    await supabase.rpc('increment_registered_count', { row_id: event.id });
+
+    // Try fallback update if rpc doesn't work
+    try {
+      const { data: currentEvent } = await supabase.from('events').select('registered_count').eq('id', event.id).single();
+      if (currentEvent) {
+        await supabase.from('events').update({ registered_count: currentEvent.registered_count + 1 }).eq('id', event.id);
+      }
+    } catch(e) {}
+
+    res.json({ message: 'Team invitation accepted successfully.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error accepting invitation.', error: err.message });
+  }
+};
+
+exports.rejectTeamInvitation = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const userId = req.user.id;
+
+    const { data: reg, error: regErr } = await supabase
+      .from('event_registrations')
+      .select('*, events(id, title, registration_deadline)')
+      .eq('id', registrationId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (regErr || !reg) {
+      return res.status(404).json({ message: 'Registration not found or not authorized.' });
+    }
+
+    if (reg.status !== 'pending') {
+      return res.status(400).json({ message: 'This registration is not pending.' });
+    }
+
+    const event = reg.events;
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'The registration deadline has passed. You can no longer reject this invitation.' });
+    }
+
+    // Delete the pending registration entirely
+    const { error: delErr } = await supabase
+      .from('event_registrations')
+      .delete()
+      .eq('id', registrationId);
+
+    if (delErr) throw delErr;
+
+    res.json({ message: 'Team invitation rejected.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error rejecting invitation.', error: err.message });
+  }
+};
+

@@ -45,7 +45,7 @@ const AdminRegistrations = () => {
     try {
       await axios.delete(`/api/registrations/${regId}`);
       // Remove local copy from screen
-      setRegistrations(prev => prev.filter(reg => reg._id !== regId));
+      setRegistrations(prev => prev.filter(reg => (reg.id || reg._id) !== regId));
       alert('Registration successfully revoked.');
     } catch (err) {
       console.error(err);
@@ -61,12 +61,13 @@ const AdminRegistrations = () => {
     const usr = reg.userId;
     if (!evt || !usr) return false; // filter out orphaned registrations
 
-    const regEventId = evt._id || evt.id;
+    const regEventId = evt.id || evt._id;
     const matchesEvent = selectedEventId ? String(regEventId) === String(selectedEventId) : true;
 
     const query = searchQuery.toLowerCase();
+    const studentName = (usr.name || usr.fullName || '').toLowerCase();
     const matchesSearch = searchQuery
-      ? usr.fullName.toLowerCase().includes(query) || usr.email.toLowerCase().includes(query) || evt.title.toLowerCase().includes(query)
+      ? studentName.includes(query) || (usr.email || '').toLowerCase().includes(query) || (evt.title || '').toLowerCase().includes(query)
       : true;
 
     return matchesEvent && matchesSearch;
@@ -159,12 +160,12 @@ const AdminRegistrations = () => {
                 <tbody className="divide-y divide-slate-800/30 text-sm font-body">
                   {filteredRegistrations.map((reg, i) => (
                     <tr 
-                      key={reg._id} 
+                      key={reg.id || reg._id} 
                       className="hover:bg-white/20 transition-all duration-300 animate-fade-in-up"
                       style={{ animationDelay: `${i * 40 + 250}ms` }}
                     >
                       <td className="px-6 py-4 font-display font-bold text-slate-800">
-                        {reg.userId.fullName}
+                        {reg.userId.name || reg.userId.fullName}
                       </td>
                       <td className="px-6 py-4 font-medium text-slate-600 text-xs">
                         {reg.userId.email}
@@ -187,15 +188,15 @@ const AdminRegistrations = () => {
                         {reg.eventId.title}
                       </td>
                       <td className="px-6 py-4 text-slate-600 text-xs">
-                        {new Date(reg.registrationDate || reg.createdAt).toLocaleString()}
+                        {new Date(reg.registrationDate || reg.createdAt || reg.created_at).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
-                          onClick={() => handleCancelRegistration(reg._id, reg.userId.fullName, reg.eventId.title)}
-                          disabled={cancellingId === reg._id}
+                          onClick={() => handleCancelRegistration(reg.id || reg._id, reg.userId.name || reg.userId.fullName, reg.eventId.title)}
+                          disabled={cancellingId === (reg.id || reg._id)}
                           className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300 disabled:opacity-50"
                         >
-                          {cancellingId === reg._id ? 'Revoking...' : 'Revoke Booking'}
+                          {cancellingId === (reg.id || reg._id) ? 'Revoking...' : 'Revoke Booking'}
                         </button>
                       </td>
                     </tr>
