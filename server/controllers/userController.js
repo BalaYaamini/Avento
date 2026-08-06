@@ -59,9 +59,9 @@ exports.getUsers = async (req, res) => {
         fullName: user.name,
         email: user.email,
         roles: [user.role],
-        department: '',
-        employeeId: '',
-        rollNumber: '',
+        department: supUser ? supUser.department : '',
+        employeeId: supUser ? supUser.employeeId : '',
+        rollNumber: supUser ? supUser.rollNumber : '',
         isVerified: user.isVerified,
         proposedCount: pCount,
         organizedCount: oCount,
@@ -282,6 +282,23 @@ exports.importUsers = async (req, res) => {
           defaultPassword = 'Student@123';
         }
         
+        let derivedDepartment = user.department || null;
+        let derivedRollNumber = user.rollNumber || null;
+
+        if (role === 'student' || role === 'student_organizer') {
+          if (!derivedRollNumber && emailLower.includes('@')) {
+            derivedRollNumber = emailLower.split('@')[0].trim();
+          }
+
+          if (!derivedDepartment) {
+            if (emailLower.endsWith('@cse.suh.edu.in')) derivedDepartment = 'CSE';
+            else if (emailLower.endsWith('@aiml.suh.edu.in')) derivedDepartment = 'AIML';
+            else if (emailLower.endsWith('@sap.suh.edu.in')) derivedDepartment = 'SAP';
+            else if (emailLower.endsWith('@cs.suh.edu.in')) derivedDepartment = 'CS';
+            else if (emailLower.endsWith('@ds.suh.edu.in')) derivedDepartment = 'DS';
+          }
+        }
+        
         const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
         if (listErr) throw listErr;
         
@@ -307,14 +324,14 @@ exports.importUsers = async (req, res) => {
           email: emailLower,
           name: user.fullName,
           role: role,
-          department: user.department || null,
+          department: derivedDepartment,
           created_at: new Date().toISOString(),
           first_login: true,
           status: 'active'
         };
         
         if (role === 'faculty') profile.employee_id = user.employeeId || null;
-        if (role === 'student') profile.roll_number = user.rollNumber || null;
+        if (role === 'student' || role === 'student_organizer') profile.roll_number = derivedRollNumber;
 
         await supabase.from('profiles').upsert(profile);
         
