@@ -392,7 +392,19 @@ exports.completeFirstLogin = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const userId = req.params.id;
-    const tempPassword = 'Student@123';
+    const User = require('../models/User');
+    const userRecord = await User.findById(userId);
+
+    if (!userRecord) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    let tempPassword = 'Student@123';
+    if (userRecord.role === 'faculty' || userRecord.role === 'faculty_organizer') {
+      tempPassword = 'Faculty@123';
+    } else if (userRecord.role === 'admin') {
+      tempPassword = 'Admin@123';
+    }
 
     const { error } = await supabase.auth.admin.updateUserById(String(userId), {
       password: tempPassword
@@ -404,7 +416,6 @@ exports.resetPassword = async (req, res) => {
     const bcrypt = require('bcryptjs');
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(tempPassword, salt);
-    const User = require('../models/User');
     await User.findByIdAndUpdate(userId, { password: hashedPassword });
 
     res.json({ message: 'Password reset successfully.', tempPassword });
@@ -453,11 +464,10 @@ exports.activateUser = async (req, res) => {
 exports.updateUserDetails = async (req, res) => {
   try {
     const userId = req.params.id;
-    const { fullName, department, role } = req.body;
+    const { fullName, department } = req.body;
     const updates = {};
     if (fullName !== undefined) updates.name = fullName.trim();
     if (department !== undefined) updates.department = department.trim();
-    if (role !== undefined) updates.role = role.trim();
 
     const { error } = await supabase.from('profiles').update(updates).eq('id', String(userId));
     if (error) throw error;
@@ -467,7 +477,8 @@ exports.updateUserDetails = async (req, res) => {
         user_metadata: { full_name: updates.name },
       });
       const User = require('../models/User');
-      await User.findByIdAndUpdate(userId, { name: updates.name, role: updates.role || 'student' });
+      // Only update name in MongoDB. Role is immutable.
+      await User.findByIdAndUpdate(userId, { name: updates.name });
     }
 
     res.json({ message: 'User details updated successfully.' });

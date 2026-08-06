@@ -14,6 +14,14 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
 
   if (!isOpen) return null;
 
+  const inferRoleHelper = (emailLower) => {
+    const e = emailLower || '';
+    if (e.endsWith('@cse.suh.edu.in') || e.endsWith('@aiml.suh.edu.in') || e.endsWith('@sap.suh.edu.in') || e.endsWith('@ds.suh.edu.in') || e.endsWith('@cs.suh.edu.in')) return 'student';
+    if (e.endsWith('@suh.edu.in')) return 'faculty';
+    if (e === 'admin.avento@gmail.com') return 'admin';
+    return '';
+  };
+
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([
       { fullName: 'John Doe', email: 'john.doe@cse.suh.edu.in', department: 'CSE', rollNumber: '21001' },
@@ -26,11 +34,13 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
 
   const downloadFailedRecords = () => {
     const ws = XLSX.utils.json_to_sheet(failedRecords.map(r => ({
-      'Row Number': r.rowNum || '-',
+      'Excel Row Number': r.rowNum || '-',
       'Name': r.fullName || '-',
-      'Roll Number': r.rollNumber || '-',
       'Email': r.email || '-',
+      'Roll Number': r.rollNumber || '-',
       'Department': r.department || '-',
+      'Role': r.role || '-',
+      'Import Status': r.importStatus || 'Failed',
       'Reason': r.reason || '-'
     })));
     const wb = XLSX.utils.book_new();
@@ -87,18 +97,47 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
       const rowNum = index + 2; // +1 for 0-index, +1 for header
       const email = String(row.email || '').trim().toLowerCase();
       const fullName = String(row.fullName || '').trim();
-      const department = row.department ? String(row.department).trim() : '';
-      const rollNumber = row.rollNumber ? String(row.rollNumber).trim() : '';
+      let department = row.department ? String(row.department).trim().toUpperCase() : '';
+      let rollNumber = row.rollNumber ? String(row.rollNumber).trim() : '';
+      const role = row.role ? String(row.role).trim() : inferRoleHelper(email);
       
-      const record = { rowNum, fullName, email, department, rollNumber };
+      let derivedDept = '';
+      let derivedRoll = '';
+      if (email.includes('@')) {
+        const [username, domain] = email.split('@');
+        if (domain === 'cse.suh.edu.in') derivedDept = 'CSE';
+        else if (domain === 'aiml.suh.edu.in') derivedDept = 'AIML';
+        else if (domain === 'sap.suh.edu.in') derivedDept = 'SAP';
+        else if (domain === 'cs.suh.edu.in') derivedDept = 'CS';
+        else if (domain === 'ds.suh.edu.in') derivedDept = 'DS';
+        
+        if (derivedDept) {
+          derivedRoll = username;
+        }
+      }
       
       let reason = null;
       if (!fullName) reason = 'Missing required field: fullName';
       else if (!email) reason = 'Missing required field: email';
       else if (!email.includes('@')) reason = 'Invalid email format';
+      else if (derivedDept) {
+        if (department && department !== derivedDept) {
+          reason = `Department mismatch: Excel specifies ${department}, but email domain implies ${derivedDept}`;
+        } else if (!department) {
+          department = derivedDept;
+        }
+        
+        if (rollNumber && rollNumber !== derivedRoll) {
+          reason = `Roll Number mismatch: Excel specifies ${rollNumber}, but email implies ${derivedRoll}`;
+        } else if (!rollNumber) {
+          rollNumber = derivedRoll;
+        }
+      }
+      
+      const record = { rowNum, fullName, email, department, rollNumber, role };
       
       if (reason) {
-        invalidData.push({ ...record, reason });
+        invalidData.push({ ...record, reason, importStatus: 'Failed' });
       } else {
         validData.push(record);
       }
@@ -131,12 +170,16 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
       if (res.data.errors && res.data.errors.length > 0) {
         backendFailures = res.data.errors.map(err => {
           const matched = previewData.find(p => p.email === err.email) || {};
+          const isSkipped = err.reason && err.reason.toLowerCase().includes('skipped');
+          
           return {
             rowNum: matched.rowNum || '-',
             fullName: matched.fullName || '-',
             rollNumber: matched.rollNumber || '-',
             email: err.email,
             department: matched.department || '-',
+            role: matched.role || '-',
+            importStatus: isSkipped ? 'Skipped' : 'Failed',
             reason: err.reason
           };
         });
@@ -178,7 +221,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[90vw] lg:max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
         
         {/* Header */}
         <div className="px-6 py-5 border-b border-pastel-lavender/20 flex justify-between items-center bg-pastel-lavender/5">
@@ -267,11 +310,11 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                   </div>
                   <div className="p-2 border-l border-slate-100">
                     <div className="text-2xl text-green-600 font-black">{summary.successful}</div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Imported</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Successfully Imported</div>
                   </div>
                   <div className="p-2 border-l border-slate-100">
                     <div className="text-2xl text-yellow-500 font-black">{summary.skipped}</div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Skipped (Dup)</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Skipped</div>
                   </div>
                   <div className="p-2 border-l border-slate-100">
                     <div className="text-2xl text-red-500 font-black">{summary.failed}</div>
@@ -287,8 +330,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
             <div className="flex flex-col gap-3 mt-2 animate-fade-in">
               <div className="flex justify-between items-end">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-700">The failed records are listed below.</h3>
-                  <p className="text-xs text-slate-500 mt-1">Please correct them and import them again.</p>
+                  <h3 className="text-sm font-bold text-slate-700">Download unsuccessful records to review and fix.</h3>
                 </div>
                 <button 
                   onClick={downloadFailedRecords}
@@ -297,7 +339,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  Download Failed Records (.xlsx)
+                  Download Failed Import Records (.xlsx)
                 </button>
               </div>
               
@@ -305,12 +347,14 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                     <tr className="border-b border-slate-200">
-                      <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Row #</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Excel Row Number</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Name</th>
-                      <th className="px-4 py-3 font-bold text-slate-600">Roll No</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Email</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Roll Number</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Department</th>
-                      <th className="px-4 py-3 font-bold text-slate-600">Reason for failure</th>
+                      <th className="px-4 py-3 font-bold text-slate-600">Role</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Import Status</th>
+                      <th className="px-4 py-3 font-bold text-slate-600">Reason</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -318,9 +362,11 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                       <tr key={i} className="hover:bg-red-50/50 transition-colors">
                         <td className="px-4 py-3 text-slate-600 font-mono text-center">{row.rowNum}</td>
                         <td className="px-4 py-3 text-slate-700 font-medium">{row.fullName}</td>
-                        <td className="px-4 py-3 text-slate-500">{row.rollNumber}</td>
                         <td className="px-4 py-3 text-slate-600">{row.email}</td>
+                        <td className="px-4 py-3 text-slate-500">{row.rollNumber}</td>
                         <td className="px-4 py-3 text-slate-500">{row.department}</td>
+                        <td className="px-4 py-3 text-slate-500 uppercase text-[10px] tracking-wider">{row.role}</td>
+                        <td className={`px-4 py-3 font-bold ${row.importStatus === 'Skipped' ? 'text-yellow-600' : 'text-red-500'}`}>{row.importStatus}</td>
                         <td className="px-4 py-3 text-red-500 font-medium">{row.reason}</td>
                       </tr>
                     ))}
@@ -374,12 +420,20 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
         {/* Footer Actions */}
         <div className="px-6 py-4 border-t border-pastel-lavender/20 bg-slate-50 flex justify-end gap-3">
           {status === 'success' ? (
-            <button 
-              onClick={handleClose}
-              className="px-6 py-2.5 rounded-xl text-sm font-bold btn-primary text-white shadow-pastel-glow transition-colors"
-            >
-              Close
-            </button>
+            <>
+              <button 
+                onClick={resetState}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 border-2 border-slate-200 hover:bg-slate-100 transition-colors"
+              >
+                Start New Import
+              </button>
+              <button 
+                onClick={handleClose}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold btn-primary text-white shadow-pastel-glow transition-colors"
+              >
+                Close
+              </button>
+            </>
           ) : (
             <>
               <button 

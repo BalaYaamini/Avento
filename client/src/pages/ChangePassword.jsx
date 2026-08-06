@@ -4,6 +4,7 @@ import { useAuth, supabase } from '../context/AuthContext';
 import { SparkleDoodle, StarDoodle, LaptopDoodle } from '../components/Doodles';
 import PasswordInput from '../components/PasswordInput';
 import axios from 'axios';
+import { validatePasswordStrength } from '../utils/passwordValidator';
 
 const ChangePassword = () => {
   const { user, getRedirectPath } = useAuth();
@@ -14,6 +15,18 @@ const ChangePassword = () => {
   const [status, setStatus] = useState(null); // 'loading', 'success', 'error'
   const [message, setMessage] = useState('');
 
+  const reqs = {
+    length: password.length >= 8 && password.length <= 128,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[^A-Za-z0-9\s]/.test(password),
+    nospaces: !/\s/.test(password) && password.length > 0,
+    notdefault: password !== 'Student@123' && password !== 'Faculty@123' && password.length > 0
+  };
+
+  const allReqsMet = validatePasswordStrength(password);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!password || !confirmPassword) {
@@ -22,9 +35,9 @@ const ChangePassword = () => {
       return;
     }
 
-    if (password.length < 6) {
+    if (!allReqsMet) {
       setStatus('error');
-      setMessage('Password must be at least 6 characters.');
+      setMessage('Please ensure all password requirements are met.');
       return;
     }
 
@@ -36,40 +49,52 @@ const ChangePassword = () => {
 
     setStatus('loading');
     try {
-      // 1. Update password natively via Supabase Auth (Client now has an active session from login/reset)
-      const { error: authError } = await supabase.auth.updateUser({ password: password });
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (authError) {
-        throw authError;
+      if (sessionError || !session) {
+        throw new Error('Your session has expired. Please log in again.');
       }
 
-      // 2. Ping backend to synchronize the MongoDB user password and clear first_login flag
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        await axios.post('/api/auth/sync-password', {
-          access_token: session.access_token,
-          password: password
-        });
-      } catch (backendError) {
-        console.error("Failed to sync password to backend:", backendError);
-      }
+      await axios.post('/api/auth/sync-password', {
+        access_token: session.access_token,
+        password: password
+      });
 
-      setStatus('success');
-      setMessage('Password updated successfully! Redirecting...');
-      
-      // Navigate to dashboard after 2 seconds
-      setTimeout(() => {
-        const defaultPath = getRedirectPath(user.roles || []);
-        navigate(defaultPath, { replace: true });
-        // Force reload to update user state if needed
-        window.location.reload();
-      }, 2000);
+      if (user) {
+        // First login flow: user is already authenticated with backend
+        setStatus('success');
+        setMessage('Password updated successfully! Redirecting to your dashboard...');
+        
+        setTimeout(() => {
+          const defaultPath = getRedirectPath(user?.roles || []);
+          navigate(defaultPath, { replace: true });
+          window.location.reload();
+        }, 2000);
+      } else {
+        // Forgot Password reset flow: no backend user session yet
+        setStatus('success');
+        setMessage('Password updated successfully. Please login with your new password.');
+        
+        // Clear the temporary Supabase recovery session
+        await supabase.auth.signOut();
+        
+        setTimeout(() => {
+          navigate('/login', { replace: true });
+        }, 3000);
+      }
 
     } catch (err) {
       setStatus('error');
-      setMessage(err.message || 'Failed to update password. Please try again.');
+      setMessage(err.response?.data?.message || err.message || 'Failed to update password. Please try again.');
     }
   };
+
+  const CheckItem = ({ met, text }) => (
+    <div className={`flex items-center gap-2 text-xs font-bold font-quicksand transition-colors ${met ? 'text-green-600' : 'text-slate-400'}`}>
+      <span>{met ? '✓' : '○'}</span>
+      <span>{text}</span>
+    </div>
+  );
 
   return (
     <div className="flex-grow flex items-center justify-center py-20 px-4 bg-background relative overflow-hidden">
@@ -127,9 +152,29 @@ const ChangePassword = () => {
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Min 6 chars"
+                  placeholder="New Password"
                   className="w-full bg-gray-50 text-text-primary placeholder-gray-400 border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm font-body focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300"
                 />
+                { (password === 'Student@123' || password === 'Faculty@123') && (
+                  <p className="text-red-500 text-xs font-bold mt-2 animate-fade-in-up">
+                    You cannot use your default password. Please create a new password.
+                  </p>
+                )}
+              </div>
+
+              {/* Dynamic Checklist */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col gap-1.5 mt-2">
+                <p className="text-xs font-bold text-slate-700 mb-1">Password requirements:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CheckItem met={reqs.length} text="Minimum 8 characters" />
+                  <CheckItem met={reqs.uppercase} text="One uppercase letter" />
+                  <CheckItem met={reqs.lowercase} text="One lowercase letter" />
+                  <CheckItem met={reqs.number} text="One number" />
+                  <CheckItem met={reqs.special} text="One special character" />
+                  <CheckItem met={reqs.nospaces} text="No spaces" />
+                  <CheckItem met={reqs.notdefault} text="Password must not be the default password (Student@123 / Faculty@123)" />
+                  <CheckItem met={password.length > 0} text="Password must be different from your current password" />
+                </div>
               </div>
 
               <div>

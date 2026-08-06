@@ -11,7 +11,6 @@ const AdminUsers = () => {
 
   // Filters
   const [selectedRole, setSelectedRole] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
@@ -47,10 +46,6 @@ const AdminUsers = () => {
     const matchesRole = selectedRole 
       ? user.roles?.some(r => r.toLowerCase().includes(selectedRole.toLowerCase())) 
       : true;
-    
-    const matchesStatus = selectedStatus
-      ? user.status === selectedStatus
-      : true;
 
     const query = searchQuery.toLowerCase();
     const matchesSearch = searchQuery
@@ -60,27 +55,8 @@ const AdminUsers = () => {
         user.rollNumber?.toLowerCase().includes(query)
       : true;
 
-    return matchesRole && matchesSearch && matchesStatus;
+    return matchesRole && matchesSearch;
   });
-
-  const handleDeactivate = async (id) => {
-    if (!window.confirm('Are you sure you want to deactivate this user?')) return;
-    try {
-      await axios.put(`/api/users/${id}/deactivate`);
-      fetchUsers();
-    } catch (err) {
-      alert('Failed to deactivate user.');
-    }
-  };
-
-  const handleActivate = async (id) => {
-    try {
-      await axios.put(`/api/users/${id}/activate`);
-      fetchUsers();
-    } catch (err) {
-      alert('Failed to activate user.');
-    }
-  };
 
   const handleResetPassword = async () => {
     try {
@@ -151,20 +127,6 @@ const AdminUsers = () => {
                 <option value="admin">Admin</option>
               </select>
             </div>
-
-            {/* Status Filter */}
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] whitespace-nowrap">Status</label>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-violet-500/60 transition-all duration-300 w-full sm:w-32 cursor-pointer"
-              >
-                <option value="">All</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
           </div>
 
           {/* User Search */}
@@ -232,7 +194,6 @@ const AdminUsers = () => {
                     <th className="px-6 py-4">Email / ID</th>
                     <th className="px-6 py-4">Role</th>
                     <th className="px-6 py-4">Department</th>
-                    <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">First Login</th>
                     <th className="px-6 py-4">Joined Date</th>
                     <th className="px-6 py-4 text-center">Actions</th>
@@ -254,7 +215,9 @@ const AdminUsers = () => {
                       </td>
                       <td className="px-6 py-4">
                         {user.roles?.some(r => r.includes('admin')) ? (
-                          <span className="text-slate-400 font-bold">—</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-500/20">
+                            Admin
+                          </span>
                         ) : (
                           <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
                             user.roles?.some(r => r.includes('faculty'))
@@ -269,16 +232,9 @@ const AdminUsers = () => {
                         {user.roles?.some(r => r.includes('admin')) ? '—' : (user.department || '—')}
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
-                          user.status === 'active' 
-                            ? 'bg-green-500/10 text-green-600 border-green-500/20' 
-                            : 'bg-red-500/10 text-red-500 border-red-500/20'
-                        }`}>
-                          {user.status || 'active'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {user.first_login ? (
+                        {user.roles?.some(r => r.includes('admin')) ? (
+                          <span className="text-[10px] font-bold text-slate-400">Not Required</span>
+                        ) : user.first_login ? (
                           <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-md border border-yellow-200">Pending</span>
                         ) : (
                           <span className="text-[10px] font-bold text-slate-400">Completed</span>
@@ -294,15 +250,10 @@ const AdminUsers = () => {
                           </button>
                           <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-xl border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 overflow-hidden">
                             <button onClick={() => openEditModal(user)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Edit User</button>
-                            <button onClick={() => { setActionUser(user); setIsResetModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Reset Password</button>
-                            {/* Admin Accounts Protection: Do not allow Deactivate, Activate, or Delete on any admin account */}
+                            {/* Admin Accounts Protection: Do not allow Reset Password, Deactivate, Activate, or Delete on any admin account */}
                             {(!user.roles || !user.roles.some(r => r.includes('admin'))) && (
                               <>
-                                {user.status === 'inactive' ? (
-                                  <button onClick={() => handleActivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-green-600 hover:bg-green-50 transition-colors">Activate</button>
-                                ) : (
-                                  <button onClick={() => handleDeactivate(user.id || user._id)} className="w-full text-left px-4 py-2 text-xs font-bold text-amber-500 hover:bg-amber-50 transition-colors">Deactivate</button>
-                                )}
+                                <button onClick={() => { setActionUser(user); setIsResetModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Reset Password</button>
                                 <button onClick={() => { setActionUser(user); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors">Delete User</button>
                               </>
                             )}
@@ -347,11 +298,7 @@ const AdminUsers = () => {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-1">Role</label>
-                <select value={editForm.role} onChange={(e) => setEditForm({...editForm, role: e.target.value})} className="w-full border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-violet-500">
-                  <option value="student">Student</option>
-                  <option value="faculty">Faculty</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <input type="text" readOnly value={editForm.role} className="w-full bg-slate-50 text-slate-500 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold uppercase tracking-wider cursor-not-allowed" />
               </div>
               <div className="pt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
@@ -383,10 +330,16 @@ const AdminUsers = () => {
                 <div className="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                 </div>
-                <h2 className="font-heading text-xl font-bold text-slate-800 mb-2">Password Reset!</h2>
-                <p className="text-sm text-slate-500 mb-4 font-quicksand">The temporary password for <strong>{actionUser?.fullName}</strong> is:</p>
-                <div className="bg-slate-100 p-4 rounded-xl text-2xl font-mono font-bold text-slate-800 tracking-wider mb-6">
-                  {tempPassword}
+                <h2 className="font-heading text-xl font-bold text-slate-800 mb-2">Password reset successful.</h2>
+                <div className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+                  <p className="text-sm font-bold text-slate-700 mb-2">User: <span className="font-normal">{actionUser?.fullName}</span></p>
+                  <p className="text-sm font-bold text-slate-700">New Temporary Password:</p>
+                  <div className="mt-1 mb-3 text-lg font-mono font-bold text-violet-600 tracking-wide">
+                    {tempPassword}
+                  </div>
+                  <p className="text-xs font-bold text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                    User must change this password during next login.
+                  </p>
                 </div>
                 <button onClick={() => { setIsResetModalOpen(false); setTempPassword(''); }} className="btn-primary w-full py-3 rounded-xl text-sm font-bold shadow-pastel-glow">Done</button>
               </>

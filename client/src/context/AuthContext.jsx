@@ -29,6 +29,15 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Listen for Supabase password recovery events
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        if (window.location.pathname !== '/change-password') {
+          window.location.href = '/change-password';
+        }
+      }
+    });
+
     const initAuth = async () => {
       const localToken = localStorage.getItem('token');
       if (localToken) {
@@ -47,6 +56,10 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
     };
     initAuth();
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email, password) => {

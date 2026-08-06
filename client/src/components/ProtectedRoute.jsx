@@ -23,6 +23,11 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/" replace />;
   }
 
+  // Enforce first-login password change for non-admin users
+  if (user.first_login && !user.roles?.includes('admin')) {
+    return <Navigate to="/change-password" replace />;
+  }
+
   return children;
 };
 
