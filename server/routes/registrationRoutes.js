@@ -15,6 +15,7 @@ router.delete('/:id', authMiddleware, registrationController.cancelRegistration)
 
 router.post('/:registrationId/accept', authMiddleware, registrationController.acceptTeamInvitation);
 router.post('/:registrationId/reject', authMiddleware, registrationController.rejectTeamInvitation);
+router.post('/team/leave', authMiddleware, registrationController.leaveTeam);
 
 // Admin-only features (protected)
 router.get('/all', authMiddleware, adminMiddleware, registrationController.getAllRegistrations);

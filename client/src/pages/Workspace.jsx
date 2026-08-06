@@ -7,6 +7,7 @@ import TaskModal from '../components/TaskModal';
 import TaskDetailsModal from '../components/TaskDetailsModal';
 import CertificateManager from '../components/CertificateManager';
 import FeedbackAnalytics from '../components/FeedbackAnalytics';
+import OrganizerRegistrations from '../components/OrganizerRegistrations';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -18,6 +19,8 @@ const Workspace = () => {
   const [organizers, setOrganizers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  const [activeTab, setActiveTab] = useState('tasks');
   
   // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -207,8 +210,36 @@ const Workspace = () => {
         </div>
       </div>
 
-      {/* Event Progress */}
-      <div className="glass-panel p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
+      {/* Tabs */}
+      <div className="flex space-x-2 border-b border-slate-200 mb-6">
+        <button
+          onClick={() => setActiveTab('tasks')}
+          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+            activeTab === 'tasks' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+        >
+          Tasks & Progress
+        </button>
+        <button
+          onClick={() => setActiveTab('registrations')}
+          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+            activeTab === 'registrations' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+        >
+          Event Registrations
+        </button>
+      </div>
+
+      {activeTab === 'registrations' && (
+        <div className="mb-8">
+          <OrganizerRegistrations eventId={eventId} event={event} />
+        </div>
+      )}
+
+      {activeTab === 'tasks' && (
+        <>
+          {/* Event Progress */}
+          <div className="glass-panel p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-lg font-semibold text-text-primary">Event Progress</h2>
@@ -318,6 +349,8 @@ const Workspace = () => {
           <h2 className="text-xl font-bold text-text-primary mb-4">Post-Event Feedback Analytics</h2>
           <FeedbackAnalytics eventId={eventId} />
         </div>
+      )}
+      </>
       )}
 
       {/* Modals */}

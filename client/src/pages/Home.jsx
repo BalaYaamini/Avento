@@ -13,6 +13,8 @@ import {
   PaperPlaneDoodle,
   GeometricBlobDoodle
 } from '../components/Doodles';
+import RegistrationCountdown from '../components/RegistrationCountdown';
+
 const Home = () => {
   const { user } = useAuth();
   const [events, setEvents] = useState([]);
@@ -40,6 +42,8 @@ const Home = () => {
   const [teamName, setTeamName] = useState('');
   const [selectedTeamMembers, setSelectedTeamMembers] = useState([]);
   const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const fetchEligibleStudents = async (eventId) => {
     try {
@@ -641,6 +645,14 @@ const Home = () => {
 
               <div>
                 <h3 className="text-lg font-display font-black text-slate-800">{teamRegEvent.title}</h3>
+                {teamRegEvent.registration_deadline && (
+                  <div className="mt-2 mb-3">
+                    <RegistrationCountdown 
+                      deadline={teamRegEvent.registration_deadline} 
+                      onDeadlinePassed={() => setTeamRegEvent(null) || setIsTeamRegOpen(false) || fetchEvents()} 
+                    />
+                  </div>
+                )}
                 <div className="flex gap-2 mt-1">
                   <p className="text-[10px] text-teal-600 font-bold uppercase tracking-wider border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 rounded inline-block">
                     Minimum Members: {teamRegEvent.min_team_size || 1}
@@ -669,26 +681,72 @@ const Home = () => {
                   />
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Add Team Members</label>
                   <div className="flex gap-2">
-                    <select
-                      value={selectedStudentToAdd}
-                      onChange={(e) => setSelectedStudentToAdd(e.target.value)}
-                      className="flex-grow bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
-                    >
-                      <option value="">-- Select Student --</option>
-                      {studentsList
-                        .filter(s => s.id !== user?.id && !selectedTeamMembers.some(m => m.id === s.id))
-                        .map(std => (
-                        <option key={std.id} value={std.id}>
-                          {std.displayLabel || std.fullName} ({std.department || 'Unknown Dept'})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative flex-grow">
+                      <div 
+                        className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body flex justify-between items-center cursor-pointer"
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                      >
+                        <span className="truncate">
+                          {selectedStudentToAdd 
+                            ? (studentsList.find(s => s.id === selectedStudentToAdd)?.fullName || 'Selected Student') 
+                            : '-- Select Student --'}
+                        </span>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+
+                      {isDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-lg border border-slate-200/60 overflow-hidden">
+                          <div className="p-2 border-b border-slate-100">
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="Search by Name, Roll No or Email..."
+                              value={studentSearchTerm}
+                              onChange={(e) => setStudentSearchTerm(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                            />
+                          </div>
+                          <div className="max-h-48 overflow-y-auto">
+                            {studentsList
+                              .filter(s => s.id !== user?.id && !selectedTeamMembers.some(m => m.id === s.id))
+                              .filter(s => {
+                                const term = studentSearchTerm.toLowerCase();
+                                return (
+                                  (s.fullName || s.name || '').toLowerCase().includes(term) ||
+                                  (s.email || '').toLowerCase().includes(term)
+                                );
+                              })
+                              .map(std => {
+                                const email = std.email || '';
+                                const rollNum = email ? email.split('@')[0] : '';
+                                return (
+                                  <div
+                                    key={std.id}
+                                    onClick={() => {
+                                      setSelectedStudentToAdd(std.id);
+                                      setIsDropdownOpen(false);
+                                      setStudentSearchTerm('');
+                                    }}
+                                    className={`px-3 py-2 text-sm cursor-pointer hover:bg-fuchsia-50 transition-colors ${selectedStudentToAdd === std.id ? 'bg-fuchsia-50/50 font-semibold' : ''}`}
+                                  >
+                                    <div>{std.displayLabel || std.fullName || std.name}</div>
+                                    <div className="text-[10px] text-slate-500">{rollNum} • {std.department || 'Unknown Dept'}</div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <button
                       type="button"
-                      disabled={selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) >= teamRegEvent.max_team_size}
+                      disabled={!selectedStudentToAdd || selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) >= teamRegEvent.max_team_size}
                       onClick={() => {
                         if (!selectedStudentToAdd) return;
                         if (selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) >= teamRegEvent.max_team_size) return;

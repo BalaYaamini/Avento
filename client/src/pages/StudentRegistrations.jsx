@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import Modal from '../components/Modal';
 import FeedbackModal from '../components/FeedbackModal';
 import { QRCodeSVG } from 'qrcode.react';
+import { supabase } from '../context/AuthContext';
+import RegistrationCountdown from '../components/RegistrationCountdown';
 
 const StudentRegistrations = () => {
   const [registrations, setRegistrations] = useState([]);
@@ -67,6 +69,24 @@ const StudentRegistrations = () => {
   useEffect(() => {
     fetchRegistrations();
     fetchFeedbackStatuses();
+
+    // Set up realtime subscription for team membership changes
+    const subscription = supabase
+      .channel('public:event_registrations')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations' },
+        (payload) => {
+          // Whenever there's any change in registrations, just refetch
+          // This keeps the UI in sync when teammates leave/join
+          fetchRegistrations();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, []);
 
   useEffect(() => {
@@ -150,10 +170,31 @@ const StudentRegistrations = () => {
     }
   };
 
+  const handleLeaveTeam = async (teamId) => {
+    setProcessingId(teamId);
+    setFeedback(null);
+    try {
+      await axios.post(`/api/registrations/team/leave`, { teamId });
+      setFeedback({ type: 'success', message: 'Successfully left the team.' });
+      fetchRegistrations(); // Refresh to get reactivated invitations
+    } catch (err) {
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to leave team.' });
+    } finally {
+      setProcessingId(null);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
   const formatDate = (dateString) => {
     const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' };
     return new Date(dateString).toLocaleDateString('en-US', options);
   };
+
+  const invitationsList = registrations.filter(r => {
+    if (r.status === 'pending') return true;
+    if (r.status === 'registered' && r.team_id && r.teamDetails?.leader_id !== r.user_id) return true;
+    return false;
+  });
 
   return (
     <div className="flex-grow py-20 text-slate-700">
@@ -361,14 +402,24 @@ const StudentRegistrations = () => {
                             View Team
                           </button>
                         )}
-                        {evt.status !== 'completed' && (
-                          <button
-                            onClick={() => openConfirmCancel(reg)}
-                            disabled={cancellingId === reg.id}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                          >
-                            {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Seat'}
-                          </button>
+                        {evt.status !== 'completed' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                          !reg.teamId ? (
+                            <button
+                              onClick={() => openConfirmCancel(reg)}
+                              disabled={cancellingId === reg.id}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                            >
+                              {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
+                            </button>
+                          ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
+                            <button
+                              onClick={() => openConfirmCancel(reg)}
+                              disabled={cancellingId === reg.id}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                            >
+                              {cancellingId === reg.id ? 'Cancelling...' : 'Withdraw Team'}
+                            </button>
+                          ) : null
                         )}
                       </div>
                     </div>
@@ -390,23 +441,30 @@ const StudentRegistrations = () => {
                   ))}
                 </div>
               </div>
-            ) : registrations.filter(r => r.status === 'pending').length === 0 ? (
+            ) : invitationsList.length === 0 ? (
               <div className="text-center py-24 glass-panel rounded-2xl animate-fade-in-scale">
                 <div className="h-20 w-20 bg-white/50 rounded-2xl flex items-center justify-center mx-auto text-slate-600 mb-5">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-display font-bold text-slate-800 mb-2">No Pending Invitations</h3>
-                <p className="text-sm font-body text-slate-600 max-w-sm mx-auto mb-6">You don't have any pending team invitations right now.</p>
+                <h3 className="text-xl font-display font-bold text-slate-800 mb-2">No Invitations</h3>
+                <p className="text-sm font-body text-slate-600 max-w-sm mx-auto mb-6">You don't have any pending or accepted team invitations right now.</p>
               </div>
             ) : (
               <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
-                {registrations.filter(r => r.status === 'pending').map((reg, i) => {
+                {invitationsList.map((reg, i) => {
                   const evt = reg.eventId;
                   const teamName = reg.teamId?.name || 'A team';
                   
                   if (!evt) return null;
+
+                  const hasActiveTeamForEvent = registrations.some(r => r.eventId?.id === evt.id && r.status === 'registered' && r.team_id);
+
+                  const leader = reg.teamDetails?.members?.find(m => m.id === reg.teamDetails?.leader_id);
+                  const leaderEmail = leader?.email || '';
+                  const leaderRollNumber = leaderEmail ? leaderEmail.split('@')[0] : '';
+                  const leaderName = leader?.fullName || 'Unknown';
 
                   return (
                     <div 
@@ -418,24 +476,59 @@ const StudentRegistrations = () => {
                         <div className="flex-1 min-w-0 w-full">
                           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                             <div>
-                              <h3 className="font-display font-bold text-xl text-slate-800 line-clamp-1">{evt.title}</h3>
-                              <p className="text-sm font-body text-slate-600 mt-2">
-                                You have been invited to join <span className="font-bold text-fuchsia-600">{teamName}</span> for this event.
-                              </p>
-                              {evt.registration_deadline && (
-                                <p className="text-xs font-bold text-red-500 mt-2 flex items-center gap-1">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  Deadline: {formatDate(evt.registration_deadline)}
+                              <h3 className="font-display font-bold text-xl text-slate-800 line-clamp-1">Event Name: {evt.title}</h3>
+                              
+                              <div className="mt-4 space-y-1">
+                                <p className="text-sm font-body text-slate-700">
+                                  <span className="font-bold">Team Name:</span> {teamName}
                                 </p>
+                                <p className="text-sm font-body text-slate-700">
+                                  <span className="font-bold">Team Leader:</span> {leaderName} {leaderRollNumber && `(${leaderRollNumber})`}
+                                </p>
+                              </div>
+                              
+                              <div className="mt-6 mb-4">
+                                <h4 className="text-sm font-bold text-slate-800 mb-2">Team Members:</h4>
+                                <ul className="space-y-1.5 mt-3">
+                                  {reg.teamDetails?.members?.map(member => {
+                                    const email = member.email || '';
+                                    const rollNum = email ? email.split('@')[0] : '';
+                                    const isLeader = member.id === reg.teamDetails?.leader_id;
+                                    const rawStatus = member.status || 'pending';
+                                    const displayStatus = isLeader ? 'Leader' : (rawStatus === 'registered' ? 'Accepted' : rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1));
+                                    
+                                    return (
+                                      <li key={member.id} className="text-sm text-slate-700">
+                                        {member.fullName || 'Unknown'} {rollNum && `(${rollNum})`} <span className="text-slate-400 mx-1">–</span> <span>{displayStatus}</span>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </div>
+
+                              {evt.registration_deadline && (
+                                <div className="mt-6 mb-2 space-y-2">
+                                  <p className="text-sm font-bold text-slate-700">
+                                    Registration Deadline: {formatDate(evt.registration_deadline)}
+                                  </p>
+                                  <RegistrationCountdown 
+                                    deadline={evt.registration_deadline} 
+                                    onDeadlinePassed={() => fetchRegistrations()} 
+                                  />
+                                </div>
                               )}
                             </div>
                             
                             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-                              <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-600 border-amber-500/15 flex items-center gap-1.5">
-                                Pending Approval
-                              </span>
+                              {reg.status === 'registered' ? (
+                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/10 text-emerald-600 border-emerald-500/20 flex items-center gap-1.5">
+                                  Accepted
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-600 border-amber-500/15 flex items-center gap-1.5">
+                                  Pending Approval
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -444,20 +537,39 @@ const StudentRegistrations = () => {
                       <div className="h-px bg-slate-200/60 my-5 w-full" />
 
                       <div className="flex flex-wrap items-center justify-end gap-3">
-                        <button
-                          onClick={() => handleRejectInvitation(reg.id)}
-                          disabled={processingId === reg.id}
-                          className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                        >
-                          {processingId === reg.id ? 'Processing...' : 'Decline'}
-                        </button>
-                        <button
-                          onClick={() => handleAcceptInvitation(reg.id)}
-                          disabled={processingId === reg.id}
-                          className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 transition-all duration-300 disabled:opacity-50"
-                        >
-                          {processingId === reg.id ? 'Processing...' : 'Accept Invitation'}
-                        </button>
+                        {evt.registration_deadline && new Date() > new Date(evt.registration_deadline) ? (
+                          <span className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center">
+                            {reg.status === 'registered' ? 'Registration Closed' : 'Approval Closed'}
+                          </span>
+                        ) : reg.status === 'registered' ? (
+                          <button
+                            onClick={() => handleLeaveTeam(reg.team_id)}
+                            disabled={processingId === reg.team_id}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                          >
+                            {processingId === reg.team_id ? 'Processing...' : 'Leave Team'}
+                          </button>
+                        ) : hasActiveTeamForEvent ? (
+                          <div className="flex flex-col sm:flex-row items-center gap-3">
+                            <span className="text-xs text-amber-600 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 max-w-xs text-center sm:text-right">
+                              You have already joined another team. You must leave it before joining a different one.
+                            </span>
+                            <button
+                              disabled={true}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-300 text-slate-500 cursor-not-allowed transition-all duration-300"
+                            >
+                              Accept Invitation
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleAcceptInvitation(reg.id)}
+                            disabled={processingId === reg.id}
+                            className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 transition-all duration-300 disabled:opacity-50"
+                          >
+                            {processingId === reg.id ? 'Processing...' : 'Accept Invitation'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
