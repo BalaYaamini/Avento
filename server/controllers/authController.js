@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const { validatePasswordStrength } = require('../utils/passwordValidator');
 
 // Allowed registration domains (gmail is blocked for public registration)
 const ALLOWED_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
@@ -49,12 +50,15 @@ exports.register = async (req, res) => {
 
     const emailLower = email.toLowerCase().trim();
 
-    // Domain validation
     const isAllowed = ALLOWED_DOMAINS.some((d) => emailLower.endsWith(d));
     if (!isAllowed) {
       return res.status(400).json({
         message: 'Registration allowed only for institutional email addresses (@cse.suh.edu.in, @aiml.suh.edu.in, @suh.edu.in).'
       });
+    }
+
+    if (!validatePasswordStrength(password)) {
+      return res.status(400).json({ message: 'Password does not meet strength requirements.' });
     }
 
     const role = getRoleFromEmail(emailLower);
@@ -444,6 +448,16 @@ exports.syncPassword = async (req, res) => {
     const { data: { user }, error } = await supabase.auth.getUser(access_token);
     if (error || !user) {
       return res.status(401).json({ message: 'Invalid or expired session' });
+    }
+
+    if (!validatePasswordStrength(password)) {
+      return res.status(400).json({ message: 'Password does not meet strength requirements.' });
+    }
+
+    // Update password in Supabase via admin client
+    const { error: authError } = await supabase.auth.admin.updateUserById(user.id, { password });
+    if (authError) {
+      return res.status(500).json({ message: 'Failed to update password in authentication provider', error: authError.message });
     }
 
     // Update password in MongoDB

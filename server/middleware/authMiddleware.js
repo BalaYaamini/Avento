@@ -30,6 +30,17 @@ module.exports = async (req, res, next) => {
       roles = ['admin'];
     }
 
+    // Check status in Supabase profiles
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('status, first_login')
+      .eq('id', user._id)
+      .single();
+
+    if (profileData && profileData.status === 'inactive') {
+      return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
+    }
+
     req.user = {
       id: user._id,
       email: user.email,
@@ -37,7 +48,18 @@ module.exports = async (req, res, next) => {
       roles: roles,
       employeeId: null,
       rollNumber: null,
+      first_login: profileData ? profileData.first_login : false,
     };
+
+    // Enforce first_login on backend for all protected routes except the profile endpoint itself
+    if (profileData && profileData.first_login && !roles.includes('admin')) {
+      if (req.originalUrl !== '/api/auth/profile') {
+        return res.status(403).json({ 
+          message: 'Please change your default password before accessing Avento features.',
+          code: 'FIRST_LOGIN_REQUIRED'
+        });
+      }
+    }
 
     next();
   } catch (err) {

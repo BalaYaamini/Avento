@@ -260,11 +260,13 @@ exports.importUsers = async (req, res) => {
       try {
         const emailLower = user.email.toLowerCase().trim();
         
-        let role = null;
-        if (studentDomains.some(domain => emailLower.endsWith(domain))) {
-          role = 'student';
-        } else if (emailLower.endsWith(facultyDomain)) {
-          role = 'faculty';
+        let role = user.role;
+        if (!role) {
+          if (studentDomains.some(domain => emailLower.endsWith(domain))) {
+            role = 'student';
+          } else if (emailLower.endsWith(facultyDomain)) {
+            role = 'faculty';
+          }
         }
 
         if (!role) {
@@ -273,7 +275,12 @@ exports.importUsers = async (req, res) => {
           continue;
         }
 
-        const defaultPassword = 'Student@123';
+        let defaultPassword = 'Student@123';
+        if (role === 'faculty' || role === 'faculty_organizer') {
+          defaultPassword = 'Faculty@123';
+        } else if (role === 'student' || role === 'student_organizer') {
+          defaultPassword = 'Student@123';
+        }
         
         const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
         if (listErr) throw listErr;
