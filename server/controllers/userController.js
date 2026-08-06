@@ -269,7 +269,7 @@ exports.importUsers = async (req, res) => {
 
         if (!role) {
           failed++;
-          errors.push(`Row with email ${user.email} has an unsupported domain.`);
+          errors.push({ email: emailLower, reason: 'Unsupported domain' });
           continue;
         }
 
@@ -281,6 +281,7 @@ exports.importUsers = async (req, res) => {
         const existingAuth = usersData.users.find((u) => u.email.toLowerCase() === emailLower);
         if (existingAuth) {
           skipped++;
+          errors.push({ email: emailLower, reason: 'User already exists (skipped)' });
           continue;
         }
 
@@ -328,7 +329,10 @@ exports.importUsers = async (req, res) => {
       } catch (e) {
         console.error(`Import failed for ${user.email}:`, e.message);
         failed++;
-        errors.push(`Failed to import ${user.email}: ${e.message}`);
+        errors.push({ 
+          email: user.email ? user.email.toLowerCase().trim() : 'Unknown', 
+          reason: e.message 
+        });
       }
     }
     
