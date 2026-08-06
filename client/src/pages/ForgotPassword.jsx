@@ -27,8 +27,9 @@ const ForgotPassword = () => {
 
     setStatus('loading');
     try {
+      const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
       const { error } = await supabase.auth.resetPasswordForEmail(emailLower, {
-        redirectTo: window.location.origin + '/change-password',
+        redirectTo: `${appUrl}/change-password`,
       });
 
       if (error) {
