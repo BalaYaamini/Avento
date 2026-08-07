@@ -23,6 +23,8 @@ const StudentRegistrations = () => {
   const [confirmLeaveReg, setConfirmLeaveReg] = useState(null);
   const [teamModalData, setTeamModalData] = useState(null);
   const [qrModalData, setQrModalData] = useState(null);
+  const [isConfirmTeamOpen, setIsConfirmTeamOpen] = useState(false);
+  const [confirmTeamReg, setConfirmTeamReg] = useState(null);
   
   // Feedback states
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
@@ -204,7 +206,14 @@ const StudentRegistrations = () => {
     }
   };
 
-  const handleConfirmTeam = async (teamId) => {
+  const handleConfirmTeam = (reg) => {
+    setConfirmTeamReg(reg);
+    setIsConfirmTeamOpen(true);
+  };
+
+  const handleConfirmTeamSubmit = async () => {
+    if (!confirmTeamReg) return;
+    const teamId = confirmTeamReg.teamId.id;
     setProcessingId(teamId);
     setFeedback(null);
     try {
@@ -215,6 +224,8 @@ const StudentRegistrations = () => {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to confirm team.' });
     } finally {
       setProcessingId(null);
+      setIsConfirmTeamOpen(false);
+      setConfirmTeamReg(null);
       setTimeout(() => setFeedback(null), 4000);
     }
   };
@@ -383,10 +394,21 @@ const StudentRegistrations = () => {
                             
                             {/* Status Badge */}
                             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-                              {reg.teamId && reg.teamId.status === 'pending' ? (
-                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-500 border-amber-500/15 flex items-center gap-1.5">
-                                  ⏳ Waiting for Confirmation
-                                </span>
+                              {reg.teamId && reg.teamDetails?.teamStatus === 'pending' ? (
+                                (() => {
+                                  const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                  const minRequired = evt.min_team_size || 1;
+                                  const isReady = acceptedCount >= minRequired;
+                                  return isReady ? (
+                                    <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-blue-500/8 text-blue-500 border-blue-500/15 flex items-center gap-1.5">
+                                      🟢 Ready for Team Confirmation
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-500 border-amber-500/15 flex items-center gap-1.5">
+                                      🟡 Waiting for Member Approval
+                                    </span>
+                                  );
+                                })()
                               ) : (
                                 <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/8 text-emerald-500 border-emerald-500/15 flex items-center gap-1.5">
                                   ✓ Registered
@@ -430,7 +452,7 @@ const StudentRegistrations = () => {
                           <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
                             Event Completed – Pass unavailable.
                           </span>
-                        ) : (!reg.teamId || reg.teamId.status === 'registered') ? (
+                        ) : (!reg.teamId || reg.teamDetails?.teamStatus === 'registered') ? (
                           <button
                             onClick={() => setQrModalData(reg)}
                             className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
@@ -446,40 +468,58 @@ const StudentRegistrations = () => {
                             View Team
                           </button>
                         )}
-                        {evt.status !== 'completed' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                        {evt.status !== 'completed' && (
                           !reg.teamId ? (
-                            <button
-                              onClick={() => openConfirmCancel(reg)}
-                              disabled={cancellingId === reg.id}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                            >
-                              {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
-                            </button>
-                          ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
-                            <div className="flex gap-2">
-                              {reg.teamId.status === 'pending' && (
-                                (() => {
-                                  const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
-                                  const minRequired = evt.min_team_size || 1;
-                                  const isReady = acceptedCount >= minRequired;
-                                  return (
-                                    <button
-                                      onClick={() => isReady && handleConfirmTeam(reg.teamId.id)}
-                                      disabled={!isReady || processingId === reg.teamId.id}
-                                      className={`px-5 py-2 text-xs font-bold rounded-xl transition-all duration-300 disabled:opacity-50 ${isReady ? 'bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20' : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
-                                    >
-                                      {processingId === reg.teamId.id ? 'Confirming...' : (isReady ? 'Confirm Registration' : `Waiting for members (${acceptedCount}/${minRequired})`)}
-                                    </button>
-                                  );
-                                })()
-                              )}
+                            (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
                               <button
                                 onClick={() => openConfirmCancel(reg)}
                                 disabled={cancellingId === reg.id}
                                 className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
                               >
-                                {cancellingId === reg.id ? 'Cancelling...' : 'Withdraw Team'}
+                                {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
                               </button>
+                            )
+                          ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
+                            <div className="flex gap-2 items-center">
+                              {reg.teamDetails?.teamStatus === 'pending' && (
+                                (() => {
+                                  const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                  const minRequired = evt.min_team_size || 1;
+                                  const isReady = acceptedCount >= minRequired;
+                                  const deadlinePassed = evt.registration_deadline && new Date() > new Date(evt.registration_deadline);
+                                  
+                                  if (deadlinePassed) {
+                                    return (
+                                      <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 flex items-center text-center">
+                                        Registration deadline has passed. This team can no longer be confirmed.
+                                      </span>
+                                    );
+                                  }
+
+                                  if (isReady) {
+                                    return (
+                                      <button
+                                        onClick={() => handleConfirmTeam(reg)}
+                                        disabled={processingId === reg.teamId.id}
+                                        className="px-5 py-2 text-xs font-bold rounded-xl transition-all duration-300 disabled:opacity-50 bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20"
+                                      >
+                                        {processingId === reg.teamId.id ? 'Confirming...' : 'Confirm Team'}
+                                      </button>
+                                    );
+                                  }
+                                  
+                                  return null; // When not ready, the badge above handles the display
+                                })()
+                              )}
+                              {reg.teamDetails?.teamStatus !== 'registered' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                                <button
+                                  onClick={() => openConfirmCancel(reg)}
+                                  disabled={cancellingId === reg.id}
+                                  className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                                >
+                                  {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
+                                </button>
+                              )}
                             </div>
                           ) : null
                         )}
@@ -961,6 +1001,99 @@ const StudentRegistrations = () => {
                     </>
                   ) : (
                     'Leave Team'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        {/* Confirm Team Registration Modal */}
+        <Modal
+          isOpen={isConfirmTeamOpen}
+          onClose={() => {
+            if (processingId === confirmTeamReg?.teamId?.id) return;
+            setIsConfirmTeamOpen(false);
+            setConfirmTeamReg(null);
+          }}
+          title="Confirm Team Registration"
+        >
+          {confirmTeamReg && (
+            <div className="space-y-4">
+              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+                <p className="text-sm font-bold text-emerald-800">The minimum required members have accepted the invitation.</p>
+                <p className="text-sm mt-2 text-emerald-700">You may confirm your team now, or wait until additional invited members accept before the registration deadline.</p>
+              </div>
+
+              {confirmTeamReg.eventId?.registration_deadline && (
+                <div className="p-4 bg-slate-100 rounded-xl border border-slate-200">
+                  <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Registration Deadline:</p>
+                  <p className="text-base font-bold text-slate-800 mt-1">
+                    {new Date(confirmTeamReg.eventId.registration_deadline).toLocaleDateString('en-GB', {
+                      day: '2-digit', month: 'long', year: 'numeric'
+                    })} – {new Date(confirmTeamReg.eventId.registration_deadline).toLocaleTimeString('en-US', {
+                      hour: '2-digit', minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+              )}
+
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-sm font-bold text-slate-700 mb-2">Team Name: <span className="font-medium">{confirmTeamReg.teamId.name}</span></p>
+                <p className="text-sm font-bold text-slate-700 mb-2">Team Members:</p>
+                <ul className="space-y-2 text-sm text-slate-600 pl-2">
+                  {confirmTeamReg.teamDetails?.members?.map(m => (
+                    <li key={m.id} className="flex justify-between items-center border-b border-slate-200/50 pb-1 last:border-0 last:pb-0">
+                      <span>{m.id === confirmTeamReg.teamDetails?.leader_id ? 'Team Leader' : m.fullName}</span>
+                      <span className={`font-bold ${m.status === 'registered' || m.id === confirmTeamReg.teamDetails?.leader_id ? 'text-emerald-500' : (m.status === 'pending' ? 'text-amber-500' : 'text-red-500')}`}>
+                        {m.status === 'registered' || m.id === confirmTeamReg.teamDetails?.leader_id ? 'Accepted' : (m.status === 'pending' ? 'Pending' : 'Rejected')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              
+              <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+                <div className="text-xs text-amber-800 space-y-2">
+                  <p className="font-bold">After confirming:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-1 font-medium">
+                    <li>The team registration will become final.</li>
+                    <li>Team membership will be locked.</li>
+                    <li>Members cannot leave.</li>
+                    <li>New members cannot be added.</li>
+                    <li>Team details cannot be modified.</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 justify-end pt-4 mt-2 border-t border-slate-200/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsConfirmTeamOpen(false);
+                    setConfirmTeamReg(null);
+                  }}
+                  disabled={processingId === confirmTeamReg.teamId.id}
+                  className="px-5 py-2.5 text-xs font-bold rounded-xl btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmTeamSubmit}
+                  disabled={processingId === confirmTeamReg.teamId.id}
+                  className="px-5 py-2.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/20 transition-all duration-300 disabled:opacity-50 flex items-center justify-center min-w-[120px]"
+                >
+                  {processingId === confirmTeamReg.teamId.id ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : (
+                    'Confirm Team'
                   )}
                 </button>
               </div>

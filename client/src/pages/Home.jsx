@@ -270,32 +270,64 @@ const Home = () => {
   };
 
   const isUserRegistered = (eventId) => {
-    return myRegistrations.some(reg => {
-      // If it's a team registration and the team itself is still pending confirmation, we are not fully registered yet.
-      if (reg.status === 'pending' || reg.status === 'rejected' || reg.status === 'auto_rejected' || reg.status === 'cancelled') return false;
-      const teamStatus = reg.teamId?.status || 'pending';
-      if (reg.teamId && teamStatus === 'pending') return false;
-
-      const rawId = reg.event_id;
-      const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
-      return String(rawId) === String(eventId) || String(joinedId) === String(eventId);
-    });
-  };
-
-  const isUserPendingTeamLeader = (eventId) => {
     if (!user) return false;
     return myRegistrations.some(reg => {
+      // Must be individual status 'registered' to even be considered (except for leaders of pending teams, but those aren't fully registered either)
+      if (reg.status !== 'registered') return false;
+      
       const rawId = reg.event_id;
       const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
-      if (reg.status === 'rejected' || reg.status === 'auto_rejected' || reg.status === 'cancelled') return false;
-
       const matchesEvent = String(rawId) === String(eventId) || String(joinedId) === String(eventId);
       
-      // True if the user is the leader of a pending team for this event
-      const teamStatus = reg.teamId?.status || 'pending';
-      return matchesEvent && reg.teamId && teamStatus === 'pending' && String(reg.teamId.leader_id) === String(user.id || user._id);
+      if (!matchesEvent) return false;
+
+      // If it's a team registration, the overall team must also be registered
+      if (reg.team_id || reg.teamId) {
+        const teamStatus = reg.teamDetails?.teamStatus || reg.teamId?.status || 'pending';
+        return teamStatus === 'registered';
+      }
+
+      return true;
     });
   };
+
+  const getPendingTeamStatus = (event) => {
+    if (!user) return null;
+    const eventId = event._id || event.id;
+    
+    const pendingReg = myRegistrations.find(reg => {
+      if (reg.status === 'rejected' || reg.status === 'auto_rejected' || reg.status === 'cancelled') return false;
+
+      const rawId = reg.event_id;
+      const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
+      const matchesEvent = String(rawId) === String(eventId) || String(joinedId) === String(eventId);
+      
+      if (!matchesEvent) return false;
+      
+      // Must be a team registration
+      if (!reg.team_id && !reg.teamId) return false;
+
+      const leaderId = reg.teamDetails?.leader_id || reg.teamId?.leader_id;
+      const isLeader = String(leaderId) === String(user.id || user._id);
+      
+      // For members, their individual status must be 'registered' (meaning they accepted the invite)
+      if (!isLeader && reg.status !== 'registered') return false;
+
+      const teamStatus = reg.teamDetails?.teamStatus || reg.teamId?.status || 'pending';
+      return teamStatus === 'pending';
+    });
+
+    if (!pendingReg) return null;
+
+    const leaderId = pendingReg.teamDetails?.leader_id || pendingReg.teamId?.leader_id;
+    const acceptedCount = pendingReg.teamDetails?.members?.filter(m => m.status === 'registered' || String(m.id) === String(leaderId)).length || 0;
+    const minRequired = event.min_team_size || 1;
+    const isReady = acceptedCount >= minRequired;
+    
+    return isReady ? 'Ready for Team Confirmation' : 'Waiting for Member Approval';
+  };
+
+
 
   const isUserOrganizer = (evt) => {
     if (!user) return false;
@@ -502,7 +534,7 @@ const Home = () => {
                 event={evt}
                 index={index}
                 isRegistered={isUserRegistered(evt._id || evt.id)}
-                isPendingRegistration={isUserPendingTeamLeader(evt._id || evt.id)}
+                isPendingRegistration={getPendingTeamStatus(evt)}
                 isOrganizer={isUserOrganizer(evt)}
                 joinTeamEnabled={!!evt.join_team_enabled}
                 requestStatus={getUserJoinRequestStatus(evt)}
@@ -838,7 +870,7 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id]}
+                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size)}
                   className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
                 >
                   {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}

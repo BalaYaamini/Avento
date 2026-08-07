@@ -172,8 +172,8 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
             <div className="text-[10px] font-bold text-gray-500 mt-1 mb-1 px-1 w-full">
               {event.registration_type === 'team' ? (
                 <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
-                  <span>{event.teamCount || 0} / {event.max_teams || '∞'} Teams</span>
-                  {event.max_teams && <span>{Math.max(0, event.max_teams - (event.teamCount || 0))} Remaining</span>}
+                  <span>{event.teamCount || 0} Team Slot{(event.teamCount || 0) !== 1 ? 's' : ''} Filled</span>
+                  {event.max_teams && <span>{Math.max(0, event.max_teams - (event.teamCount || 0))} Team Slot{Math.max(0, event.max_teams - (event.teamCount || 0)) !== 1 ? 's' : ''} Available</span>}
                 </div>
               ) : (
                 <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
@@ -217,21 +217,38 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                       </svg>
                       Registered!
                     </button>
-                    <button
-                      type="button"
-                      onClick={onCancelRegister}
-                      className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
-                    >
-                      Cancel Registration
-                    </button>
+                    {event.registration_type !== 'team' && (!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
+                      <button
+                        type="button"
+                        onClick={onCancelRegister}
+                        className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
+                      >
+                        Cancel Registration
+                      </button>
+                    )}
                   </div>
                 ) : isPendingRegistration ? (
-                  <button
-                    disabled
-                    className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-amber-500/20 text-amber-600 border border-amber-500 cursor-not-allowed"
-                  >
-                    ⏳ Waiting for Confirmation
-                  </button>
+                  <div className="w-full flex flex-col gap-1.5">
+                    <button
+                      disabled
+                      className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border cursor-not-allowed ${
+                        isPendingRegistration === 'Ready for Team Confirmation'
+                          ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                          : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                      }`}
+                    >
+                      {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation' : '🟡 Waiting for Member Approval'}
+                    </button>
+                    {(!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
+                      <button
+                        type="button"
+                        onClick={onCancelRegister}
+                        className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
+                      >
+                        Cancel Registration
+                      </button>
+                    )}
+                  </div>
                 ) : !isActive ? (
                   <button
                     disabled

@@ -163,10 +163,13 @@ exports.getMyRegistrations = async (req, res) => {
           };
         });
 
+        const leaderReg = teamRegs?.find(tr => tr.user_id === reg.teamId.leader_id);
+
         return {
           ...reg,
           teamDetails: {
             leader_id: reg.teamId.leader_id,
+            teamStatus: leaderReg ? leaderReg.status : 'pending',
             members: membersWithStatus
           }
         };
@@ -210,6 +213,11 @@ const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, r
       const { data: teamRegs } = await supabase.from('event_registrations').select('user_id, status').eq('team_id', team.id);
       const allTeamUserIds = teamRegs ? teamRegs.map(r => r.user_id) : [];
       const acceptedMembersCount = teamRegs ? teamRegs.filter(r => r.status === 'registered').length : 0;
+      
+      const leaderReg = teamRegs ? teamRegs.find(r => r.user_id === team.leader_id) : null;
+      if (!isAdminOrOrganizer && leaderReg && leaderReg.status === 'registered') {
+        return res.status(400).json({ message: 'Confirmed teams cannot be cancelled.' });
+      }
 
       // Atomic Deletion
       const { error: delRegErr } = await supabase.from('event_registrations').delete().eq('team_id', team.id);
@@ -546,6 +554,7 @@ exports.registerTeamForEvent = async (req, res) => {
     if (event.organizer_id) organizerIds.push(event.organizer_id);
     if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
     if (event.proposed_by) organizerIds.push(event.proposed_by);
+    if (event.faculty_id) organizerIds.push(event.faculty_id);
 
     const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(id));
     if (hasOrganizer) {
@@ -707,6 +716,7 @@ exports.getEligibleStudents = async (req, res) => {
     if (event.organizer_id) organizerIds.push(event.organizer_id);
     if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
     if (event.proposed_by) organizerIds.push(event.proposed_by);
+    if (event.faculty_id) organizerIds.push(event.faculty_id);
 
     // 3. Get already registered user IDs for this event
     // Only exclude them if the registration deadline has passed and their team memberships are finalized/locked
@@ -944,14 +954,44 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: 'Team ID is required.' });
     }
 
-    const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
-      p_team_id: teamId,
-      p_leader_id: leaderId
-    });
+    // Get the event_id for this team
+    const { data: teamData, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('event_id')
+      .eq('id', teamId)
+      .eq('leader_id', leaderId)
+      .single();
 
-    if (rpcErr) {
-      return res.status(400).json({ message: rpcErr.message || 'Failed to confirm team registration.' });
+    if (teamErr || !teamData) {
+      return res.status(404).json({ message: 'Team not found or unauthorized.' });
     }
+
+    // Update all team members' registrations to 'registered' where they are 'pending' or 'registered'
+    // Actually, only the leader is currently 'pending', and others who accepted are already 'registered'.
+    // We can just update everyone in the team to 'registered'.
+    const { error: regErr } = await supabase
+      .from('event_registrations')
+      .update({ status: 'registered' })
+      .eq('team_id', teamId);
+
+    if (regErr) {
+      return res.status(400).json({ message: regErr.message || 'Failed to update team registration status.' });
+    }
+
+    // Update the team's overall status to 'registered' so that eventController can correctly count active teams
+    const { error: teamStatusErr } = await supabase
+      .from('event_teams')
+      .update({ status: 'registered' })
+      .eq('id', teamId);
+
+    if (teamStatusErr) {
+      return res.status(400).json({ message: teamStatusErr.message || 'Failed to update team status.' });
+    }
+
+    // Consume one team slot
+    await supabase.rpc('increment_registered_count', { row_id: teamData.event_id });
+    // Alternative if RPC fails:
+    // await supabase.from('events').update({ registered_count: current_count + 1 }).eq('id', teamData.event_id);
 
     res.json({ message: 'Team registration confirmed successfully.' });
   } catch (err) {
