@@ -8,32 +8,19 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure directories exist
-const uploadDir = path.join(__dirname, '../uploads/proposals');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Set up multer for proposal document uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'proposal-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Use memory storage for Supabase uploads
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    const allowed = ['.png', '.jpg', '.jpeg', '.pdf', '.docx', '.xlsx'];
+    const allowed = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, DOCX, XLSX, PNG, and JPG are allowed.'));
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, PPT, PPTX, XLS, and XLSX are allowed.'));
     }
   }
 });
@@ -214,6 +201,14 @@ router.post(
   eventController.uploadProposalDocument
 );
 
+// Remove Proposal Document
+router.delete(
+  '/:id/documents/:docId',
+  authMiddleware,
+  roleMiddleware(['student', 'faculty', 'faculty_organizer']),
+  eventController.removeProposalDocument
+);
+
 // Update Proposal Status (Faculty)
 router.put(
   '/:id/proposal-status',
@@ -252,6 +247,14 @@ router.delete(
   authMiddleware,
   roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
   eventController.removeProposalTeamMember
+);
+
+// Update Proposal Description
+router.put(
+  '/:id/proposal-description',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.updateProposalDescription
 );
 
 // getEventById — must come AFTER all static subroutes
