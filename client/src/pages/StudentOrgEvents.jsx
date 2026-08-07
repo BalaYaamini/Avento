@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import Modal from '../components/Modal';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, supabase } from '../context/AuthContext';
 import QRScanner from '../components/QRScanner';
 import { StickyNoteDoodle, GeometricBlobDoodle } from '../components/Doodles';
 
@@ -18,6 +18,10 @@ const StudentOrgEvents = () => {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+
+  const [posterOption, setPosterOption] = useState('upload'); // 'upload', 'url'
+  const [posterFile, setPosterFile] = useState(null);
+  const [posterPreview, setPosterPreview] = useState('');
   
   // Scanner Modal states
   const [scannerModalEvent, setScannerModalEvent] = useState(null);
@@ -32,6 +36,21 @@ const StudentOrgEvents = () => {
   const [registrationDeadline, setRegistrationDeadline] = useState('');
   const [capacity, setCapacity] = useState('50');
   const [imageUrl, setImageUrl] = useState('');
+
+  const getTomorrowISO = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(0, 0, 0, 0); // start of tomorrow
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+
+  const getMaxDeadlineISO = () => {
+    if (!date) return '';
+    const d = new Date(date);
+    d.setDate(d.getDate() - 1);
+    d.setHours(23, 59, 59, 999);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
   
   // Team configuration states
   const [registrationType, setRegistrationType] = useState('individual'); // 'individual', 'team'
@@ -44,6 +63,8 @@ const StudentOrgEvents = () => {
   // Faculty and Team States
   const [facultyList, setFacultyList] = useState([]);
   const [assignedFaculty, setAssignedFaculty] = useState('');
+  const [facultySearchTerm, setFacultySearchTerm] = useState('');
+  const [isFacultyDropdownOpen, setIsFacultyDropdownOpen] = useState(false);
   const [studentsList, setStudentsList] = useState([]);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [teamModalEvent, setTeamModalEvent] = useState(null);
@@ -117,6 +138,9 @@ const StudentOrgEvents = () => {
   const openCreateModal = () => {
     setModalMode('create');
     setSelectedEventId(null);
+    setPosterOption('upload');
+    setPosterFile(null);
+    setPosterPreview('');
     setTitle('');
     setDescription('');
     setCategory('Technical');
@@ -132,6 +156,8 @@ const StudentOrgEvents = () => {
     setAllowCrossDepartment(true);
     setTeamLeaderRegistrationRequired(true);
     setAssignedFaculty('');
+    setFacultySearchTerm('');
+    setIsFacultyDropdownOpen(false);
     setFeedback(null);
     setIsModalOpen(true);
   };
@@ -162,6 +188,9 @@ const StudentOrgEvents = () => {
     }
     
     setCapacity(String(event.capacity || 50));
+    setPosterOption(event.image_url || event.imageUrl ? 'url' : 'upload');
+    setPosterFile(null);
+    setPosterPreview('');
     setImageUrl(event.imageUrl || event.image_url || '');
     setRegistrationType(event.registration_type || 'individual');
     setMaxTeams(String(event.max_teams || 10));
@@ -169,7 +198,19 @@ const StudentOrgEvents = () => {
     setMaxTeamSize(String(event.max_team_size || 4));
     setAllowCrossDepartment(event.allow_cross_department !== false);
     setTeamLeaderRegistrationRequired(event.team_leader_registration_required !== false);
-    setAssignedFaculty(event.faculty_id || event.assignedFacultyId?._id || event.assignedFacultyId || '');
+    
+    const facId = event.faculty_id || event.assignedFacultyId?._id || event.assignedFacultyId || '';
+    setAssignedFaculty(facId);
+    
+    // Set faculty search term based on assigned faculty
+    if (facId && facultyList.length > 0) {
+      const fac = facultyList.find(f => f.id === facId);
+      setFacultySearchTerm(fac ? (fac.displayLabel || fac.fullName || fac.name) : '');
+    } else {
+      setFacultySearchTerm('');
+    }
+    setIsFacultyDropdownOpen(false);
+    
     setFeedback(null);
     setIsModalOpen(true);
   };
@@ -207,6 +248,36 @@ const StudentOrgEvents = () => {
     }
 
     setSubmitting(true);
+
+    let finalImageUrl = imageUrl;
+    if (posterOption === 'upload' && posterFile) {
+      if (posterFile.size > 5 * 1024 * 1024) {
+        setFeedback({ type: 'error', message: 'Poster image must be less than 5MB.' });
+        setSubmitting(false);
+        return;
+      }
+      
+      const fileExt = posterFile.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('posters')
+        .upload(filePath, posterFile);
+
+      if (uploadError) {
+        setFeedback({ type: 'error', message: 'Failed to upload poster image.' });
+        setSubmitting(false);
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('posters')
+        .getPublicUrl(filePath);
+        
+      finalImageUrl = publicUrlData.publicUrl;
+    }
+
     try {
       const eventData = {
         title,
@@ -216,7 +287,7 @@ const StudentOrgEvents = () => {
         date,
         registrationDeadline: registrationDeadline || undefined,
         capacity: registrationType === 'team' ? undefined : Number(capacity),
-        imageUrl: imageUrl || undefined,
+        imageUrl: finalImageUrl || undefined,
         assignedFacultyId: assignedFaculty,
         registrationType,
         maxTeams: registrationType === 'team' ? Number(maxTeams) : undefined,
@@ -745,7 +816,7 @@ const StudentOrgEvents = () => {
                             Publish
                           </button>
                         )}
-                        {['pending_approval', 'under_review', 'needs_revision', 'approved'].includes(evt.status) && (
+                        {['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) && (
                           <button
                             onClick={() => setWithdrawEvent(evt)}
                             className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
@@ -902,9 +973,20 @@ const StudentOrgEvents = () => {
                 <input
                   type="datetime-local"
                   required
-                  min={new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().slice(0, 16)}
+                  min={getTomorrowISO()}
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setDate(newDate);
+                    if (registrationDeadline) {
+                      const maxAllowed = new Date(newDate);
+                      maxAllowed.setDate(maxAllowed.getDate() - 1);
+                      maxAllowed.setHours(23, 59, 59, 999);
+                      if (new Date(registrationDeadline) > maxAllowed || new Date(registrationDeadline) < new Date(getTomorrowISO())) {
+                        setRegistrationDeadline('');
+                      }
+                    }
+                  }}
                   className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
                 />
               </div>
@@ -913,22 +995,72 @@ const StudentOrgEvents = () => {
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Registration Closing / Team Approval Deadline</label>
                 <input
                   type="datetime-local"
+                  disabled={!date}
+                  min={getTomorrowISO()}
+                  max={getMaxDeadlineISO()}
                   value={registrationDeadline}
                   onChange={(e) => setRegistrationDeadline(e.target.value)}
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
+                {!date && <p className="text-[10px] text-fuchsia-500 mt-1 font-semibold">Please select the event date first.</p>}
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Expected Capacity *</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={capacity}
-                  onChange={(e) => setCapacity(e.target.value)}
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
-                />
+              <div className="col-span-1 sm:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Event Poster</label>
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setPosterOption('upload')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'upload' ? 'bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+                  >
+                    Upload Poster
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPosterOption('url')}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'url' ? 'bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+                  >
+                    Poster URL
+                  </button>
+                </div>
+
+                {posterOption === 'upload' ? (
+                  <div>
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          setPosterFile(file);
+                          setPosterPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-fuchsia-50 file:text-fuchsia-700 hover:file:bg-fuchsia-100"
+                    />
+                    {(posterPreview || imageUrl) && (
+                      <div className="mt-2 h-20 w-32 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                        <img src={posterPreview || imageUrl} alt="Preview" className="h-full w-full object-cover" />
+                      </div>
+                    )}
+                    <p className="text-[9px] text-slate-400 mt-1">Max 5MB (JPG, PNG, WEBP)</p>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      placeholder="https://example.com/poster.jpg"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                    />
+                    {imageUrl && (
+                      <div className="mt-2 h-20 w-32 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                        <img src={imageUrl} alt="Preview" className="h-full w-full object-cover" />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -948,6 +1080,22 @@ const StudentOrgEvents = () => {
                   </select>
                 </div>
               </div>
+
+              {registrationType === 'individual' && (
+                <div className="grid grid-cols-1 gap-4 mt-4 animate-fade-in-up">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Number of Slots *</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={capacity}
+                      onChange={(e) => setCapacity(e.target.value)}
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                    />
+                  </div>
+                </div>
+              )}
 
               {registrationType === 'team' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in-up">
@@ -1001,32 +1149,63 @@ const StudentOrgEvents = () => {
               )}
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Poster Image URL</label>
+            <div className="relative">
+              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Faculty Coordinator Reviewer *</label>
               <input
                 type="text"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="Leave blank for generic poster"
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                placeholder="-- Search Faculty Coordinator --"
+                value={facultySearchTerm}
+                onChange={(e) => {
+                  setFacultySearchTerm(e.target.value);
+                  setAssignedFaculty('');
+                  setIsFacultyDropdownOpen(true);
+                }}
+                onFocus={() => setIsFacultyDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setIsFacultyDropdownOpen(false), 200)}
+                className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
               />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Faculty Coordinator Reviewer *</label>
-              <select
-                required
-                value={assignedFaculty}
-                onChange={(e) => setAssignedFaculty(e.target.value)}
-                className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
-              >
-                <option value="">-- Select Faculty Coordinator --</option>
-                {facultyList.map(fac => (
-                  <option key={fac.id} value={fac.id}>
-                    {fac.displayLabel || fac.fullName}
-                  </option>
-                ))}
-              </select>
+              
+              {isFacultyDropdownOpen && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                  {facultyList
+                    .filter(fac => {
+                      const search = facultySearchTerm.toLowerCase();
+                      const name = (fac.displayLabel || fac.fullName || fac.name || '').toLowerCase();
+                      const email = (fac.email || '').toLowerCase();
+                      const dept = (fac.department || '').toLowerCase();
+                      return name.includes(search) || email.includes(search) || dept.includes(search);
+                    })
+                    .map(fac => (
+                      <div
+                        key={fac.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault(); // Prevents input onBlur from firing before click registers
+                          setAssignedFaculty(fac.id);
+                          setFacultySearchTerm(fac.displayLabel || fac.fullName || fac.name);
+                          setIsFacultyDropdownOpen(false);
+                        }}
+                        className={`px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 ${assignedFaculty === fac.id ? 'bg-fuchsia-50/50' : ''}`}
+                      >
+                        <div className="font-bold text-slate-700 text-sm">{fac.displayLabel || fac.fullName || fac.name}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {fac.department ? `${fac.department} • ` : ''}{fac.email}
+                        </div>
+                      </div>
+                    ))}
+                  
+                  {facultyList.filter(fac => {
+                    const search = facultySearchTerm.toLowerCase();
+                    const name = (fac.displayLabel || fac.fullName || fac.name || '').toLowerCase();
+                    const email = (fac.email || '').toLowerCase();
+                    const dept = (fac.department || '').toLowerCase();
+                    return name.includes(search) || email.includes(search) || dept.includes(search);
+                  }).length === 0 && (
+                    <div className="px-4 py-3 text-sm text-slate-500 text-center">
+                      No matching faculty found
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -1181,59 +1360,6 @@ const StudentOrgEvents = () => {
               <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
             </label>
           </div>
-
-          {/* Recruit Organizer Form */}
-          <form onSubmit={handleAddOrganizer} className="space-y-4 mb-6 pb-6 border-b border-slate-200/30">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Recruit Organizer</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Select Student *</label>
-                <select
-                  required
-                  value={selectedOrgStudent}
-                  onChange={(e) => setSelectedOrgStudent(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer text-slate-700"
-                >
-                  <option value="" className="text-slate-700">-- Select Student --</option>
-                  {studentsList.map(std => (
-                    <option key={std.id} value={std.id} className="text-slate-700">
-                      {std.displayLabel || std.fullName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Category *</label>
-                <select
-                  required
-                  value={selectedOrgCategory}
-                  onChange={(e) => setSelectedOrgCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer text-slate-700"
-                >
-                  {[
-                    'Event Head',
-                    'Technical Team',
-                    'Design Team',
-                    'Media Team',
-                    'Hospitality Team',
-                    'Logistics Team',
-                    'Volunteer',
-                    'Other'
-                  ].map(cat => (
-                    <option key={cat} value={cat} className="text-slate-700">{cat}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-fuchsia-500/15"
-            >
-              Recruit Organizer
-            </button>
-          </form>
 
           {/* Current Organizers list */}
           <div>

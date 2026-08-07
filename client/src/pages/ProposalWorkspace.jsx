@@ -28,6 +28,11 @@ const ProposalWorkspace = () => {
   const [remarks, setRemarks] = useState('');
   const [processingAction, setProcessingAction] = useState(false);
 
+  // Description editing state
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
+  const [savingDescription, setSavingDescription] = useState(false);
+
   // Team state
   const [team, setTeam] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -129,6 +134,15 @@ const ProposalWorkspace = () => {
     }
   }, [activeTab, data?.discussions]);
 
+  const getRoleBadge = (userId, globalRole) => {
+    if (userId === event?.faculty_id) return 'Faculty Coordinator';
+    if (userId === event?.proposed_by || userId === event?.student_organizer_id) return 'Event Creator';
+    const member = team.find(t => t.user_id === userId);
+    if (member && member.role) return member.role;
+    if (globalRole === 'admin') return 'System Admin';
+    return globalRole === 'faculty' ? 'Faculty' : 'Student';
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!message.trim()) return;
@@ -142,6 +156,19 @@ const ProposalWorkspace = () => {
       alert(err.response?.data?.message || 'Failed to send message.');
     } finally {
       setSubmittingMsg(false);
+    }
+  };
+
+  const handleSaveDescription = async () => {
+    try {
+      setSavingDescription(true);
+      await axios.put(`/api/events/${proposalId}/proposal-description`, { description: editedDescription });
+      setIsEditingDescription(false);
+      fetchWorkspace(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to save description.');
+    } finally {
+      setSavingDescription(false);
     }
   };
 
@@ -163,6 +190,16 @@ const ProposalWorkspace = () => {
       alert(err.response?.data?.message || 'Failed to upload document.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleRemoveDocument = async (docId) => {
+    if (!window.confirm('Are you sure you want to remove this document?')) return;
+    try {
+      await axios.delete(`/api/events/${proposalId}/documents/${docId}`);
+      fetchWorkspace(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to remove document.');
     }
   };
 
@@ -293,12 +330,17 @@ const ProposalWorkspace = () => {
                 <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Faculty Coordinator</span>
                 <p className="font-semibold text-slate-700">{event.faculty?.full_name}</p>
               </div>
-              {event.capacity && (
+              {event.registration_type === 'team' ? (
                 <div>
-                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Budget/Capacity</span>
+                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Team Limit</span>
+                  <p className="font-semibold text-slate-700">{event.max_teams} teams ({event.min_team_size}-{event.max_team_size} members)</p>
+                </div>
+              ) : event.capacity ? (
+                <div>
+                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Number of Slots</span>
                   <p className="font-semibold text-slate-700">{event.capacity} seats</p>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -426,8 +468,54 @@ const ProposalWorkspace = () => {
             {activeTab === 'summary' && (
               <div className="space-y-6 animate-fade-in">
                 <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-                  <h3 className="text-lg font-bold text-slate-800 mb-4">Description</h3>
-                  <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-slate-800">Description</h3>
+                    {(isCreator || isFaculty || user?.roles?.includes('admin')) && !isEditingDescription && (
+                      <button 
+                        onClick={() => {
+                          setEditedDescription(event.description || '');
+                          setIsEditingDescription(true);
+                        }}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Edit Description
+                      </button>
+                    )}
+                  </div>
+                  
+                  {isEditingDescription ? (
+                    <div className="space-y-4 animate-fade-in">
+                      <textarea
+                        className="w-full p-4 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[150px]"
+                        value={editedDescription}
+                        onChange={(e) => setEditedDescription(e.target.value)}
+                        placeholder="Enter event description..."
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button 
+                          onClick={() => setIsEditingDescription(false)}
+                          disabled={savingDescription}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={handleSaveDescription}
+                          disabled={savingDescription || !editedDescription.trim()}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {savingDescription ? (
+                            <>
+                              <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
+                              Saving...
+                            </>
+                          ) : 'Save Changes'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
+                  )}
                 </div>
               </div>
             )}
@@ -527,16 +615,23 @@ const ProposalWorkspace = () => {
                   <div className="p-4 border-b border-slate-100 bg-white">
                      <h4 className="font-bold text-sm text-indigo-600 mb-3 uppercase tracking-wider">Faculty Coordinators</h4>
                      <ul className="divide-y divide-slate-100">
-                       {team.filter(t => t.role === 'Faculty Coordinator').length === 0 && (
+                       {team.filter(t => t.global_role?.startsWith('faculty')).length === 0 && (
                          <li className="py-2 text-xs text-slate-400 italic">No faculty assigned yet.</li>
                        )}
-                       {team.filter(t => t.role === 'Faculty Coordinator').map(t => (
+                       {team.filter(t => t.global_role?.startsWith('faculty')).map(t => (
                          <li key={t.id} className="py-3 flex justify-between items-center">
                            <div>
-                             <p className="font-bold text-sm text-slate-800">{t.name}</p>
-                             <p className="text-xs text-slate-500">{t.email}</p>
+                             <p className="font-bold text-sm text-slate-800">
+                               {t.name}
+                               {t.role && (
+                                 <span className="ml-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full border border-slate-200">
+                                   {t.role}
+                                 </span>
+                               )}
+                             </p>
+                             <p className="text-xs text-slate-500 mt-0.5">{t.email}</p>
                            </div>
-                           {(isFaculty || user?.roles?.includes('admin')) && t.user_id !== event.faculty_id && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
+                           {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && t.user_id !== event.faculty_id && (
                              <button onClick={() => handleRemoveTeamMember(t.id)} className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded transition-colors">Remove</button>
                            )}
                          </li>
@@ -547,17 +642,19 @@ const ProposalWorkspace = () => {
                   <div className="p-4 bg-white">
                      <h4 className="font-bold text-sm text-indigo-600 mb-3 uppercase tracking-wider">Student Organizers</h4>
                      <ul className="divide-y divide-slate-100">
-                       {team.filter(t => t.role !== 'Faculty Coordinator').length === 0 && (
+                       {team.filter(t => !t.global_role?.startsWith('faculty')).length === 0 && (
                          <li className="py-2 text-xs text-slate-400 italic">No students assigned yet.</li>
                        )}
-                       {team.filter(t => t.role !== 'Faculty Coordinator').map(t => (
+                       {team.filter(t => !t.global_role?.startsWith('faculty')).map(t => (
                          <li key={t.id} className="py-3 flex justify-between items-center">
                            <div>
                              <p className="font-bold text-sm text-slate-800">
                                {t.name}
-                               <span className="ml-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full border border-slate-200">
-                                 {t.role}
-                               </span>
+                               {t.role && (
+                                 <span className="ml-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full border border-slate-200">
+                                   {t.role}
+                                 </span>
+                               )}
                              </p>
                              <p className="text-xs text-slate-500 mt-0.5">{t.email}</p>
                            </div>
@@ -584,9 +681,14 @@ const ProposalWorkspace = () => {
                       return (
                         <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                           <div className={`max-w-[80%] rounded-2xl p-4 ${isMe ? 'bg-indigo-500 text-white rounded-tr-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm shadow-sm'}`}>
-                            <div className="flex items-center gap-2 mb-1 opacity-80">
-                              <span className="text-[10px] font-bold">{isMe ? 'You' : msg.sender?.full_name}</span>
-                              <span className="text-[9px]">• {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <div className="flex flex-col mb-2 opacity-90">
+                              <span className="text-xs font-bold">{isMe ? 'You' : msg.sender?.full_name}</span>
+                              <span className={`text-[10px] font-medium mt-0.5 ${isMe ? 'text-indigo-100' : 'text-slate-500'}`}>
+                                {getRoleBadge(msg.user_id, msg.sender?.role)}
+                              </span>
+                              <span className="text-[10px] opacity-75 mt-0.5">
+                                {new Date(msg.created_at).toLocaleDateString()} • {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
                             <p className="text-sm">{msg.message}</p>
                           </div>
@@ -634,7 +736,7 @@ const ProposalWorkspace = () => {
                         type="file" 
                         onChange={(e) => setUploadFile(e.target.files[0])}
                         className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
-                        accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
+                        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
                       />
                     </div>
                     <button 
@@ -674,17 +776,31 @@ const ProposalWorkspace = () => {
                               </div>
                             </div>
                           </div>
-                          <a 
-                            href={getFileUrl(doc.file_url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                            download
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </a>
+                          <div className="flex gap-2">
+                            <a 
+                              href={getFileUrl(doc.file_url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                              download
+                              title="Download/View Document"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                              </svg>
+                            </a>
+                            {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
+                              <button
+                                onClick={() => handleRemoveDocument(doc.id)}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                title="Remove Document"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
                         </li>
                       ))}
                     </ul>

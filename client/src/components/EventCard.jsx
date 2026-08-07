@@ -18,7 +18,9 @@ const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnable
     return new Date(dateString).toLocaleDateString('en-US', options);
   };
 
-  const isFull = event.registration_type === 'team' ? false : (event.registeredCount >= event.capacity);
+  const isFull = event.registration_type === 'team' 
+    ? (event.max_teams ? ((event.teamCount || 0) >= event.max_teams) : false) 
+    : ((event.registeredCount || 0) >= event.capacity);
   const isActive = event.status === 'published' || event.status === 'active';
 
   // Category styling map — vibrant pastel colors
@@ -33,7 +35,9 @@ const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnable
   const catStyle = categoryStyles[event.category] || { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-300', doodle: <MusicDoodle className="w-10 h-10 text-gray-400 opacity-80" /> };
 
   // Capacity fill rate
-  const fillRate = Math.min(100, Math.round((event.registeredCount / event.capacity) * 100));
+  const capVal = event.registration_type === 'team' ? (event.max_teams || 1) : event.capacity;
+  const currCount = event.registration_type === 'team' ? (event.teamCount || 0) : (event.registeredCount || 0);
+  const fillRate = Math.min(100, Math.round((currCount / capVal) * 100));
 
   // Stagger delay for entrance animation
   const staggerDelay = Math.min(index * 100, 600);
@@ -164,6 +168,21 @@ const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnable
           )}
 
           <div className="w-full flex flex-col gap-2">
+            {/* Capacity Display */}
+            <div className="text-[10px] font-bold text-gray-500 mt-1 mb-1 px-1 w-full">
+              {event.registration_type === 'team' ? (
+                <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
+                  <span>{event.teamCount || 0} / {event.max_teams || '∞'} Teams</span>
+                  {event.max_teams && <span>{Math.max(0, event.max_teams - (event.teamCount || 0))} Remaining</span>}
+                </div>
+              ) : (
+                <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
+                  <span>{event.registeredCount || 0} / {event.capacity} Registered</span>
+                  <span>{Math.max(0, event.capacity - (event.registeredCount || 0))} Remaining</span>
+                </div>
+              )}
+            </div>
+
             {!user ? (
               <Link
                 to="/login"
@@ -218,7 +237,7 @@ const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnable
                     disabled
                     className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-coral/20 text-red-400 border border-pastel-coral cursor-not-allowed"
                   >
-                    Sold Out
+                    {event.registration_type === 'team' ? 'Team Registration Full' : 'Registration Full'}
                   </button>
                 ) : isOrganizer || requestStatus === 'pending' ? (
                   <button

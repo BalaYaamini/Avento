@@ -146,7 +146,7 @@ const FacultyOrgEvents = () => {
                   <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
                     <th className="px-6 py-4">Event Details</th>
                     <th className="px-6 py-4">Category</th>
-                    <th className="px-6 py-4">Capacity</th>
+                    <th className="px-6 py-4">Capacity / Teams</th>
                     <th className="px-6 py-4">Date & Time</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4 text-right">Actions</th>
@@ -273,7 +273,7 @@ const FacultyOrgEvents = () => {
                   <div><strong className="text-slate-700">Category:</strong> {selectedEvent.category}</div>
                   <div><strong className="text-slate-700">Venue:</strong> {selectedEvent.venue}</div>
                   <div><strong className="text-slate-700">Date:</strong> {formatDate(selectedEvent.date)}</div>
-                  <div><strong className="text-slate-700">Capacity:</strong> {selectedEvent.capacity}</div>
+                  <div><strong className="text-slate-700">{selectedEvent.registration_type === 'team' ? 'Team Limit:' : 'Number of Slots:'}</strong> {selectedEvent.registration_type === 'team' ? `${selectedEvent.max_teams} teams` : selectedEvent.capacity}</div>
                 </div>
               </div>
               
