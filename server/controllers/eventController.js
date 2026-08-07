@@ -57,7 +57,8 @@ const getEvents = async (req, res) => {
         const { count, error: teamCountErr } = await supabase
           .from('event_teams')
           .select('*', { count: 'exact', head: true })
-          .eq('event_id', evt.id);
+          .eq('event_id', evt.id)
+          .eq('status', 'registered');
         
         if (!teamCountErr) {
           evt.teamCount = count || 0;
@@ -220,7 +221,8 @@ const getEventById = async (req, res) => {
       const { count, error: teamCountErr } = await supabase
         .from('event_teams')
         .select('*', { count: 'exact', head: true })
-        .eq('event_id', id);
+        .eq('event_id', id)
+        .eq('status', 'registered');
       
       if (!teamCountErr) {
         event.teamCount = count || 0;

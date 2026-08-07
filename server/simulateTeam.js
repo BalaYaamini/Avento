@@ -1,10 +1,9 @@
 const dotenv = require('dotenv');
 dotenv.config({ path: '.env' });
 const { registerTeamForEvent } = require('./controllers/registrationController');
-const { createClient } = require('@supabase/supabase-js');
+const supabase = require('./config/supabaseClient');
 
 async function main() {
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   // Get an active event
   const { data: event } = await supabase.from('events').select('id, title').eq('status', 'published').eq('registration_type', 'team').limit(1).single();
   if (!event) {

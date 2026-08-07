@@ -271,10 +271,29 @@ const Home = () => {
 
   const isUserRegistered = (eventId) => {
     return myRegistrations.some(reg => {
-      // Check the raw Supabase column (event_id) first, then the joined alias (eventId)
+      // If it's a team registration and the team itself is still pending confirmation, we are not fully registered yet.
+      if (reg.status === 'pending' || reg.status === 'rejected' || reg.status === 'auto_rejected' || reg.status === 'cancelled') return false;
+      const teamStatus = reg.teamId?.status || 'pending';
+      if (reg.teamId && teamStatus === 'pending') return false;
+
       const rawId = reg.event_id;
       const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
       return String(rawId) === String(eventId) || String(joinedId) === String(eventId);
+    });
+  };
+
+  const isUserPendingTeamLeader = (eventId) => {
+    if (!user) return false;
+    return myRegistrations.some(reg => {
+      const rawId = reg.event_id;
+      const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
+      if (reg.status === 'rejected' || reg.status === 'auto_rejected' || reg.status === 'cancelled') return false;
+
+      const matchesEvent = String(rawId) === String(eventId) || String(joinedId) === String(eventId);
+      
+      // True if the user is the leader of a pending team for this event
+      const teamStatus = reg.teamId?.status || 'pending';
+      return matchesEvent && reg.teamId && teamStatus === 'pending' && String(reg.teamId.leader_id) === String(user.id || user._id);
     });
   };
 
@@ -483,6 +502,7 @@ const Home = () => {
                 event={evt}
                 index={index}
                 isRegistered={isUserRegistered(evt._id || evt.id)}
+                isPendingRegistration={isUserPendingTeamLeader(evt._id || evt.id)}
                 isOrganizer={isUserOrganizer(evt)}
                 joinTeamEnabled={!!evt.join_team_enabled}
                 requestStatus={getUserJoinRequestStatus(evt)}
@@ -627,7 +647,8 @@ const Home = () => {
             setIsTeamRegOpen(false);
             setTeamRegEvent(null);
           }}
-          title="Team Registration"
+          title="Create Team"
+          subtitle="Form your team and invite members"
         >
           {teamRegEvent && (
             <form onSubmit={handleTeamRegister} className="space-y-5">
@@ -797,7 +818,7 @@ const Home = () => {
                   </div>
                   <div className="mt-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
                     <p className="text-xs text-indigo-700 font-medium">
-                      <strong className="font-bold">Note:</strong> Upon registration, all selected members will receive an invitation to join this team. They must accept the invitation before the event's Registration Closing Date to finalize the team.
+                      <strong className="font-bold">Note:</strong> Upon creating the team, all selected members will receive an invitation to join. They must accept the invitation before the event's deadline. Once the minimum required members accept, you will be able to confirm the team and officially register for the event.
                     </p>
                   </div>
                 </div>
@@ -820,7 +841,7 @@ const Home = () => {
                   disabled={registeringIds[teamRegEvent._id || teamRegEvent.id]}
                   className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
                 >
-                  {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Registering...' : 'Submit Team Registration'}
+                  {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}
                 </button>
               </div>
             </form>

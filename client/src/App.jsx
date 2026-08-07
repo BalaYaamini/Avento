@@ -62,7 +62,7 @@ const AnimatedRoutes = () => {
         <Route
           path="/my-registrations"
           element={
-            <ProtectedRoute allowedRoles={['student']}>
+            <ProtectedRoute allowedRoles={['student', 'faculty', 'student_organizer', 'faculty_organizer']}>
               <StudentRegistrations />
             </ProtectedRoute>
           }

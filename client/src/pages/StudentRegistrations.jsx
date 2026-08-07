@@ -4,10 +4,11 @@ import { Link } from 'react-router-dom';
 import Modal from '../components/Modal';
 import FeedbackModal from '../components/FeedbackModal';
 import { QRCodeSVG } from 'qrcode.react';
-import { supabase } from '../context/AuthContext';
+import { supabase, useAuth } from '../context/AuthContext';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 
 const StudentRegistrations = () => {
+  const { user } = useAuth();
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -16,6 +17,10 @@ const StudentRegistrations = () => {
   const [feedback, setFeedback] = useState(null);
   const [isConfirmCancelOpen, setIsConfirmCancelOpen] = useState(false);
   const [confirmCancelReg, setConfirmCancelReg] = useState(null);
+  const [isConfirmRejectOpen, setIsConfirmRejectOpen] = useState(false);
+  const [confirmRejectReg, setConfirmRejectReg] = useState(null);
+  const [isConfirmLeaveOpen, setIsConfirmLeaveOpen] = useState(false);
+  const [confirmLeaveReg, setConfirmLeaveReg] = useState(null);
   const [teamModalData, setTeamModalData] = useState(null);
   const [qrModalData, setQrModalData] = useState(null);
   
@@ -155,19 +160,31 @@ const StudentRegistrations = () => {
     }
   };
 
+  const openConfirmReject = (reg) => {
+    setConfirmRejectReg(reg);
+    setIsConfirmRejectOpen(true);
+  };
+
   const handleRejectInvitation = async (regId) => {
     setProcessingId(regId);
     setFeedback(null);
     try {
       await axios.post(`/api/registrations/${regId}/reject`);
       setFeedback({ type: 'success', message: 'Team invitation rejected.' });
-      setRegistrations(prev => prev.filter(r => r.id !== regId));
+      setRegistrations(prev => prev.map(r => r.id === regId ? { ...r, status: 'rejected' } : r));
     } catch (err) {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to reject invitation.' });
     } finally {
       setProcessingId(null);
+      setIsConfirmRejectOpen(false);
+      setConfirmRejectReg(null);
       setTimeout(() => setFeedback(null), 4000);
     }
+  };
+
+  const openConfirmLeave = (reg) => {
+    setConfirmLeaveReg(reg);
+    setIsConfirmLeaveOpen(true);
   };
 
   const handleLeaveTeam = async (teamId) => {
@@ -181,6 +198,23 @@ const StudentRegistrations = () => {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to leave team.' });
     } finally {
       setProcessingId(null);
+      setIsConfirmLeaveOpen(false);
+      setConfirmLeaveReg(null);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+  const handleConfirmTeam = async (teamId) => {
+    setProcessingId(teamId);
+    setFeedback(null);
+    try {
+      await axios.post(`/api/registrations/team/${teamId}/confirm`);
+      setFeedback({ type: 'success', message: 'Team registration confirmed successfully.' });
+      fetchRegistrations();
+    } catch (err) {
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to confirm team.' });
+    } finally {
+      setProcessingId(null);
       setTimeout(() => setFeedback(null), 4000);
     }
   };
@@ -191,8 +225,12 @@ const StudentRegistrations = () => {
   };
 
   const invitationsList = registrations.filter(r => {
+    // Exclude if the user is the Team Leader (these belong in My Registrations)
+    if (r.team_id && r.teamDetails?.leader_id === r.user_id) return false;
+
     if (r.status === 'pending') return true;
-    if (r.status === 'registered' && r.team_id && r.teamDetails?.leader_id !== r.user_id) return true;
+    if (r.status === 'rejected' || r.status === 'auto_rejected' || r.status === 'cancelled') return true;
+    if (r.status === 'registered' && r.team_id) return true;
     return false;
   });
 
@@ -244,9 +282,9 @@ const StudentRegistrations = () => {
             }`}
           >
             Team Invitations
-            {registrations.filter(r => r.status === 'pending').length > 0 && (
+            {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length > 0 && (
               <span className="ml-2 inline-flex items-center justify-center bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                {registrations.filter(r => r.status === 'pending').length}
+                {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length}
               </span>
             )}
           </button>
@@ -283,7 +321,7 @@ const StudentRegistrations = () => {
                 <p className="text-red-400 font-bold mb-3">{error}</p>
                 <button onClick={fetchRegistrations} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white">Retry</button>
               </div>
-            ) : registrations.filter(r => r.status !== 'pending' && r.status !== 'expired').length === 0 ? (
+            ) : registrations.filter(r => r.status === 'registered' || (r.status === 'pending' && r.teamId && r.teamId.leader_id === user?.id)).length === 0 ? (
               <div className="text-center py-24 glass-panel rounded-2xl animate-fade-in-scale">
                 <div className="h-20 w-20 bg-white/50 rounded-2xl flex items-center justify-center mx-auto text-slate-600 mb-5">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -297,7 +335,7 @@ const StudentRegistrations = () => {
             ) : (
               /* Registrations Cards Container */
               <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
-                {registrations.filter(r => r.status !== 'pending' && r.status !== 'expired').map((reg, i) => {
+                {registrations.filter(r => r.status === 'registered' || (r.status === 'pending' && r.teamId && r.teamId.leader_id === user?.id)).map((reg, i) => {
                   const evt = reg.eventId;
                   if (!evt) return null; // safety if event was deleted
 
@@ -345,9 +383,15 @@ const StudentRegistrations = () => {
                             
                             {/* Status Badge */}
                             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-                              <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/8 text-emerald-500 border-emerald-500/15 flex items-center gap-1.5">
-                                ✓ Registered
-                              </span>
+                              {reg.teamId && reg.teamId.status === 'pending' ? (
+                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-500 border-amber-500/15 flex items-center gap-1.5">
+                                  ⏳ Waiting for Confirmation
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/8 text-emerald-500 border-emerald-500/15 flex items-center gap-1.5">
+                                  ✓ Registered
+                                </span>
+                              )}
                               <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider mt-1">
                                 {evt.category}
                               </span>
@@ -386,14 +430,14 @@ const StudentRegistrations = () => {
                           <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
                             Event Completed – Pass unavailable.
                           </span>
-                        ) : (
+                        ) : (!reg.teamId || reg.teamId.status === 'registered') ? (
                           <button
                             onClick={() => setQrModalData(reg)}
                             className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
                           >
                             View Pass
                           </button>
-                        )}
+                        ) : null}
                         {reg.teamId && (
                           <button
                             onClick={() => setTeamModalData(reg)}
@@ -412,13 +456,31 @@ const StudentRegistrations = () => {
                               {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
                             </button>
                           ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
-                            <button
-                              onClick={() => openConfirmCancel(reg)}
-                              disabled={cancellingId === reg.id}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                            >
-                              {cancellingId === reg.id ? 'Cancelling...' : 'Withdraw Team'}
-                            </button>
+                            <div className="flex gap-2">
+                              {reg.teamId.status === 'pending' && (
+                                (() => {
+                                  const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                  const minRequired = evt.min_team_size || 1;
+                                  const isReady = acceptedCount >= minRequired;
+                                  return (
+                                    <button
+                                      onClick={() => isReady && handleConfirmTeam(reg.teamId.id)}
+                                      disabled={!isReady || processingId === reg.teamId.id}
+                                      className={`px-5 py-2 text-xs font-bold rounded-xl transition-all duration-300 disabled:opacity-50 ${isReady ? 'bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20' : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'}`}
+                                    >
+                                      {processingId === reg.teamId.id ? 'Confirming...' : (isReady ? 'Confirm Registration' : `Waiting for members (${acceptedCount}/${minRequired})`)}
+                                    </button>
+                                  );
+                                })()
+                              )}
+                              <button
+                                onClick={() => openConfirmCancel(reg)}
+                                disabled={cancellingId === reg.id}
+                                className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                              >
+                                {cancellingId === reg.id ? 'Cancelling...' : 'Withdraw Team'}
+                              </button>
+                            </div>
                           ) : null
                         )}
                       </div>
@@ -495,7 +557,8 @@ const StudentRegistrations = () => {
                                     const rollNum = email ? email.split('@')[0] : '';
                                     const isLeader = member.id === reg.teamDetails?.leader_id;
                                     const rawStatus = member.status || 'pending';
-                                    const displayStatus = isLeader ? 'Leader' : (rawStatus === 'registered' ? 'Accepted' : rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1));
+                                    let displayStatus = isLeader ? 'Leader' : (rawStatus === 'registered' ? 'Accepted' : rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1));
+                                    if (rawStatus === 'auto_rejected') displayStatus = 'Unavailable (Joined Another Team)';
                                     
                                     return (
                                       <li key={member.id} className="text-sm text-slate-700">
@@ -524,6 +587,14 @@ const StudentRegistrations = () => {
                                 <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/10 text-emerald-600 border-emerald-500/20 flex items-center gap-1.5">
                                   Accepted
                                 </span>
+                              ) : reg.status === 'rejected' || reg.status === 'auto_rejected' ? (
+                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-red-500/10 text-red-600 border-red-500/20 flex items-center gap-1.5">
+                                  Rejected
+                                </span>
+                              ) : reg.status === 'cancelled' ? (
+                                <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-slate-500/10 text-slate-600 border-slate-500/20 flex items-center gap-1.5">
+                                  Left Team
+                                </span>
                               ) : (
                                 <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-600 border-amber-500/15 flex items-center gap-1.5">
                                   Pending Approval
@@ -537,38 +608,74 @@ const StudentRegistrations = () => {
                       <div className="h-px bg-slate-200/60 my-5 w-full" />
 
                       <div className="flex flex-wrap items-center justify-end gap-3">
-                        {evt.registration_deadline && new Date() > new Date(evt.registration_deadline) ? (
+                        {reg.status === 'rejected' ? (
+                          <span className="text-xs text-red-500 font-bold bg-red-500/10 px-4 py-2 rounded-xl">
+                            You have rejected this invitation. You cannot join this team again unless the Team Leader sends you a new invitation.
+                          </span>
+                        ) : reg.status === 'auto_rejected' ? (
+                          <span className="text-xs text-slate-500 font-bold bg-slate-100 px-4 py-2 rounded-xl border">
+                            You cannot accept this invitation because you have already joined another team.
+                          </span>
+                        ) : reg.status === 'cancelled' ? (
+                          <span className="text-xs text-slate-500 font-bold bg-slate-100 px-4 py-2 rounded-xl border">
+                            You have left this team.
+                          </span>
+                        ) : evt.registration_deadline && new Date() > new Date(evt.registration_deadline) ? (
                           <span className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center">
                             {reg.status === 'registered' ? 'Registration Closed' : 'Approval Closed'}
                           </span>
                         ) : reg.status === 'registered' ? (
-                          <button
-                            onClick={() => handleLeaveTeam(reg.team_id)}
-                            disabled={processingId === reg.team_id}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                          >
-                            {processingId === reg.team_id ? 'Processing...' : 'Leave Team'}
-                          </button>
+                          reg.teamId && reg.teamId.status === 'registered' ? (
+                            <span className="text-xs text-emerald-600 font-bold bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl">
+                              Team Confirmed
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => openConfirmLeave(reg)}
+                              disabled={processingId === reg.team_id}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                            >
+                              {processingId === reg.team_id ? 'Processing...' : 'Leave Team'}
+                            </button>
+                          )
                         ) : hasActiveTeamForEvent ? (
                           <div className="flex flex-col sm:flex-row items-center gap-3">
                             <span className="text-xs text-amber-600 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 max-w-xs text-center sm:text-right">
                               You have already joined another team. You must leave it before joining a different one.
                             </span>
-                            <button
-                              disabled={true}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-300 text-slate-500 cursor-not-allowed transition-all duration-300"
-                            >
-                              Accept Invitation
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                disabled={true}
+                                className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-300 text-slate-500 cursor-not-allowed transition-all duration-300"
+                              >
+                                Accept Invitation
+                              </button>
+                              <button
+                                onClick={() => openConfirmReject(reg)}
+                                disabled={processingId === reg.id}
+                                className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                              >
+                                Reject Invitation
+                              </button>
+                            </div>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleAcceptInvitation(reg.id)}
-                            disabled={processingId === reg.id}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 transition-all duration-300 disabled:opacity-50"
-                          >
-                            {processingId === reg.id ? 'Processing...' : 'Accept Invitation'}
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleAcceptInvitation(reg.id)}
+                              disabled={processingId === reg.id}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 transition-all duration-300 disabled:opacity-50"
+                            >
+                              {processingId === reg.id ? 'Processing...' : 'Accept Invitation'}
+                            </button>
+                            <button
+                              onClick={() => openConfirmReject(reg)}
+                              disabled={processingId === reg.id}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                            >
+                              Reject Invitation
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -759,6 +866,108 @@ const StudentRegistrations = () => {
           )}
         </Modal>
 
+        {/* Confirm Reject Invitation Modal */}
+        <Modal
+          isOpen={isConfirmRejectOpen}
+          onClose={() => {
+            if (processingId) return;
+            setIsConfirmRejectOpen(false);
+            setConfirmRejectReg(null);
+          }}
+          title="Reject Team Invitation?"
+        >
+          {confirmRejectReg && (
+            <div className="space-y-6">
+              <p className="text-slate-600 text-sm font-body">
+                If you reject this invitation, you will not be able to join this team again unless the Team Leader sends you a new invitation.
+              </p>
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-3 items-start">
+                <span className="text-xl">⚠</span>
+                <p className="text-red-500 text-xs font-semibold mt-1">
+                  Are you sure you want to reject this invitation?
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setIsConfirmRejectOpen(false);
+                    setConfirmRejectReg(null);
+                  }}
+                  disabled={processingId === confirmRejectReg.id}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRejectInvitation(confirmRejectReg.id)}
+                  disabled={processingId === confirmRejectReg.id}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {processingId === confirmRejectReg.id ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                      Rejecting...
+                    </>
+                  ) : (
+                    'Reject Invitation'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        {/* Confirm Leave Team Modal */}
+        <Modal
+          isOpen={isConfirmLeaveOpen}
+          onClose={() => {
+            if (processingId) return;
+            setIsConfirmLeaveOpen(false);
+            setConfirmLeaveReg(null);
+          }}
+          title="Leave Team?"
+        >
+          {confirmLeaveReg && (
+            <div className="space-y-6">
+              <p className="text-slate-600 text-sm font-body">
+                If you leave this team, you will no longer be a member of it. You may join another team or create your own team if you are eligible.
+              </p>
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-3 items-start">
+                <span className="text-xl">⚠</span>
+                <p className="text-red-500 text-xs font-semibold mt-1">
+                  Are you sure you want to leave?
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setIsConfirmLeaveOpen(false);
+                    setConfirmLeaveReg(null);
+                  }}
+                  disabled={processingId === confirmLeaveReg.team_id}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleLeaveTeam(confirmLeaveReg.team_id)}
+                  disabled={processingId === confirmLeaveReg.team_id}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {processingId === confirmLeaveReg.team_id ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                      Leaving...
+                    </>
+                  ) : (
+                    'Leave Team'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
         {/* Team Details Modal */}
         {teamModalData && (
           <Modal
@@ -795,9 +1004,16 @@ const StudentRegistrations = () => {
                           {member.roll_number || ''} {member.department ? `• ${member.department}` : ''}
                         </div>
                       </div>
-                      {member.id === teamModalData.teamDetails?.leader_id && (
-                        <span className="text-[10px] text-fuchsia-400 font-bold uppercase">Leader</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {(member.status === 'registered' || member.id === teamModalData.teamDetails?.leader_id) && <span className="text-[10px] text-emerald-500 font-bold uppercase">🟢 Accepted</span>}
+                        {member.status === 'pending' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-amber-500 font-bold uppercase">🟡 Pending</span>}
+                        {member.status === 'rejected' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-red-500 font-bold uppercase">🔴 Rejected</span>}
+                        {member.status === 'auto_rejected' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-slate-400 font-bold uppercase">Unavailable (Joined another team)</span>}
+                        {member.status === 'cancelled' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-slate-400 font-bold uppercase">⚪ Left Team</span>}
+                        {member.id === teamModalData.teamDetails?.leader_id && (
+                          <span className="text-[10px] text-fuchsia-400 font-bold uppercase">Leader</span>
+                        )}
+                      </div>
                     </li>
                   ))}
                   {(!teamModalData.teamDetails?.members || teamModalData.teamDetails.members.length === 0) && (

@@ -8,6 +8,7 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 // Student features (protected)
 router.post('/', authMiddleware, registrationController.registerForEvent);
 router.post('/team', authMiddleware, registrationController.registerTeamForEvent);
+router.post('/team/:teamId/confirm', authMiddleware, registrationController.confirmTeamRegistration);
 router.get('/my-registrations', authMiddleware, registrationController.getMyRegistrations);
 router.get('/event/:id/eligible-students', authMiddleware, registrationController.getEligibleStudents);
 router.delete('/event/:eventId', authMiddleware, registrationController.cancelRegistrationByEventId);

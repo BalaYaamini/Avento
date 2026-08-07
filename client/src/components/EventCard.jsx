@@ -10,7 +10,7 @@ import {
   PinDoodle
 } from './Doodles';
 
-const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onCancelRegister }) => {
+const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onCancelRegister }) => {
   const { user } = useAuth();
   
   const formatDate = (dateString) => {
@@ -225,6 +225,13 @@ const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnable
                       Cancel Registration
                     </button>
                   </div>
+                ) : isPendingRegistration ? (
+                  <button
+                    disabled
+                    className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-amber-500/20 text-amber-600 border border-amber-500 cursor-not-allowed"
+                  >
+                    ⏳ Waiting for Confirmation
+                  </button>
                 ) : !isActive ? (
                   <button
                     disabled
@@ -252,7 +259,7 @@ const EventCard = ({ event, index = 0, isRegistered, isOrganizer, joinTeamEnable
                     disabled={isSubmitting}
                     className="w-full btn-primary px-4 py-2.5 text-sm font-bold rounded-2xl shadow-pastel-glow disabled:opacity-50"
                   >
-                    {isSubmitting ? 'Processing...' : 'Avento it!'}
+                    {isSubmitting ? 'Processing...' : (event.registration_type === 'team' ? 'Create Team' : 'Avento it!')}
                   </button>
                 )}
 
