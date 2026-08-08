@@ -8,6 +8,7 @@ import TaskDetailsModal from '../components/TaskDetailsModal';
 import CertificateManager from '../components/CertificateManager';
 import FeedbackAnalytics from '../components/FeedbackAnalytics';
 import OrganizerRegistrations from '../components/OrganizerRegistrations';
+import ConfirmedTeamsOverview from '../components/ConfirmedTeamsOverview';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -228,11 +229,27 @@ const Workspace = () => {
         >
           Event Registrations
         </button>
+        {event?.registration_type === 'team' && (
+          <button
+            onClick={() => setActiveTab('confirmed_teams')}
+            className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+              activeTab === 'confirmed_teams' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            Confirmed Teams
+          </button>
+        )}
       </div>
 
       {activeTab === 'registrations' && (
         <div className="mb-8">
           <OrganizerRegistrations eventId={eventId} event={event} />
+        </div>
+      )}
+
+      {activeTab === 'confirmed_teams' && event?.registration_type === 'team' && (
+        <div className="mb-8">
+          <ConfirmedTeamsOverview eventId={eventId} eventTitle={event.title} />
         </div>
       )}
 

@@ -26,6 +26,64 @@ const StudentRegistrations = () => {
   const [isConfirmTeamOpen, setIsConfirmTeamOpen] = useState(false);
   const [confirmTeamReg, setConfirmTeamReg] = useState(null);
   
+  // Edit Team state
+  const [editTeamData, setEditTeamData] = useState(null);
+  const [editTeamName, setEditTeamName] = useState('');
+  const [eligibleStudentsEdit, setEligibleStudentsEdit] = useState([]);
+  const [selectedStudentEdit, setSelectedStudentEdit] = useState('');
+  const [isEditTeamOpen, setIsEditTeamOpen] = useState(false);
+  const [teamEditFeedback, setTeamEditFeedback] = useState(null);
+  const [isCheckingName, setIsCheckingName] = useState(false);
+  const [nameUnavailable, setNameUnavailable] = useState(false);
+  
+  // Leader Contact Number for Team Confirmation
+  const [leaderContactNumber, setLeaderContactNumber] = useState('');
+  const [contactNumberError, setContactNumberError] = useState('');
+  
+  // Searchable dropdown states for Add/Replace Member
+  const [isEditDropdownOpen, setIsEditDropdownOpen] = useState(false);
+  const [studentSearchTermEdit, setStudentSearchTermEdit] = useState('');
+  
+  // Debounce team name checking for Edit Team
+  useEffect(() => {
+    if (!editTeamName || editTeamName.trim() === '' || !editTeamData) {
+      setNameUnavailable(false);
+      setIsCheckingName(false);
+      return;
+    }
+    
+    const eventId = editTeamData.eventId?.id || editTeamData.eventId?._id;
+    const teamId = editTeamData.teamId?.id;
+
+    const checkName = async () => {
+      setIsCheckingName(true);
+      try {
+        const res = await axios.get(`/api/registrations/event/${eventId}/check-team-name?name=${encodeURIComponent(editTeamName)}&excludeTeamId=${teamId}`);
+        setNameUnavailable(!res.data.available);
+      } catch (err) {
+        console.error('Error checking team name:', err);
+      } finally {
+        setIsCheckingName(false);
+      }
+    };
+
+    const delayDebounceFn = setTimeout(() => {
+      checkName();
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [editTeamName, editTeamData]);
+
+  // Sync editTeamData with registrations so modal updates immediately
+  useEffect(() => {
+    if (isEditTeamOpen && editTeamData) {
+      const updatedReg = registrations.find(r => r.id === editTeamData.id);
+      if (updatedReg && JSON.stringify(updatedReg) !== JSON.stringify(editTeamData)) {
+        setEditTeamData(updatedReg);
+      }
+    }
+  }, [registrations, isEditTeamOpen]);
+
   // Feedback states
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -101,6 +159,25 @@ const StudentRegistrations = () => {
       fetchRequests();
     }
   }, [activeSubTab]);
+
+  useEffect(() => {
+    if (isEditTeamOpen && editTeamData) {
+      const updatedReg = registrations.find(r => r.id === editTeamData.id);
+      if (updatedReg) {
+        setEditTeamData(updatedReg);
+      }
+    }
+  }, [registrations, isEditTeamOpen]);
+
+  // Keep View Team modal data in sync with real-time updates
+  useEffect(() => {
+    if (teamModalData) {
+      const updatedReg = registrations.find(r => r.id === teamModalData.id);
+      if (updatedReg) {
+        setTeamModalData(updatedReg);
+      }
+    }
+  }, [registrations]);
 
   const handleConfirmWithdrawRequest = async () => {
     if (!withdrawRequestObj) return;
@@ -213,20 +290,109 @@ const StudentRegistrations = () => {
 
   const handleConfirmTeamSubmit = async () => {
     if (!confirmTeamReg) return;
+    
+    // Validate contact number
+    const isValidPhone = /^[6-9]\d{9}$/.test(leaderContactNumber);
+    if (!isValidPhone) {
+      setContactNumberError('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
     const teamId = confirmTeamReg.teamId.id;
     setProcessingId(teamId);
     setFeedback(null);
     try {
-      await axios.post(`/api/registrations/team/${teamId}/confirm`);
-      setFeedback({ type: 'success', message: 'Team registration confirmed successfully.' });
-      fetchRegistrations();
+      await axios.post(`/api/registrations/team/${teamId}/confirm`, {
+        leaderContactNumber
+      });
+      setFeedback({ type: 'success', message: 'Team registration confirmed successfully!' });
+      setRegistrations(prev => prev.map(r => r.team_id === teamId ? { ...r, status: 'registered' } : r));
     } catch (err) {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to confirm team.' });
     } finally {
       setProcessingId(null);
       setIsConfirmTeamOpen(false);
       setConfirmTeamReg(null);
+      setLeaderContactNumber('');
+      setContactNumberError('');
       setTimeout(() => setFeedback(null), 4000);
+      fetchRegistrations();
+    }
+  };
+
+  const handleEditTeamOpen = async (reg) => {
+    setEditTeamData(reg);
+    setEditTeamName(reg.teamId?.name || '');
+    setIsEditTeamOpen(true);
+    setTeamEditFeedback(null);
+    setSelectedStudentEdit('');
+    
+    // Fetch eligible students for this event
+    try {
+      const eventId = reg.eventId?.id || reg.eventId?._id;
+      const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
+      setEligibleStudentsEdit(res.data);
+    } catch (err) {
+      console.error('Error fetching eligible students for edit:', err);
+    }
+  };
+
+  const handleUpdateTeamName = async () => {
+    if (!editTeamName.trim() || !editTeamData) return;
+    const teamId = editTeamData.teamId.id;
+    setProcessingId(`name-${teamId}`);
+    setTeamEditFeedback(null);
+    try {
+      await axios.put(`/api/registrations/team/${teamId}`, { teamName: editTeamName });
+      setTeamEditFeedback({ type: 'success', message: 'Team name updated successfully.' });
+      fetchRegistrations();
+    } catch (err) {
+      setTeamEditFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to update team name.' });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleAddTeamMember = async () => {
+    if (!selectedStudentEdit || !editTeamData) return;
+    const teamId = editTeamData.teamId.id;
+    setProcessingId(`add-${teamId}`);
+    setTeamEditFeedback(null);
+    try {
+      await axios.post(`/api/registrations/team/${teamId}/members`, { memberId: selectedStudentEdit });
+      setTeamEditFeedback({ type: 'success', message: 'Team member invited successfully.' });
+      setSelectedStudentEdit('');
+      fetchRegistrations();
+      
+      // Refresh eligible students to remove the newly invited one
+      const eventId = editTeamData.eventId?.id || editTeamData.eventId?._id;
+      const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
+      setEligibleStudentsEdit(res.data);
+    } catch (err) {
+      setTeamEditFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to invite team member.' });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleRemoveTeamMember = async (memberId) => {
+    if (!editTeamData) return;
+    const teamId = editTeamData.teamId.id;
+    setProcessingId(`remove-${memberId}`);
+    setTeamEditFeedback(null);
+    try {
+      await axios.delete(`/api/registrations/team/${teamId}/members/${memberId}`);
+      setTeamEditFeedback({ type: 'success', message: 'Team member removed successfully.' });
+      fetchRegistrations();
+      
+      // Refresh eligible students to add the removed one back
+      const eventId = editTeamData.eventId?.id || editTeamData.eventId?._id;
+      const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
+      setEligibleStudentsEdit(res.data);
+    } catch (err) {
+      setTeamEditFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to remove team member.' });
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -482,8 +648,15 @@ const StudentRegistrations = () => {
                           ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
                             <div className="flex gap-2 items-center">
                               {reg.teamDetails?.teamStatus === 'pending' && (
-                                (() => {
-                                  const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                <>
+                                  <button
+                                    onClick={() => handleEditTeamOpen(reg)}
+                                    className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                                  >
+                                    Edit Team
+                                  </button>
+                                  {(() => {
+                                    const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
                                   const minRequired = evt.min_team_size || 1;
                                   const isReady = acceptedCount >= minRequired;
                                   const deadlinePassed = evt.registration_deadline && new Date() > new Date(evt.registration_deadline);
@@ -509,7 +682,8 @@ const StudentRegistrations = () => {
                                   }
                                   
                                   return null; // When not ready, the badge above handles the display
-                                })()
+                                })()}
+                                </>
                               )}
                               {reg.teamDetails?.teamStatus !== 'registered' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
                                 <button
@@ -561,7 +735,10 @@ const StudentRegistrations = () => {
                   
                   if (!evt) return null;
 
-                  const hasActiveTeamForEvent = registrations.some(r => r.eventId?.id === evt.id && r.status === 'registered' && r.team_id);
+                  const hasActiveTeamForEvent = registrations.some(r => 
+                    r.eventId?.id === evt.id && 
+                    (r.status === 'registered' || (r.teamDetails && r.teamDetails.leader_id === user?.id))
+                  );
 
                   const leader = reg.teamDetails?.members?.find(m => m.id === reg.teamDetails?.leader_id);
                   const leaderEmail = leader?.email || '';
@@ -678,10 +855,14 @@ const StudentRegistrations = () => {
                               {processingId === reg.team_id ? 'Processing...' : 'Leave Team'}
                             </button>
                           )
+                        ) : reg.teamId && reg.teamId.status === 'registered' ? (
+                          <span className="text-xs text-amber-600 font-bold bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-xl">
+                            Team Finalized — You can no longer join this team.
+                          </span>
                         ) : hasActiveTeamForEvent ? (
                           <div className="flex flex-col sm:flex-row items-center gap-3">
                             <span className="text-xs text-amber-600 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 max-w-xs text-center sm:text-right">
-                              You have already joined another team. You must leave it before joining a different one.
+                              You are already a member of another team. Leave your current team before joining this team.
                             </span>
                             <div className="flex gap-2">
                               <button
@@ -1015,6 +1196,8 @@ const StudentRegistrations = () => {
             if (processingId === confirmTeamReg?.teamId?.id) return;
             setIsConfirmTeamOpen(false);
             setConfirmTeamReg(null);
+            setLeaderContactNumber('');
+            setContactNumberError('');
           }}
           title="Confirm Team Registration"
         >
@@ -1066,12 +1249,45 @@ const StudentRegistrations = () => {
                 </div>
               </div>
               
+              <div className="mt-6 mb-2">
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Team Leader's Primary Contact Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 9876543210"
+                  value={leaderContactNumber}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    setLeaderContactNumber(val);
+                    setContactNumberError('');
+                  }}
+                  className={`w-full px-4 py-2.5 rounded-xl border bg-white focus:outline-none focus:ring-2 transition-all ${
+                    contactNumberError 
+                      ? 'border-red-300 focus:border-red-400 focus:ring-red-100/50' 
+                      : 'border-slate-200 focus:border-fuchsia-500/50 focus:ring-fuchsia-500/20'
+                  }`}
+                  maxLength={10}
+                />
+                {contactNumberError && (
+                  <p className="mt-1.5 text-xs font-bold text-red-500 flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-red-500"></span>
+                    {contactNumberError}
+                  </p>
+                )}
+                <p className="mt-2 text-[10px] font-medium text-slate-500 leading-relaxed">
+                  This number will be used as the primary contact for the team regarding this event.
+                </p>
+              </div>
+              
               <div className="flex gap-3 justify-end pt-4 mt-2 border-t border-slate-200/20">
                 <button
                   type="button"
                   onClick={() => {
                     setIsConfirmTeamOpen(false);
                     setConfirmTeamReg(null);
+                    setLeaderContactNumber('');
+                    setContactNumberError('');
                   }}
                   disabled={processingId === confirmTeamReg.teamId.id}
                   className="px-5 py-2.5 text-xs font-bold rounded-xl btn-secondary"
@@ -1165,6 +1381,254 @@ const StudentRegistrations = () => {
             </div>
           </Modal>
         )}
+
+        {/* Edit Team Modal */}
+        <Modal
+          isOpen={isEditTeamOpen}
+          onClose={() => {
+            if (processingId) return;
+            setIsEditTeamOpen(false);
+            setEditTeamData(null);
+          }}
+          title="Edit Team"
+        >
+          {editTeamData && (
+            <div className="space-y-6">
+              {teamEditFeedback && (
+                <div className={`p-3 rounded-lg text-xs font-bold flex items-center gap-2 ${
+                  teamEditFeedback.type === 'success' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                }`}>
+                  {teamEditFeedback.type === 'success' ? '✓' : '⚠'} {teamEditFeedback.message}
+                </div>
+              )}
+
+              {/* Team Name Edit */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Team Name</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={editTeamName}
+                      onChange={(e) => setEditTeamName(e.target.value)}
+                      className={`w-full bg-white border text-slate-800 text-sm rounded-xl focus:outline-none block p-2.5 transition-all duration-300 ${
+                        nameUnavailable
+                          ? 'border-red-500/80 focus:border-red-500/80'
+                          : 'border-slate-200 focus:border-violet-500'
+                      }`}
+                      placeholder="Enter team name"
+                      disabled={!!processingId}
+                    />
+                    {isCheckingName && (
+                      <div className="absolute right-3 top-3">
+                        <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleUpdateTeamName}
+                    disabled={!!processingId || editTeamName.trim() === editTeamData.teamId.name || isCheckingName || nameUnavailable}
+                    className="px-4 py-2.5 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 transition-colors"
+                  >
+                    {processingId === `name-${editTeamData.teamId.id}` ? 'Saving...' : 'Save Name'}
+                  </button>
+                </div>
+                {nameUnavailable && (
+                  <p className="mt-1.5 text-xs font-bold text-red-500">
+                    This team name already exists. Please choose a different name.
+                  </p>
+                )}
+              </div>
+
+              {/* Members List */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Team Members</label>
+                  <span className="text-xs text-slate-500 font-medium">
+                    {(editTeamData.teamDetails?.members?.filter(m => m.status === 'registered' || m.status === 'pending' || m.id === editTeamData.teamId.leader_id).length || 0)} 
+                    / {editTeamData.eventId?.max_team_size || '∞'} Max
+                  </span>
+                </div>
+                <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                  <ul className="divide-y divide-slate-200/60">
+                    {(editTeamData.teamDetails?.members || []).map(member => {
+                      const isLeader = member.id === editTeamData.teamId.leader_id;
+                      // Determine if removable:
+                      // Leader is not removable.
+                      // If requirement: "The leader should be able to remove/replace the rejected member and invite another eligible student."
+                      // They should also be able to remove a pending member. Or an accepted member if the team is still pending overall.
+                      const isRemovable = !isLeader;
+                      
+                      return (
+                        <li key={member.id} className="p-3 flex items-center justify-between hover:bg-slate-100/50 transition-colors">
+                          <div>
+                            <div className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                              {member.fullName || 'Unknown'}
+                              {isLeader && <span className="text-[9px] bg-fuchsia-500/10 text-fuchsia-600 font-bold px-1.5 py-0.5 rounded uppercase border border-fuchsia-500/20">Leader</span>}
+                            </div>
+                            <div className="text-xs flex items-center gap-2 mt-0.5">
+                              <span className={`font-bold uppercase text-[9px] px-1.5 py-0.5 rounded ${
+                                member.status === 'registered' || isLeader ? 'bg-emerald-500/10 text-emerald-600' :
+                                member.status === 'pending' ? 'bg-amber-500/10 text-amber-600' :
+                                'bg-red-500/10 text-red-600'
+                              }`}>
+                                {isLeader || member.status === 'registered' ? 'Accepted' : member.status}
+                              </span>
+                              <span className="text-slate-400">{member.email}</span>
+                            </div>
+                          </div>
+                          {isRemovable && (
+                            <button
+                              onClick={() => handleRemoveTeamMember(member.id)}
+                              disabled={!!processingId}
+                              className="text-xs font-bold text-red-500 hover:text-red-700 disabled:opacity-50 px-2 py-1 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100"
+                            >
+                              {processingId === `remove-${member.id}` ? 'Removing...' : 'Remove'}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Add Member */}
+              {(() => {
+                const currentCount = editTeamData.teamDetails?.members?.filter(m => m.status === 'registered' || m.status === 'pending' || m.id === editTeamData.teamId.leader_id).length || 0;
+                const maxCount = editTeamData.eventId?.max_team_size || 999;
+                
+                if (currentCount < maxCount) {
+                  return (
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Add Member</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-grow">
+                          <div 
+                            className={`w-full bg-white border text-slate-800 text-sm rounded-xl px-3 py-2.5 font-body flex justify-between items-center transition-colors ${
+                              !!processingId || eligibleStudentsEdit.length === 0 
+                                ? 'opacity-50 cursor-not-allowed border-slate-200' 
+                                : 'cursor-pointer border-slate-200 hover:border-emerald-500'
+                            }`}
+                            onClick={async () => {
+                              if (!processingId) {
+                                if (!isEditDropdownOpen) {
+                                  // Fetch fresh data when opening dropdown
+                                  const eventId = editTeamData.eventId?.id || editTeamData.eventId?._id;
+                                  try {
+                                    const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
+                                    setEligibleStudentsEdit(res.data);
+                                    if (res.data.length > 0) setIsEditDropdownOpen(true);
+                                  } catch (err) {
+                                    console.error('Error fetching eligible students:', err);
+                                  }
+                                } else {
+                                  setIsEditDropdownOpen(false);
+                                }
+                              }
+                            }}
+                          >
+                            <span className="truncate">
+                              {selectedStudentEdit 
+                                ? (eligibleStudentsEdit.find(s => s.id === selectedStudentEdit)?.displayLabel || 'Selected Student') 
+                                : (eligibleStudentsEdit.length === 0 ? 'No eligible students available' : 'Select a student to invite...')}
+                            </span>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+
+                          {isEditDropdownOpen && (
+                            <div className="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-lg border border-slate-200/60 overflow-hidden">
+                              <div className="p-2 border-b border-slate-100">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="Search by Name, Roll No or Email..."
+                                  value={studentSearchTermEdit}
+                                  onChange={(e) => setStudentSearchTermEdit(e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 transition-all duration-300"
+                                />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                {eligibleStudentsEdit
+                                  .filter(s => {
+                                    const term = studentSearchTermEdit.toLowerCase();
+                                    return (
+                                      (s.fullName || s.name || '').toLowerCase().includes(term) ||
+                                      (s.email || '').toLowerCase().includes(term) ||
+                                      (s.rollNumber || '').toLowerCase().includes(term)
+                                    );
+                                  })
+                                  .map(std => (
+                                    <div
+                                      key={std.id}
+                                      onClick={() => {
+                                        setSelectedStudentEdit(std.id);
+                                        setIsEditDropdownOpen(false);
+                                        setStudentSearchTermEdit('');
+                                      }}
+                                      className="px-3 py-2.5 hover:bg-emerald-50 cursor-pointer border-b border-slate-50/50 last:border-none transition-colors"
+                                    >
+                                      <p className="text-sm font-semibold text-slate-700">{std.fullName || std.name || 'Unknown'}</p>
+                                      <p className="text-[10px] text-slate-500 font-medium">
+                                        {std.email} {std.rollNumber && `• ${std.rollNumber}`}
+                                      </p>
+                                    </div>
+                                  ))}
+                                {eligibleStudentsEdit.filter(s => {
+                                    const term = studentSearchTermEdit.toLowerCase();
+                                    return (
+                                      (s.fullName || s.name || '').toLowerCase().includes(term) ||
+                                      (s.email || '').toLowerCase().includes(term) ||
+                                      (s.rollNumber || '').toLowerCase().includes(term)
+                                    );
+                                }).length === 0 && (
+                                  <div className="px-3 py-4 text-center text-xs text-slate-500">
+                                    No students match your search.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={handleAddTeamMember}
+                          disabled={!!processingId || !selectedStudentEdit}
+                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+                        >
+                          {processingId === `add-${editTeamData.teamId.id}` ? 'Adding...' : 'Invite'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="p-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-xs font-bold text-center">
+                      Team has reached the maximum size ({maxCount} members).
+                    </div>
+                  );
+                }
+              })()}
+
+              <div className="pt-4 flex justify-end">
+                <button
+                  onClick={() => {
+                    setIsEditTeamOpen(false);
+                    setEditTeamData(null);
+                  }}
+                  disabled={!!processingId}
+                  className="px-6 py-2.5 text-sm font-bold rounded-xl btn-secondary"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
 
         {/* QR Code Pass Modal */}
         {qrModalData && (

@@ -44,6 +44,38 @@ const Home = () => {
   const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isCheckingName, setIsCheckingName] = useState(false);
+  const [nameUnavailable, setNameUnavailable] = useState(false);
+  
+  // Debounce team name checking
+  useEffect(() => {
+    if (!teamName || teamName.trim() === '') {
+      setNameUnavailable(false);
+      setIsCheckingName(false);
+      return;
+    }
+    
+    if (!teamRegEvent) return;
+
+    const eventId = teamRegEvent._id || teamRegEvent.id;
+    const checkName = async () => {
+      setIsCheckingName(true);
+      try {
+        const res = await axios.get(`/api/registrations/event/${eventId}/check-team-name?name=${encodeURIComponent(teamName)}`);
+        setNameUnavailable(!res.data.available);
+      } catch (err) {
+        console.error('Error checking team name:', err);
+      } finally {
+        setIsCheckingName(false);
+      }
+    };
+
+    const delayDebounceFn = setTimeout(() => {
+      checkName();
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [teamName, teamRegEvent]);
 
   const fetchEligibleStudents = async (eventId) => {
     try {
@@ -115,6 +147,21 @@ const Home = () => {
   };
 
   const openConfirmReg = (event) => {
+    // Check if user already has a pending or registered status for this event
+    const existingReg = myRegistrations.find(
+      reg => (reg.event_id === event.id || reg.event_id === event._id || reg.events?.id === event.id || reg.events?.id === event._id) && 
+             (reg.status === 'pending' || reg.status === 'registered')
+    );
+
+    if (existingReg) {
+      if (existingReg.status === 'pending') {
+        alert('You have pending team invitations (or an unconfirmed team) for this event. Please reject all pending invitations or cancel your team before creating a new one.');
+      } else {
+        alert('You are already registered for this event.');
+      }
+      return;
+    }
+
     if (event.registration_type === 'team') {
       setTeamRegEvent(event);
       setTeamName('');
@@ -724,14 +771,33 @@ const Home = () => {
               <div className="border-t border-slate-200/20 pt-4 space-y-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Team Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                    placeholder="Enter team name"
-                    className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      placeholder="Enter team name"
+                      className={`w-full bg-white/60 text-slate-800 border rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none transition-all duration-300 ${
+                        nameUnavailable
+                          ? 'border-red-500/80 focus:border-red-500/80' 
+                          : 'border-slate-300/50 focus:border-fuchsia-500/60'
+                      }`}
+                    />
+                    {isCheckingName && (
+                      <div className="absolute right-3 top-3">
+                        <svg className="animate-spin h-4 w-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  {nameUnavailable && (
+                    <p className="mt-1.5 text-xs font-bold text-red-500">
+                      This team name already exists. Please choose a different name.
+                    </p>
+                  )}
                 </div>
 
                 <div className="relative">
@@ -856,8 +922,7 @@ const Home = () => {
                 </div>
               </div>
 
-              {/* Modal Buttons */}
-              <div className="flex gap-3 justify-end pt-4 border-t border-slate-200/20">
+              <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -870,7 +935,7 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size)}
+                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable}
                   className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
                 >
                   {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}

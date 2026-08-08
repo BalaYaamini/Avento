@@ -256,7 +256,10 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
     }
 
     // 3. Send Email Notification Asynchronously (fire and forget)
-    if (targetEmail) {
+    // Disabled via EMAIL_NOTIFICATIONS_ENABLED flag if set to false
+    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false';
+
+    if (targetEmail && emailEnabled) {
       const finalSubject = emailSubject || title;
       const finalBody = emailBody || generateEmailHtml(title, message, {
         eventId: eventId,

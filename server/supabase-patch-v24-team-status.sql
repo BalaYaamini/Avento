@@ -110,9 +110,9 @@ BEGIN
     SET status = 'registered'
     WHERE id = p_team_id;
 
-    -- 6. Increment event registered_count by the number of confirmed members
+    -- 6. Increment event registered_count by 1 (since 1 team is confirmed)
     UPDATE public.events
-    SET registered_count = registered_count + v_accepted_members
+    SET registered_count = registered_count + 1
     WHERE id = v_event_id;
 END;
 $$ LANGUAGE plpgsql;

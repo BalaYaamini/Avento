@@ -455,7 +455,7 @@ exports.getEventRegistrations = async (req, res) => {
       .from('event_registrations')
       .select(`
         *,
-        user:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number),
+        userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number),
         teamId:event_teams (*)
       `)
       .eq('event_id', eventId);
@@ -558,7 +558,7 @@ exports.registerTeamForEvent = async (req, res) => {
 
     const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(id));
     if (hasOrganizer) {
-      return res.status(403).json({ message: 'You are already part of the organizing team for this event.' });
+      return res.status(403).json({ message: 'One or more selected members are organizing this event and cannot be added as team members.' });
     }
 
     // Validate existing active registrations for the leader
@@ -572,7 +572,30 @@ exports.registerTeamForEvent = async (req, res) => {
       .in('status', ['registered', 'pending']);
 
     if (leaderRegs && leaderRegs.length > 0) {
-      return res.status(400).json({ message: 'You already have an active or pending team for this event. Please cancel or leave it first.' });
+      return res.status(400).json({ message: 'You have pending team invitations for this event, or you are already part of an active team. Please reject all pending invitations or leave your current team first.' });
+    }
+    
+    // BACKEND RULE: Prevent adding members who are already in a CONFIRMED team
+    if (uniqueMemberIds.length > 0) {
+      const { data: confirmedTeams } = await supabase
+        .from('event_teams')
+        .select('id')
+        .eq('event_id', eventId)
+        .eq('status', 'registered');
+      
+      if (confirmedTeams && confirmedTeams.length > 0) {
+        const teamIds = confirmedTeams.map(t => t.id);
+        const { data: alreadyRegisteredMembers } = await supabase
+          .from('event_registrations')
+          .select('user_id')
+          .in('team_id', teamIds)
+          .in('user_id', uniqueMemberIds)
+          .eq('status', 'registered');
+        
+        if (alreadyRegisteredMembers && alreadyRegisteredMembers.length > 0) {
+          return res.status(400).json({ message: 'One or more selected members are already part of a confirmed team for this event.' });
+        }
+      }
     }
 
     // Validate Cross Department
@@ -588,6 +611,17 @@ exports.registerTeamForEvent = async (req, res) => {
       }
     }
 
+    // Explicit Case-Insensitive Uniqueness Check
+    const { data: existingTeamByName } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', eventId)
+      .ilike('name', teamName.trim());
+      
+    if (existingTeamByName && existingTeamByName.length > 0) {
+      return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
+    }
+
     // Create Team
     const { data: team, error: teamErr } = await supabase
       .from('event_teams')
@@ -601,7 +635,7 @@ exports.registerTeamForEvent = async (req, res) => {
 
     if (teamErr) {
       if (teamErr.code === '23505') {
-        return res.status(400).json({ message: 'A team with this name already exists for this event.' });
+        return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
       }
       throw teamErr;
     }
@@ -719,21 +753,15 @@ exports.getEligibleStudents = async (req, res) => {
     if (event.faculty_id) organizerIds.push(event.faculty_id);
 
     // 3. Get already registered user IDs for this event
-    // Only exclude them if the registration deadline has passed and their team memberships are finalized/locked
-    let registeredIds = [];
-    const now = new Date();
-    const deadlinePassed = event.registration_deadline && new Date(event.registration_deadline) < now;
-
-    if (deadlinePassed) {
-      const { data: registrations } = await supabase
-        .from('event_registrations')
-        .select('user_id, status')
-        .eq('event_id', id);
-      
-      registeredIds = (registrations || [])
-        .filter(r => r.status === 'registered')
-        .map(r => r.user_id);
-    }
+    // Users are excluded if they currently belong to another team (status = 'registered')
+    // This includes leaders and members of both confirmed and unconfirmed teams.
+    const { data: teamMembers } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('event_id', id)
+      .eq('status', 'registered');
+    
+    const registeredIds = (teamMembers || []).map(r => r.user_id);
 
     // 4. Combine IDs to exclude
     const excludedIds = [...new Set([...organizerIds, ...registeredIds, userId])];
@@ -770,10 +798,10 @@ exports.acceptTeamInvitation = async (req, res) => {
     const { registrationId } = req.params;
     const userId = req.user.id;
 
-    // Fetch registration
+    // Fetch registration with team status
     const { data: reg, error: regErr } = await supabase
       .from('event_registrations')
-      .select('*, events(id, title, registration_deadline)')
+      .select('*, events(id, title, registration_deadline), event_teams(status)')
       .eq('id', registrationId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -786,9 +814,36 @@ exports.acceptTeamInvitation = async (req, res) => {
       return res.status(400).json({ message: 'This registration is not pending.' });
     }
 
+    if (reg.event_teams && reg.event_teams.status === 'registered') {
+      return res.status(400).json({ message: 'Team has been finalized. You can no longer accept this invitation.' });
+    }
+
     const event = reg.events;
     if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
       return res.status(400).json({ message: 'The registration deadline has passed. You can no longer accept this invitation.' });
+    }
+
+    // Prevent accepting if user is already the leader of any team for this event
+    const { data: ledTeams } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', event.id)
+      .eq('leader_id', userId);
+
+    if (ledTeams && ledTeams.length > 0) {
+      return res.status(400).json({ message: 'You have created your own team for this event. You cannot accept other invitations unless you cancel your team first.' });
+    }
+
+    // Prevent accepting if user is already a confirmed member of another team for this event
+    const { data: registeredTeams } = await supabase
+      .from('event_registrations')
+      .select('id')
+      .eq('event_id', event.id)
+      .eq('user_id', userId)
+      .eq('status', 'registered');
+
+    if (registeredTeams && registeredTeams.length > 0) {
+      return res.status(400).json({ message: 'You are already a confirmed member of a team for this event.' });
     }
 
     // 1. Update the target registration to registered
@@ -797,18 +852,12 @@ exports.acceptTeamInvitation = async (req, res) => {
       .update({ status: 'registered' })
       .eq('id', registrationId);
 
-    if (updateErr) throw updateErr;
-
-    // 2. Automatically reject all other pending invitations for the same event
-    const { error: rejectErr } = await supabase
-      .from('event_registrations')
-      .update({ status: 'rejected' })
-      .eq('user_id', userId)
-      .eq('event_id', event.id)
-      .eq('status', 'pending')
-      .neq('id', registrationId);
-
-    if (rejectErr) throw rejectErr;
+    if (updateErr) {
+      if (updateErr.code === '23505') { // Postgres unique_violation
+        return res.status(400).json({ message: 'You are already a member of a team for this event. A student can only have one active team per event.' });
+      }
+      throw updateErr;
+    }
 
     res.json({ message: 'Team invitation accepted successfully.' });
   } catch (err) {
@@ -823,7 +872,7 @@ exports.rejectTeamInvitation = async (req, res) => {
 
     const { data: reg, error: regErr } = await supabase
       .from('event_registrations')
-      .select('*, events(id, title, registration_deadline)')
+      .select('*, events(id, title, registration_deadline), event_teams(status)')
       .eq('id', registrationId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -834,6 +883,10 @@ exports.rejectTeamInvitation = async (req, res) => {
 
     if (reg.status !== 'pending') {
       return res.status(400).json({ message: 'This registration is not pending.' });
+    }
+
+    if (reg.event_teams && reg.event_teams.status === 'registered') {
+      return res.status(400).json({ message: 'Team has been finalized. You can no longer reject this invitation.' });
     }
 
     const event = reg.events;
@@ -916,11 +969,11 @@ exports.leaveTeam = async (req, res) => {
       return res.status(400).json({ message: `Cannot leave team. Your current status is '${regInfo.status}'.` });
     }
 
-    // 4. Update status to 'cancelled' (representing left team)
-    console.log(`[Leave Team] DB Query: Updating status to 'cancelled' for registration ID: ${regInfo.id}`);
+    // 4. Update status to 'pending' (representing left team, making the invitation active again)
+    console.log(`[Leave Team] DB Query: Updating status to 'pending' for registration ID: ${regInfo.id}`);
     const { error: updateErr } = await supabase
       .from('event_registrations')
-      .update({ status: 'cancelled' })
+      .update({ status: 'pending' })
       .eq('id', regInfo.id);
 
     if (updateErr) {
@@ -948,10 +1001,15 @@ exports.leaveTeam = async (req, res) => {
 exports.confirmTeamRegistration = async (req, res) => {
   try {
     const { teamId } = req.params;
+    const { leaderContactNumber } = req.body;
     const leaderId = req.user.id;
 
     if (!teamId) {
       return res.status(400).json({ message: 'Team ID is required.' });
+    }
+
+    if (!leaderContactNumber || !/^[6-9]\d{9}$/.test(leaderContactNumber)) {
+      return res.status(400).json({ message: 'A valid 10-digit Indian mobile number is required for the Team Leader.' });
     }
 
     // Get the event_id for this team
@@ -966,35 +1024,427 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(404).json({ message: 'Team not found or unauthorized.' });
     }
 
-    // Update all team members' registrations to 'registered' where they are 'pending' or 'registered'
-    // Actually, only the leader is currently 'pending', and others who accepted are already 'registered'.
-    // We can just update everyone in the team to 'registered'.
+    // We only update the LEADER's registration to 'registered'.
+    // Other members who accepted are ALREADY 'registered'.
+    // Pending members MUST remain 'pending' so they are not included as confirmed members.
     const { error: regErr } = await supabase
       .from('event_registrations')
       .update({ status: 'registered' })
-      .eq('team_id', teamId);
+      .eq('team_id', teamId)
+      .eq('user_id', leaderId);
 
     if (regErr) {
       return res.status(400).json({ message: regErr.message || 'Failed to update team registration status.' });
     }
 
-    // Update the team's overall status to 'registered' so that eventController can correctly count active teams
-    const { error: teamStatusErr } = await supabase
+    // Save the leader contact number
+    const { error: contactErr } = await supabase
       .from('event_teams')
-      .update({ status: 'registered' })
+      .update({ leader_contact_number: leaderContactNumber })
       .eq('id', teamId);
 
-    if (teamStatusErr) {
-      return res.status(400).json({ message: teamStatusErr.message || 'Failed to update team status.' });
+    if (contactErr) {
+      return res.status(400).json({ message: contactErr.message || 'Failed to save team leader contact number.' });
     }
 
-    // Consume one team slot
-    await supabase.rpc('increment_registered_count', { row_id: teamData.event_id });
-    // Alternative if RPC fails:
-    // await supabase.from('events').update({ registered_count: current_count + 1 }).eq('id', teamData.event_id);
+    // Note: We do NOT update event_teams status to 'registered' here.
+    // The RPC `confirm_team_registration` handles locking, limit checks,
+    // setting team status, and incrementing the event's registered_count.
 
-    res.json({ message: 'Team registration confirmed successfully.' });
+    // We must call the RPC to do the rest of the checks and increment the event count
+    const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
+      p_team_id: teamId,
+      p_leader_id: leaderId
+    });
+
+    if (rpcErr) {
+      return res.status(400).json({ message: rpcErr.message || 'Failed to confirm team registration.' });
+    }
+
+    res.json({ message: 'Team registration confirmed successfully!' });
   } catch (err) {
-    res.status(500).json({ message: 'Server error confirming team registration.', error: err.message });
+    console.error('Error confirming team registration:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+exports.getConfirmedTeams = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    
+    // Check if event exists
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', eventId)
+      .single();
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    // Check organizer access (roleMiddleware ensures admin/faculty/student, but we need to check specific event organizer status)
+    if (!req.user.roles.includes('admin')) {
+      const isFaculty = event.faculty_id === req.user.id;
+      const isEventHead = event.student_organizer_id === req.user.id || event.proposed_by === req.user.id;
+      
+      const { data: organizers } = await supabase
+        .from('event_organizers')
+        .select('student_id')
+        .eq('event_id', eventId);
+      
+      const isOrganizer = (organizers || []).some(org => org.student_id === req.user.id);
+      
+      if (!isFaculty && !isEventHead && !isOrganizer) {
+        return res.status(403).json({ message: 'Access denied. Organizer permissions required.' });
+      }
+    }
+
+    // Fetch confirmed teams
+    const { data: teams, error: teamsErr } = await supabase
+      .from('event_teams')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('status', 'registered');
+
+    if (teamsErr) throw teamsErr;
+
+    if (!teams || teams.length === 0) {
+      return res.json([]);
+    }
+
+    const teamIds = teams.map(t => t.id);
+
+    // Fetch confirmed registrations for these teams with user profiles
+    const { data: registrations, error: regErr } = await supabase
+      .from('event_registrations')
+      .select(`
+        id, team_id, user_id,
+        profiles(id, name, email, department, roll_number)
+      `)
+      .in('team_id', teamIds)
+      .eq('status', 'registered');
+
+    if (regErr) throw regErr;
+
+    // Group by team
+    const result = teams.map(team => {
+      const teamRegs = registrations.filter(r => r.team_id === team.id);
+      const members = teamRegs.map(r => ({
+        userId: r.user_id,
+        name: r.profiles?.name || 'Unknown',
+        email: r.profiles?.email || 'N/A',
+        department: r.profiles?.department || 'N/A',
+        rollNumber: r.profiles?.roll_number || 'N/A'
+      }));
+
+      return {
+        id: team.id,
+        name: team.name,
+        leaderId: team.leader_id,
+        leaderContactNumber: team.leader_contact_number || 'N/A',
+        members: members
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching confirmed teams:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+exports.updateTeamName = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { teamName } = req.body;
+    const userId = req.user.id;
+
+    if (!teamName || teamName.trim() === '') {
+      return res.status(400).json({ message: 'Team name is required.' });
+    }
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (team.leader_id !== userId) {
+      return res.status(403).json({ message: 'Only the Team Leader can edit the team.' });
+    }
+
+    if (team.status === 'registered') {
+      return res.status(400).json({ message: 'Cannot edit a confirmed team.' });
+    }
+
+    const trimmedName = teamName.trim();
+
+    // Explicit Case-Insensitive Uniqueness Check
+    const { data: existingTeamByName } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', team.event_id)
+      .ilike('name', trimmedName)
+      .neq('id', teamId);
+      
+    if (existingTeamByName && existingTeamByName.length > 0) {
+      return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
+    }
+
+    const { error: updateErr } = await supabase
+      .from('event_teams')
+      .update({ name: teamName.trim() })
+      .eq('id', teamId);
+
+    if (updateErr) {
+      if (updateErr.code === '23505') {
+        return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
+      }
+      throw updateErr;
+    }
+
+    res.json({ message: 'Team name updated successfully.' });
+  } catch (err) {
+    console.error('Error updating team name:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+exports.addTeamMember = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { memberId } = req.body;
+    const userId = req.user.id;
+
+    if (!memberId) {
+      return res.status(400).json({ message: 'Member ID is required.' });
+    }
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*, events(*)')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (team.leader_id !== userId) {
+      return res.status(403).json({ message: 'Only the Team Leader can add members.' });
+    }
+
+    if (team.status === 'registered') {
+      return res.status(400).json({ message: 'Cannot edit a confirmed team.' });
+    }
+
+    const event = team.events;
+
+    // Check current active member count (accepted + pending)
+    const { data: currentRegs, error: regsErr } = await supabase
+      .from('event_registrations')
+      .select('status, user_id')
+      .eq('team_id', teamId)
+      .in('status', ['registered', 'pending']);
+    
+    if (regsErr) throw regsErr;
+
+    const currentMemberCount = (currentRegs || []).length;
+    
+    if (currentMemberCount >= event.max_team_size) {
+      return res.status(400).json({ message: `Cannot exceed maximum team size of ${event.max_team_size} members.` });
+    }
+
+    if (currentRegs.some(r => r.user_id === memberId)) {
+      return res.status(400).json({ message: 'User is already in this team (pending or accepted).' });
+    }
+
+    // Eligibility Check
+    // 1. Is organizer?
+    const { data: organizers } = await supabase
+      .from('event_organizers')
+      .select('student_id')
+      .eq('event_id', event.id);
+    
+    const organizerIds = (organizers || []).map(o => o.student_id);
+    if (event.organizer_id) organizerIds.push(event.organizer_id);
+    if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
+    if (event.proposed_by) organizerIds.push(event.proposed_by);
+    if (event.faculty_id) organizerIds.push(event.faculty_id);
+
+    if (organizerIds.includes(memberId)) {
+      return res.status(400).json({ message: 'User is an organizer and cannot join a team.' });
+    }
+
+    // 2. Is in confirmed team?
+    const { data: confirmedTeams } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', event.id)
+      .eq('status', 'registered');
+    
+    if (confirmedTeams && confirmedTeams.length > 0) {
+      const confirmedTeamIds = confirmedTeams.map(t => t.id);
+      const { data: alreadyRegisteredMembers } = await supabase
+        .from('event_registrations')
+        .select('user_id')
+        .in('team_id', confirmedTeamIds)
+        .eq('user_id', memberId)
+        .eq('status', 'registered');
+      
+      if (alreadyRegisteredMembers && alreadyRegisteredMembers.length > 0) {
+        return res.status(400).json({ message: 'User is already part of a confirmed team for this event.' });
+      }
+    }
+
+    // Create invitation (pending registration)
+    const newReg = {
+      user_id: memberId,
+      event_id: event.id,
+      team_id: teamId,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+
+    const { error: insertErr } = await supabase
+      .from('event_registrations')
+      .insert(newReg);
+
+    if (insertErr) {
+      // Handle unique constraint violations
+      if (insertErr.code === '23505') {
+         return res.status(400).json({ message: 'User already has a registration record for this event.' });
+      }
+      throw insertErr;
+    }
+
+    // Notify user
+    try {
+      const dateStr = new Date(event.date).toLocaleDateString();
+      await notifyUser({
+        recipientId: memberId,
+        title: 'New Team Invitation',
+        message: `You have been invited to join team "${team.name}" for "${event.title}".`,
+        type: 'info',
+        eventId: event.id,
+        emailSubject: `Team Invitation – ${event.title}`,
+        emailHtml: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+            <h2 style="color: #4f46e5;">New Team Invitation</h2>
+            <p>You have been invited to join team <strong>${team.name}</strong> for the event <strong>${event.title}</strong>.</p>
+            <p><strong>Date:</strong> ${dateStr}</p>
+            <p>Please log in to your dashboard to accept or reject this invitation.</p>
+          </div>
+        `
+      });
+    } catch (notifErr) {
+      console.error('Failed to send notification for new member:', notifErr);
+    }
+
+    res.json({ message: 'Team member added successfully.' });
+  } catch (err) {
+    console.error('Error adding team member:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+exports.removeTeamMember = async (req, res) => {
+  try {
+    const { teamId, userId: memberId } = req.params;
+    const userId = req.user.id; // leader
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (team.leader_id !== userId) {
+      return res.status(403).json({ message: 'Only the Team Leader can remove members.' });
+    }
+
+    if (team.status === 'registered') {
+      return res.status(400).json({ message: 'Cannot edit a confirmed team.' });
+    }
+
+    if (memberId === userId) {
+      return res.status(400).json({ message: 'Team leader cannot be removed.' });
+    }
+
+    const { data: memberReg, error: memberRegErr } = await supabase
+      .from('event_registrations')
+      .select('*')
+      .eq('team_id', teamId)
+      .eq('user_id', memberId)
+      .single();
+
+    if (memberRegErr || !memberReg) {
+      return res.status(404).json({ message: 'Member not found in this team.' });
+    }
+    
+    if (memberReg.status === 'registered') {
+      // Technically they shouldn't remove an accepted member unless it's pending, but requirement: 
+      // "The leader should be able to remove/replace the rejected member and invite another eligible student."
+      // If we allow removing registered members, we can do it because the team is still pending.
+      // But typically, they can replace ANY member before confirmation.
+    }
+
+    const { error: delErr } = await supabase
+      .from('event_registrations')
+      .delete()
+      .eq('id', memberReg.id);
+
+    if (delErr) throw delErr;
+
+    res.json({ message: 'Team member removed successfully.' });
+  } catch (err) {
+    console.error('Error removing team member:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+// Check if a team name is available for a specific event
+exports.checkTeamName = async (req, res) => {
+  try {
+    const { id: eventId } = req.params;
+    const { name, excludeTeamId } = req.query;
+
+    if (!name || name.trim() === '') {
+      return res.json({ available: false, message: 'Team name cannot be empty.' });
+    }
+
+    const trimmedName = name.trim();
+
+    let query = supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', eventId)
+      .ilike('name', trimmedName);
+
+    if (excludeTeamId) {
+      query = query.neq('id', excludeTeamId);
+    }
+
+    const { data: existingTeam, error } = await query;
+
+    if (error) throw error;
+
+    if (existingTeam && existingTeam.length > 0) {
+      return res.json({ available: false, message: 'This team name is already taken. Please choose another team name.' });
+    }
+
+    res.json({ available: true, message: 'Team name is available.' });
+  } catch (err) {
+    console.error('Error checking team name:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
   }
 };

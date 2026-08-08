@@ -9,8 +9,12 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 router.post('/', authMiddleware, registrationController.registerForEvent);
 router.post('/team', authMiddleware, registrationController.registerTeamForEvent);
 router.post('/team/:teamId/confirm', authMiddleware, registrationController.confirmTeamRegistration);
+router.put('/team/:teamId', authMiddleware, registrationController.updateTeamName);
+router.post('/team/:teamId/members', authMiddleware, registrationController.addTeamMember);
+router.delete('/team/:teamId/members/:userId', authMiddleware, registrationController.removeTeamMember);
 router.get('/my-registrations', authMiddleware, registrationController.getMyRegistrations);
 router.get('/event/:id/eligible-students', authMiddleware, registrationController.getEligibleStudents);
+router.get('/event/:id/check-team-name', authMiddleware, registrationController.checkTeamName);
 router.delete('/event/:eventId', authMiddleware, registrationController.cancelRegistrationByEventId);
 router.delete('/:id', authMiddleware, registrationController.cancelRegistration);
 
@@ -21,5 +25,6 @@ router.post('/team/leave', authMiddleware, registrationController.leaveTeam);
 // Admin-only features (protected)
 router.get('/all', authMiddleware, adminMiddleware, registrationController.getAllRegistrations);
 router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);
+router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.getConfirmedTeams);
 
 module.exports = router;

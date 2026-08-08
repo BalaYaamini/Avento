@@ -43,7 +43,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
   }
 
   // If team event, group by teamId
-  if (event?.join_team_enabled) {
+  if (event?.registration_type === 'team') {
     const teams = {};
     const noTeamRegs = [];
 
@@ -54,6 +54,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
             id: reg.team_id,
             name: reg.teamId.name,
             leader_id: reg.teamId.leader_id,
+            status: reg.teamId.status,
             members: [],
             registrationDate: reg.registrationDate
           };
@@ -92,10 +93,14 @@ const OrganizerRegistrations = ({ eventId, event }) => {
                         Registered on {new Date(team.registrationDate).toLocaleDateString()}
                       </p>
                     </div>
-                    {isFinalized ? (
+                    {team.status === 'registered' ? (
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
+                        Confirmed
+                      </span>
+                    ) : isFinalized ? (
                       meetsMinRequirement ? (
                         <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
-                          Finalized
+                          Confirmed
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 uppercase tracking-wider">

@@ -19,7 +19,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
   };
 
   const isFull = event.registration_type === 'team' 
-    ? (event.max_teams ? ((event.teamCount || 0) >= event.max_teams) : false) 
+    ? (event.max_teams ? ((event.registeredCount || 0) >= event.max_teams) : false) 
     : ((event.registeredCount || 0) >= event.capacity);
   const isActive = event.status === 'published' || event.status === 'active';
 
@@ -36,7 +36,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
 
   // Capacity fill rate
   const capVal = event.registration_type === 'team' ? (event.max_teams || 1) : event.capacity;
-  const currCount = event.registration_type === 'team' ? (event.teamCount || 0) : (event.registeredCount || 0);
+  const currCount = event.registeredCount || 0;
   const fillRate = Math.min(100, Math.round((currCount / capVal) * 100));
 
   // Stagger delay for entrance animation
@@ -172,8 +172,8 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
             <div className="text-[10px] font-bold text-gray-500 mt-1 mb-1 px-1 w-full">
               {event.registration_type === 'team' ? (
                 <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
-                  <span>{event.teamCount || 0} Team Slot{(event.teamCount || 0) !== 1 ? 's' : ''} Filled</span>
-                  {event.max_teams && <span>{Math.max(0, event.max_teams - (event.teamCount || 0))} Team Slot{Math.max(0, event.max_teams - (event.teamCount || 0)) !== 1 ? 's' : ''} Available</span>}
+                  <span>{currCount} Team Slot{currCount !== 1 ? 's' : ''} Filled</span>
+                  {event.max_teams && <span>{Math.max(0, event.max_teams - currCount)} Team Slot{Math.max(0, event.max_teams - currCount) !== 1 ? 's' : ''} Available</span>}
                 </div>
               ) : (
                 <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">

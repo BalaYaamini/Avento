@@ -53,19 +53,7 @@ const getEvents = async (req, res) => {
         evt.proposerName = 'Administrator';
       }
 
-      if (evt.registration_type === 'team') {
-        const { count, error: teamCountErr } = await supabase
-          .from('event_teams')
-          .select('*', { count: 'exact', head: true })
-          .eq('event_id', evt.id)
-          .eq('status', 'registered');
-        
-        if (!teamCountErr) {
-          evt.teamCount = count || 0;
-        } else {
-          evt.teamCount = 0;
-        }
-      }
+
 
       return cleanEventRemarks(evt);
     }));
