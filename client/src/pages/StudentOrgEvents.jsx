@@ -560,12 +560,11 @@ const StudentOrgEvents = () => {
       const eventId = scannerModalEvent._id || scannerModalEvent.id;
       const res = await axios.post('/api/attendance/verify', { registrationId, eventId });
       if (res.data.success && res.data.student) {
-        const { name, rollNumber, event, attendance_status } = res.data.student;
-        alert(`Attendance Marked Successfully\n\nName: ${name}\nRoll No: ${rollNumber}\nEvent: ${event}\nStatus: ${attendance_status}`);
+        const { name } = res.data.student;
+        setScanFeedback({ type: 'success', message: `Attendance marked successfully for ${name}.` });
       } else {
-        alert(res.data.message || 'Attendance recorded.');
+        setScanFeedback({ type: 'success', message: res.data.message || 'Attendance recorded.' });
       }
-      setScannerModalEvent(null);
     } catch (err) {
       setScanFeedback({ type: 'error', message: err.response?.data?.message || 'Invalid QR code.' });
     }
