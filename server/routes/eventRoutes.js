@@ -252,9 +252,17 @@ router.delete(
   eventController.removeProposalTeamMember
 );
 
-// Update Proposal Description
+// Update Proposal Team Member Role
 router.put(
-  '/:id/proposal-description',
+  '/:id/proposal-team/:memberId/role',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.updateProposalTeamMemberRole
+);
+
+// Update Proposal Details
+router.put(
+  '/:id/proposal-details',
   authMiddleware,
   roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
   eventController.updateProposalDescription

@@ -43,10 +43,19 @@ exports.registerForEvent = async (req, res) => {
       .eq('student_id', userId)
       .maybeSingle();
 
+    // Also check event_members (pre-publication organizers)
+    const { data: memberOrg } = await supabase
+      .from('event_members')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
     const isOrganizer = (event.organizer_id && String(event.organizer_id) === String(userId)) ||
                         (event.student_organizer_id && String(event.student_organizer_id) === String(userId)) ||
                         (event.proposed_by && String(event.proposed_by) === String(userId)) ||
-                        !!recruitedOrg;
+                        !!recruitedOrg ||
+                        !!memberOrg;
     if (isOrganizer) {
       return res.status(403).json({
         message: 'You are an organizer for this event and cannot register as a participant.'
@@ -544,10 +553,15 @@ exports.registerTeamForEvent = async (req, res) => {
       }
     }
 
-    // Validate organizers
+    // Validate organizers — also check event_members (pre-publication organizers)
     const { data: organizers } = await supabase
       .from('event_organizers')
       .select('student_id')
+      .eq('event_id', eventId);
+    
+    const { data: proposalMembers } = await supabase
+      .from('event_members')
+      .select('user_id')
       .eq('event_id', eventId);
     
     const organizerIds = (organizers || []).map(o => o.student_id);
@@ -555,6 +569,8 @@ exports.registerTeamForEvent = async (req, res) => {
     if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
     if (event.proposed_by) organizerIds.push(event.proposed_by);
     if (event.faculty_id) organizerIds.push(event.faculty_id);
+    // Add pre-publication organizers from event_members
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(m.user_id); });
 
     const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(id));
     if (hasOrganizer) {
@@ -743,10 +759,15 @@ exports.getEligibleStudents = async (req, res) => {
 
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
-    // 2. Collect all organizer IDs
+    // 2. Collect all organizer IDs — also check event_members (pre-publication organizers)
     const { data: organizers } = await supabase
       .from('event_organizers')
       .select('student_id')
+      .eq('event_id', id);
+    
+    const { data: proposalMembers } = await supabase
+      .from('event_members')
+      .select('user_id')
       .eq('event_id', id);
     
     const organizerIds = (organizers || []).map(o => o.student_id);
@@ -754,6 +775,8 @@ exports.getEligibleStudents = async (req, res) => {
     if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
     if (event.proposed_by) organizerIds.push(event.proposed_by);
     if (event.faculty_id) organizerIds.push(event.faculty_id);
+    // Add pre-publication organizers from event_members
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(m.user_id); });
 
     // 3. Get already registered user IDs for this event
     // Users are excluded if they currently belong to another team (status = 'registered')
@@ -826,10 +849,15 @@ exports.acceptTeamInvitation = async (req, res) => {
       return res.status(400).json({ message: 'The registration deadline has passed. You can no longer accept this invitation.' });
     }
 
-    // Prevent accepting if user is an organizer
+    // Prevent accepting if user is an organizer — also check event_members (pre-publication organizers)
     const { data: organizers } = await supabase
       .from('event_organizers')
       .select('student_id')
+      .eq('event_id', event.id);
+      
+    const { data: proposalMembers } = await supabase
+      .from('event_members')
+      .select('user_id')
       .eq('event_id', event.id);
       
     const organizerIds = (organizers || []).map(o => o.student_id);
@@ -837,6 +865,8 @@ exports.acceptTeamInvitation = async (req, res) => {
     if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
     if (event.proposed_by) organizerIds.push(event.proposed_by);
     if (event.faculty_id) organizerIds.push(event.faculty_id);
+    // Add pre-publication organizers from event_members
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(m.user_id); });
 
     if (organizerIds.includes(userId)) {
       return res.status(403).json({ message: 'You are an organizer for this event and cannot join a team.' });
@@ -1284,10 +1314,15 @@ exports.addTeamMember = async (req, res) => {
     }
 
     // Eligibility Check
-    // 1. Is organizer?
+    // 1. Is organizer? — also check event_members (pre-publication organizers)
     const { data: organizers } = await supabase
       .from('event_organizers')
       .select('student_id')
+      .eq('event_id', event.id);
+    
+    const { data: proposalMembers } = await supabase
+      .from('event_members')
+      .select('user_id')
       .eq('event_id', event.id);
     
     const organizerIds = (organizers || []).map(o => o.student_id);
@@ -1295,6 +1330,8 @@ exports.addTeamMember = async (req, res) => {
     if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
     if (event.proposed_by) organizerIds.push(event.proposed_by);
     if (event.faculty_id) organizerIds.push(event.faculty_id);
+    // Add pre-publication organizers from event_members
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(m.user_id); });
 
     if (organizerIds.includes(memberId)) {
       return res.status(400).json({ message: 'User is an organizer and cannot join a team.' });

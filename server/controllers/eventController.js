@@ -85,7 +85,7 @@ const getMyEvents = async (req, res) => {
         .eq('proposed_by', req.user.id);
       if (propErr) throw propErr;
 
-      // 2. Fetch events where user is an organizer
+      // 2. Fetch events where user is in event_organizers (post-publication)
       const { data: orgs } = await supabase
         .from('event_organizers')
         .select('event_id')
@@ -103,8 +103,24 @@ const getMyEvents = async (req, res) => {
         organizingData = orgData || [];
       }
 
+      // 3. Fetch events where user is in event_members (pre-publication organizers — Core & Normal)
+      const { data: memberEntries } = await supabase
+        .from('event_members')
+        .select('event_id')
+        .eq('user_id', req.user.id);
+      const memberEventIds = (memberEntries || []).map(m => m.event_id).filter(Boolean);
+      let memberEventData = [];
+      if (memberEventIds.length > 0) {
+        const { data: mData, error: mErr } = await supabase
+          .from('events')
+          .select('*')
+          .in('id', memberEventIds);
+        if (mErr) throw mErr;
+        memberEventData = mData || [];
+      }
+
       // Merge and deduplicate based on event id
-      const allEvents = [...(proposedData || []), ...organizingData];
+      const allEvents = [...(proposedData || []), ...organizingData, ...memberEventData];
       const uniqueEventsMap = new Map();
       allEvents.forEach(e => uniqueEventsMap.set(e.id, e));
       events = Array.from(uniqueEventsMap.values());
@@ -131,6 +147,32 @@ const getMyEvents = async (req, res) => {
       ].filter(Boolean));
       evt.organizerIds = Array.from(uniqueOrganizerIds);
       evt.organizersCount = evt.organizerIds.length;
+
+      // Determine the requesting user's organizer type for this event.
+      // The proposer and faculty are always Core. Members in event_members use their stored organizer_type.
+      const isProposerOrFaculty =
+        String(evt.proposed_by || '') === String(req.user.id) ||
+        String(evt.student_organizer_id || '') === String(req.user.id) ||
+        String(evt.faculty_id || '') === String(req.user.id) ||
+        String(evt.organizer_id || '') === String(req.user.id);
+
+      if (isProposerOrFaculty) {
+        evt.userOrganizerType = 'core';
+      } else {
+        const userMember = (members || []).find(m => String(m.user_id) === String(req.user.id));
+        if (userMember) {
+          evt.userOrganizerType = userMember.organizer_type || 'normal';
+        } else {
+          // Check event_organizers (post-publication) — treat as normal unless organizer_role is core
+          const { data: orgEntry } = await supabase
+            .from('event_organizers')
+            .select('organizer_role')
+            .eq('event_id', evt.id)
+            .eq('student_id', req.user.id)
+            .maybeSingle();
+          evt.userOrganizerType = (orgEntry?.organizer_role === 'core') ? 'core' : 'normal';
+        }
+      }
 
       const { data: reqs } = await supabase
         .from('organizer_requests')
@@ -361,7 +403,8 @@ const createEvent = async (req, res) => {
     const { error: memberErr } = await supabase.from('event_members').insert({
       event_id: event.id,
       user_id: req.user.id,
-      role: 'organizer'
+      role: 'organizer',
+      organizer_type: 'core'
     });
 
     if (facultyId) {
@@ -369,7 +412,8 @@ const createEvent = async (req, res) => {
       await supabase.from('event_members').insert({
         event_id: event.id,
         user_id: facultyId,
-        role: 'Faculty Coordinator'
+        role: 'Faculty Coordinator',
+        organizer_type: 'core'
       });
 
       // Notify assigned faculty
@@ -989,7 +1033,7 @@ const getEventOrganizers = async (req, res) => {
           id: `mem-${m.id}`,
           userId: m.user_id,
           category: m.role || 'Core Organizer',
-          organizerRole: 'core',
+          organizerRole: m.organizer_type || 'normal',
           joinedAt: new Date().toISOString(), // Fallback
           name: profilesMap[m.user_id]?.name || 'Unknown',
           email: profilesMap[m.user_id]?.email || '',
@@ -1652,12 +1696,13 @@ const checkCoreOrganizerAccess = async (eventId, event, user) => {
 
   if (org) return true;
 
-  // Check if they are explicitly assigned in event_members
+  // Check if they are explicitly assigned as core in event_members
   const { data: member } = await supabase
     .from('event_members')
     .select('id')
     .eq('event_id', eventId)
     .eq('user_id', user.id)
+    .eq('organizer_type', 'core')
     .maybeSingle();
 
   return !!member;
@@ -2071,7 +2116,7 @@ const getProposalTeam = async (req, res) => {
 const addProposalTeamMember = async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId, name, email, department, role } = req.body;
+    const { userId, name, email, department, role, organizerType } = req.body;
     
     const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
     if (evErr) throw evErr;
@@ -2096,7 +2141,8 @@ const addProposalTeamMember = async (req, res) => {
     const { data: member, error: insErr } = await supabase.from('event_members').insert({
       event_id: id,
       user_id: userId,
-      role
+      role,
+      organizer_type: organizerType === 'core' ? 'core' : 'normal'
     }).select('*').single();
     
     if (insErr) throw insErr;
@@ -2179,14 +2225,66 @@ const removeProposalTeamMember = async (req, res) => {
   }
 };
 
+const updateProposalTeamMemberRole = async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const { organizerType } = req.body;
+    
+    if (organizerType !== 'core' && organizerType !== 'normal') {
+      return res.status(400).json({ message: 'Invalid organizer type.' });
+    }
+
+    const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (evErr) throw evErr;
+    
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+    
+    const { data: member, error: memErr } = await supabase.from('event_members').select('*').eq('id', memberId).single();
+    if (memErr) throw memErr;
+    
+    if (organizerType === 'normal') {
+      if (member.user_id === event.proposed_by || member.user_id === event.student_organizer_id) {
+        return res.status(400).json({ message: 'Cannot downgrade the primary proposal creator from Core Organizer.' });
+      }
+      if (member.user_id === event.faculty_id) {
+        return res.status(400).json({ message: 'Cannot downgrade the primary faculty coordinator from Core Organizer.' });
+      }
+    }
+    
+    const { data: updatedMember, error: updateErr } = await supabase
+      .from('event_members')
+      .update({ organizer_type: organizerType })
+      .eq('id', memberId)
+      .select()
+      .single();
+      
+    if (updateErr) throw updateErr;
+
+    if (updatedMember && updatedMember.user_id) {
+      await supabase
+        .from('event_organizers')
+        .update({ organizer_role: organizerType })
+        .eq('event_id', id)
+        .eq('student_id', updatedMember.user_id);
+    }
+    
+    res.json(updatedMember);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error updating organizer role.', error: err.message });
+  }
+};
+
 const updateProposalDescription = async (req, res) => {
   try {
     const { id } = req.params;
-    const { description } = req.body;
-    
-    if (description === undefined) {
-      return res.status(400).json({ message: 'Description is required.' });
-    }
+    const { 
+      title, description, category, venue, date, capacity, imageUrl, 
+      registrationType, maxTeams, minTeamSize, maxTeamSize, 
+      allowCrossDepartment, teamLeaderRegistrationRequired, registrationDeadline 
+    } = req.body;
     
     const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
     if (evErr) throw evErr;
@@ -2196,9 +2294,63 @@ const updateProposalDescription = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
     
+    if (date !== undefined) {
+      const selectedDate = new Date(date);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      if (selectedDate < tomorrow) {
+        return res.status(400).json({ message: 'Event date must be at least one day in the future.' });
+      }
+    }
+    
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (category !== undefined) updates.category = category;
+    if (venue !== undefined) updates.venue = venue;
+    if (date !== undefined) updates.date = date;
+    if (capacity !== undefined && registrationType !== 'team') updates.capacity = Number(capacity);
+    if (registrationType === 'team') updates.capacity = null;
+    if (imageUrl !== undefined) updates.image_url = imageUrl;
+    if (registrationType !== undefined) updates.registration_type = registrationType;
+    if (maxTeams !== undefined) updates.max_teams = Number(maxTeams);
+    if (minTeamSize !== undefined) updates.min_team_size = Number(minTeamSize);
+    if (maxTeamSize !== undefined) updates.max_team_size = Number(maxTeamSize);
+    if (allowCrossDepartment !== undefined) updates.allow_cross_department = allowCrossDepartment;
+    if (teamLeaderRegistrationRequired !== undefined) updates.team_leader_registration_required = teamLeaderRegistrationRequired;
+    if (registrationDeadline !== undefined) {
+      if (registrationDeadline) {
+        const deadlineDate = new Date(registrationDeadline);
+        const eventDate = new Date(date || event.date);
+        
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+
+        const maxDeadline = new Date(eventDate);
+        maxDeadline.setDate(maxDeadline.getDate() - 1);
+        maxDeadline.setHours(23, 59, 59, 999);
+
+        if (deadlineDate < tomorrow) {
+          return res.status(400).json({ message: 'Registration Closing Date must be at least tomorrow.' });
+        }
+        if (deadlineDate > maxDeadline) {
+          return res.status(400).json({ message: 'Registration Closing Date must be at least one day before the Event Date.' });
+        }
+        updates.registration_deadline = registrationDeadline;
+      } else {
+        updates.registration_deadline = null;
+      }
+    }
+    
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'No fields provided to update.' });
+    }
+    
     const { data: updatedEvent, error: updateErr } = await supabase
       .from('events')
-      .update({ description })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
@@ -2209,13 +2361,13 @@ const updateProposalDescription = async (req, res) => {
     await supabase.from('proposal_timeline').insert({
       proposal_id: id,
       user_id: req.user.id,
-      action: 'Description Updated',
-      details: 'The event description was modified.'
+      action: 'Event Details Updated',
+      details: 'The event proposal details were modified.'
     });
     
     res.json(updatedEvent);
   } catch (err) {
-    res.status(500).json({ message: 'Server error updating description.', error: err.message });
+    res.status(500).json({ message: 'Server error updating event details.', error: err.message });
   }
 };
 
@@ -2296,6 +2448,7 @@ module.exports = {
   uploadProposalDocument,
   updateProposalStatus,
   resubmitProposal,
+  updateProposalTeamMemberRole,
   getProposalTeam,
   addProposalTeamMember,
   removeProposalTeamMember,
