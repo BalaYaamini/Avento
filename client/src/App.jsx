@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
@@ -34,6 +35,50 @@ import StudentOrgEvents from './pages/StudentOrgEvents';
 // Workspace view
 import Workspace from './pages/Workspace';
 import ProposalWorkspace from './pages/ProposalWorkspace';
+
+/* Global Alert Override */
+const GlobalAlert = () => {
+  const [alertConfig, setAlertConfig] = useState({ isOpen: false, message: '' });
+
+  useEffect(() => {
+    const originalAlert = window.alert;
+    window.alert = (message) => {
+      setAlertConfig({ isOpen: true, message: String(message) });
+    };
+
+    return () => {
+      window.alert = originalAlert;
+    };
+  }, []);
+
+  if (!alertConfig.isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-10 w-10 rounded-full bg-fuchsia-50 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-fuchsia-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 font-heading">Notification</h3>
+          </div>
+          <p className="text-slate-600 font-body whitespace-pre-wrap leading-relaxed">{alertConfig.message}</p>
+        </div>
+        <div className="bg-slate-50 px-6 py-4 flex justify-end">
+          <button
+            onClick={() => setAlertConfig({ isOpen: false, message: '' })}
+            className="btn-primary px-6 py-2 text-sm font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15"
+          >
+            Okay
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /* Animated page wrapper — fades in content on route change */
 const AnimatedRoutes = () => {
@@ -177,6 +222,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
+        <GlobalAlert />
         <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
           {/* ── Animated Background Orbs ── */}
           <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">

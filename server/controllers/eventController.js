@@ -1130,7 +1130,6 @@ const recruitOrganizer = async (req, res) => {
       event_id: id,
       student_id: studentId,
       category: category,
-      organizer_role: selectedRole,
       joined_at: new Date().toISOString()
     };
 
@@ -1150,7 +1149,7 @@ const recruitOrganizer = async (req, res) => {
         id: inserted.id,
         userId: inserted.student_id,
         category: inserted.category,
-        organizerRole: inserted.organizer_role,
+        organizerRole: selectedRole, // fallback to selectedRole since DB doesn't store it yet
         joinedAt: inserted.joined_at,
         name: profile.name || profile.fullName,
         email: profile.email,
@@ -1450,7 +1449,7 @@ const processJoinRequest = async (req, res) => {
     }
 
     // Auth check
-    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    const hasAccess = await checkCoreOrganizerAccess(eventId, event, req.user);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Only a Core Organizer is authorized to manage join requests.' });
     }
@@ -1485,7 +1484,6 @@ const processJoinRequest = async (req, res) => {
             event_id: eventId,
             student_id: request.student_id,
             category: request.category,
-            organizer_role: 'normal',
             joined_at: new Date().toISOString()
           });
         if (insertErr) throw insertErr;

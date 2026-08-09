@@ -560,6 +560,9 @@ exports.registerTeamForEvent = async (req, res) => {
     if (hasOrganizer) {
       return res.status(403).json({ message: 'One or more selected members are organizing this event and cannot be added as team members.' });
     }
+    if (organizerIds.includes(leaderId)) {
+      return res.status(403).json({ message: 'You are an organizer for this event and cannot create a team.' });
+    }
 
     // Validate existing active registrations for the leader
     // A student can create only one active team for a particular event.
@@ -821,6 +824,22 @@ exports.acceptTeamInvitation = async (req, res) => {
     const event = reg.events;
     if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
       return res.status(400).json({ message: 'The registration deadline has passed. You can no longer accept this invitation.' });
+    }
+
+    // Prevent accepting if user is an organizer
+    const { data: organizers } = await supabase
+      .from('event_organizers')
+      .select('student_id')
+      .eq('event_id', event.id);
+      
+    const organizerIds = (organizers || []).map(o => o.student_id);
+    if (event.organizer_id) organizerIds.push(event.organizer_id);
+    if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
+    if (event.proposed_by) organizerIds.push(event.proposed_by);
+    if (event.faculty_id) organizerIds.push(event.faculty_id);
+
+    if (organizerIds.includes(userId)) {
+      return res.status(403).json({ message: 'You are an organizer for this event and cannot join a team.' });
     }
 
     // Prevent accepting if user is already the leader of any team for this event

@@ -148,14 +148,18 @@ const Home = () => {
 
   const openConfirmReg = (event) => {
     // Check if user already has a pending or registered status for this event
-    const existingReg = myRegistrations.find(
-      reg => (reg.event_id === event.id || reg.event_id === event._id || reg.events?.id === event.id || reg.events?.id === event._id) && 
-             (reg.status === 'pending' || reg.status === 'registered')
-    );
+    const eventIdStr = String(event.id || event._id);
+    const existingReg = myRegistrations.find(reg => {
+      const rawId = String(reg.event_id);
+      const joinedId = String(reg.eventId && typeof reg.eventId === 'object' ? (reg.eventId.id || reg.eventId._id) : reg.eventId);
+      const matchesEvent = rawId === eventIdStr || joinedId === eventIdStr;
+      
+      return matchesEvent && (reg.status === 'pending' || reg.status === 'registered');
+    });
 
     if (existingReg) {
       if (existingReg.status === 'pending') {
-        alert('You have pending team invitations (or an unconfirmed team) for this event. Please reject all pending invitations or cancel your team before creating a new one.');
+        alert(`You have pending team invitations for ${event.title || event.name || 'this event'}. Please reject all other team invitations for this event before creating your own team.`);
       } else {
         alert('You are already registered for this event.');
       }
@@ -921,6 +925,14 @@ const Home = () => {
                   </div>
                 </div>
               </div>
+
+              {selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size && (
+                <div className="mb-2 p-3 bg-red-50 border border-red-100 rounded-xl">
+                  <p className="text-xs text-red-600 font-semibold text-center">
+                    Please add at least {teamRegEvent.min_team_size} members to create the team.
+                  </p>
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-2">
                 <button
