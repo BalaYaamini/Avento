@@ -154,7 +154,7 @@ const Navbar = () => {
           {/* Desktop Navigation Links */}
           <div className="hidden md:flex items-center space-x-8">
             <NavLink to="/" end className={navLinkClass}>Home</NavLink>
-            <NavLink to="/about" className={navLinkClass}>About</NavLink>
+            {/* TODO: RE-ENABLE About page — <NavLink to="/about" className={navLinkClass}>About</NavLink> */}
             <NavLink to="/contact" className={navLinkClass}>Contact</NavLink>
 
             {/* Student Navigation (unified) */}
@@ -404,7 +404,7 @@ const Navbar = () => {
        >
          <div className="px-4 pt-4 pb-6 space-y-2">
            <NavLink to="/" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Home</NavLink>
-           <NavLink to="/about" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>About</NavLink>
+           {/* TODO: RE-ENABLE About page — <NavLink to="/about" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>About</NavLink> */}
            <NavLink to="/contact" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Contact</NavLink>
 
            {user && user.roles?.includes('student') && (

@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
+import SplashScreen from './components/SplashScreen';
 
 // Public views
 import Home from './pages/Home';
@@ -89,7 +90,7 @@ const AnimatedRoutes = () => {
       <Routes location={location}>
         {/* Public Paths */}
         <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
+        {/* TODO: RE-ENABLE About page — <Route path="/about" element={<About />} /> */}
         <Route path="/contact" element={<Contact />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -222,6 +223,7 @@ function App() {
   return (
     <Router>
       <AuthProvider>
+        <SplashScreen />
         <GlobalAlert />
         <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
           {/* ── Animated Background Orbs ── */}

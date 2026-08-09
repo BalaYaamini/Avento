@@ -40,7 +40,7 @@ const Footer = () => {
                 <Link to="/" className="hover:text-white transition-all duration-300 hover:pl-1 inline-block">Browse Events</Link>
               </li>
               <li>
-                <Link to="/about" className="hover:text-white transition-all duration-300 hover:pl-1 inline-block">About Portal</Link>
+              {/* TODO: RE-ENABLE About page — <Link to="/about" className="hover:text-white transition-all duration-300 hover:pl-1 inline-block">About Portal</Link> */}
               </li>
               <li>
                 <Link to="/contact" className="hover:text-white transition-all duration-300 hover:pl-1 inline-block">Help Desk</Link>

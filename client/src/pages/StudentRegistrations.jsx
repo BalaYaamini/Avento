@@ -587,7 +587,13 @@ const StudentRegistrations = () => {
                           </div>
                           
                           <div className="mt-4 text-xs text-slate-500 font-medium italic">
-                            Booked on {new Date(reg.registrationDate).toLocaleDateString()}
+                            {(() => {
+                              const dateValue = reg.registrationDate || reg.created_at || reg.createdAt;
+                              if (!dateValue) return 'Booking date unavailable';
+                              const d = new Date(dateValue);
+                              if (isNaN(d.getTime())) return 'Booking date unavailable';
+                              return `Booked on ${d.toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}`;
+                            })()}
                           </div>
                         </div>
                       </div>

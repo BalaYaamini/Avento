@@ -400,14 +400,25 @@ const Home = () => {
 
   return (
     <div className="flex-grow pb-16">
-      {/* ════════════ SCRAPBOOK HERO SECTION ════════════ */}
-      <div className="relative overflow-hidden py-24 sm:py-32 bg-background">
-        <div className="absolute top-10 left-10 w-64 h-64 bg-pastel-lavender/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-float-slow"></div>
-        <div className="absolute top-0 right-20 w-72 h-72 bg-pastel-coral/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-float"></div>
-        <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pastel-yellow/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-float-slow" style={{ animationDelay: '2s' }}></div>
+      {/* ════════════ SCRAPBOOK HERO SECTION WITH ANIMATED UNIVERSITY BACKGROUND ════════════ */}
+      <div className="relative overflow-hidden py-24 sm:py-32 bg-slate-900">
+        {/* Animated University Image Background */}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          <img 
+            src="/university.jpg" 
+            alt="University Campus" 
+            className="w-full h-full object-cover object-center animate-hero-bg-zoom opacity-45 scale-105"
+          />
+          {/* Gradient Overlay to ensure text readability */}
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-900/60 to-slate-950/80 backdrop-blur-[1px]" />
+        </div>
+
+        <div className="absolute top-10 left-10 w-64 h-64 bg-pastel-lavender/20 rounded-full mix-blend-screen filter blur-3xl opacity-60 animate-float-slow"></div>
+        <div className="absolute top-0 right-20 w-72 h-72 bg-pastel-coral/20 rounded-full mix-blend-screen filter blur-3xl opacity-60 animate-float"></div>
+        <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pastel-yellow/20 rounded-full mix-blend-screen filter blur-3xl opacity-60 animate-float-slow" style={{ animationDelay: '2s' }}></div>
 
         {/* Floating Scrapbook Elements */}
-        <div className="absolute top-20 left-[10%] animate-wobble hidden lg:block">
+        <div className="absolute top-20 left-[10%] animate-wobble hidden lg:block z-10">
           <div className="polaroid w-32 rotate-[-10deg]">
             <div className="w-full h-24 bg-pastel-lavender/20 rounded-md flex items-center justify-center border border-pastel-lavender/30">
               <StarDoodle className="w-10 h-10 text-pastel-lavender" />
@@ -416,47 +427,47 @@ const Home = () => {
           </div>
         </div>
 
-        <CloudDoodle className="absolute top-24 left-[30%] w-24 h-12 text-pastel-blue opacity-50 animate-float-slow hidden md:block" />
+        <CloudDoodle className="absolute top-24 left-[30%] w-24 h-12 text-pastel-blue opacity-50 animate-float-slow hidden md:block z-10" />
 
-        <div className="absolute top-32 right-[10%] animate-float hidden lg:block">
+        <div className="absolute top-32 right-[10%] animate-float hidden lg:block z-10">
           <div className="bg-pastel-yellow w-40 p-4 shadow-md rotate-[5deg] font-quicksand font-bold text-yellow-800 text-sm relative">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-1 !bg-white/40"></div>
             Good vibes only! See you there.
           </div>
         </div>
 
-        <PaperPlaneDoodle className="absolute top-40 right-[28%] w-16 h-16 text-pastel-coral opacity-60 animate-wobble hidden md:block -rotate-12" />
+        <PaperPlaneDoodle className="absolute top-40 right-[28%] w-16 h-16 text-pastel-coral opacity-60 animate-wobble hidden md:block -rotate-12 z-10" />
 
-        <div className="absolute bottom-10 left-[20%] animate-bounce-gentle hidden lg:block">
+        <div className="absolute bottom-10 left-[20%] animate-bounce-gentle hidden lg:block z-10">
           <SparkleDoodle className="w-16 h-16 text-pastel-coral opacity-60" />
         </div>
 
-        <div className="absolute bottom-20 right-[25%] animate-float-slow hidden lg:block">
+        <div className="absolute bottom-20 right-[25%] animate-float-slow hidden lg:block z-10">
           <div className="bg-pastel-mint/80 w-36 p-3 shadow-sm -rotate-[8deg] font-quicksand font-bold text-green-800 text-xs rounded-br-xl relative">
             <PinDoodle className="absolute -top-4 left-2 w-6 h-6 text-pastel-coral" />
             Campus lore unlocked ✨
           </div>
         </div>
         
-        <GeometricBlobDoodle className="absolute -top-10 -left-10 w-96 h-96 text-pastel-lavender -z-10 hidden md:block animate-spin-slow" />
-        <GeometricBlobDoodle className="absolute top-20 -right-20 w-[500px] h-[500px] text-pastel-mint -z-10 hidden md:block animate-float-slow" />
+        <GeometricBlobDoodle className="absolute -top-10 -left-10 w-96 h-96 text-pastel-lavender opacity-30 z-0 hidden md:block animate-spin-slow" />
+        <GeometricBlobDoodle className="absolute top-20 -right-20 w-[500px] h-[500px] text-pastel-mint opacity-30 z-0 hidden md:block animate-float-slow" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
           {/* Animated badge */}
           <div className="animate-fade-in-up flex justify-center mb-6">
-            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold bg-white text-pastel-lavender border-2 border-pastel-lavender/30 tracking-wider uppercase shadow-sm">
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold bg-white/90 backdrop-blur-md text-pastel-lavender border-2 border-pastel-lavender/30 tracking-wider uppercase shadow-md">
               <span className="h-2 w-2 rounded-full bg-pastel-coral animate-pulse" />
               Find your vibe
             </span>
           </div>
 
           {/* Main headline */}
-            <h1 className="animate-fade-in-up delay-100 font-heading text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-text-primary mb-6 leading-[1.1]">
+            <h1 className="animate-fade-in-up delay-100 font-heading text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-white mb-6 leading-[1.1] drop-shadow-md">
               <span className="marker-highlight">Collect moments.</span><br className="hidden sm:block" />
               Meet your people.
             </h1>
 
-          <p className="animate-fade-in-up delay-200 text-lg sm:text-xl font-body text-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed font-medium">
+          <p className="animate-fade-in-up delay-200 text-lg sm:text-xl font-body text-slate-200 max-w-2xl mx-auto mb-10 leading-relaxed font-medium drop-shadow-sm">
             Your semester deserves better stories. Discover hackathons, cultural fests, and workshops — all in a single click. <span className="font-bold text-pastel-coral">Avento it.</span>
           </p>
 
@@ -466,7 +477,7 @@ const Home = () => {
 
           {/* Scroll indicator */}
           <div className="animate-fade-in-up delay-500 flex justify-center">
-            <div className="animate-bounce-gentle bg-white p-2 rounded-full border-2 border-pastel-lavender/20 shadow-sm text-pastel-lavender">
+            <div className="animate-bounce-gentle bg-white/90 backdrop-blur-md p-2 rounded-full border-2 border-pastel-lavender/30 shadow-md text-pastel-lavender">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
               </svg>

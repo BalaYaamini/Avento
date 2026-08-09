@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, supabase } from '../context/AuthContext';
 import axios from 'axios';
 
 const ProposalWorkspace = () => {
@@ -28,10 +28,12 @@ const ProposalWorkspace = () => {
   const [remarks, setRemarks] = useState('');
   const [processingAction, setProcessingAction] = useState(false);
 
-  // Description editing state
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editedDescription, setEditedDescription] = useState('');
-  const [savingDescription, setSavingDescription] = useState(false);
+  // Event Details editing state
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
+  const [editFormData, setEditFormData] = useState({});
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [posterFile, setPosterFile] = useState(null);
+  const [posterPreview, setPosterPreview] = useState('');
 
   // Team state
   const [team, setTeam] = useState([]);
@@ -41,6 +43,7 @@ const ProposalWorkspace = () => {
   const [addingMember, setAddingMember] = useState(false);
   const [selectedUserForAdd, setSelectedUserForAdd] = useState(null);
   const [selectedResponsibility, setSelectedResponsibility] = useState('');
+  const [selectedOrganizerType, setSelectedOrganizerType] = useState('normal');
   const searchTimeoutRef = useRef(null);
 
   const fetchWorkspace = async (silent = false) => {
@@ -104,17 +107,28 @@ const ProposalWorkspace = () => {
         name: userRecord.name || userRecord.fullName,
         email: userRecord.email,
         department: userRecord.department,
-        role: roleStr
+        role: roleStr,
+        organizerType: selectedOrganizerType
       });
       setSearchQuery('');
       setSearchResults([]);
       setSelectedUserForAdd(null);
       setSelectedResponsibility('');
+      setSelectedOrganizerType('normal');
       fetchTeam();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to add team member.');
     } finally {
       setAddingMember(false);
+    }
+  };
+
+  const handleChangeOrganizerType = async (memberId, newType) => {
+    try {
+      await axios.put(`/api/events/${proposalId}/proposal-team/${memberId}/role`, { organizerType: newType });
+      fetchTeam();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to change organizer type.');
     }
   };
 
@@ -159,16 +173,49 @@ const ProposalWorkspace = () => {
     }
   };
 
-  const handleSaveDescription = async () => {
+  const handleSaveDetails = async () => {
     try {
-      setSavingDescription(true);
-      await axios.put(`/api/events/${proposalId}/proposal-description`, { description: editedDescription });
-      setIsEditingDescription(false);
+      setSavingDetails(true);
+      let finalImageUrl = editFormData.imageUrl;
+      
+      if (posterFile) {
+        if (posterFile.size > 5 * 1024 * 1024) {
+          alert('Poster image must be less than 5MB.');
+          setSavingDetails(false);
+          return;
+        }
+        
+        const fileExt = posterFile.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('posters')
+          .upload(filePath, posterFile);
+
+        if (uploadError) {
+          alert('Failed to upload poster image.');
+          setSavingDetails(false);
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('posters')
+          .getPublicUrl(filePath);
+          
+        finalImageUrl = publicUrlData.publicUrl;
+      }
+
+      const payload = { ...editFormData, imageUrl: finalImageUrl };
+      await axios.put(`/api/events/${proposalId}/proposal-details`, payload);
+      setIsEditingDetails(false);
+      setPosterFile(null);
+      setPosterPreview('');
       fetchWorkspace(true);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save description.');
+      alert(err.response?.data?.message || 'Failed to save event details.');
     } finally {
-      setSavingDescription(false);
+      setSavingDetails(false);
     }
   };
 
@@ -469,52 +516,222 @@ const ProposalWorkspace = () => {
               <div className="space-y-6 animate-fade-in">
                 <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-slate-800">Description</h3>
-                    {(isCreator || isFaculty || user?.roles?.includes('admin')) && !isEditingDescription && (
+                    <h3 className="text-lg font-bold text-slate-800">Event Details</h3>
+                    {(isCreator || isFaculty || user?.roles?.includes('admin')) && !isEditingDetails && (
                       <button 
                         onClick={() => {
-                          setEditedDescription(event.description || '');
-                          setIsEditingDescription(true);
+                          const toLocalISO = (d) => {
+                            if (!d) return '';
+                            const date = new Date(d);
+                            if (isNaN(date.getTime())) return '';
+                            return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                          };
+                          setEditFormData({
+                            title: event.title || '',
+                            description: event.description || '',
+                            date: toLocalISO(event.date),
+                            registrationDeadline: toLocalISO(event.registration_deadline),
+                            category: event.category || '',
+                            venue: event.venue || '',
+                            registrationType: event.registration_type || 'individual',
+                            minTeamSize: event.min_team_size || 1,
+                            maxTeamSize: event.max_team_size || 1,
+                            maxTeams: event.max_teams || '',
+                            imageUrl: event.image_url || event.imageUrl || ''
+                          });
+                          setPosterFile(null);
+                          setPosterPreview('');
+                          setIsEditingDetails(true);
                         }}
                         className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
                       >
-                        Edit Description
+                        Edit Details
                       </button>
                     )}
                   </div>
                   
-                  {isEditingDescription ? (
+                  {isEditingDetails ? (
                     <div className="space-y-4 animate-fade-in">
-                      <textarea
-                        className="w-full p-4 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[150px]"
-                        value={editedDescription}
-                        onChange={(e) => setEditedDescription(e.target.value)}
-                        placeholder="Enter event description..."
-                      />
-                      <div className="flex gap-2 justify-end">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Event Title</label>
+                          <input
+                            type="text"
+                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            value={editFormData.title}
+                            onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                          <input
+                            type="text"
+                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            value={editFormData.category}
+                            onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Venue</label>
+                          <input
+                            type="text"
+                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            value={editFormData.venue}
+                            onChange={(e) => setEditFormData({...editFormData, venue: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Proposed Date</label>
+                          <input
+                            type="datetime-local"
+                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            value={editFormData.date}
+                            onChange={(e) => setEditFormData({...editFormData, date: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Registration Type</label>
+                          <select
+                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                            value={editFormData.registrationType}
+                            onChange={(e) => setEditFormData({...editFormData, registrationType: e.target.value})}
+                          >
+                            <option value="individual">Individual</option>
+                            <option value="team">Team</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Registration Deadline</label>
+                          <input
+                            type="datetime-local"
+                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                            value={editFormData.registrationDeadline}
+                            onChange={(e) => setEditFormData({...editFormData, registrationDeadline: e.target.value})}
+                          />
+                        </div>
+                        
+                        {editFormData.registrationType === 'team' && (
+                          <>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Min Team Size</label>
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                value={editFormData.minTeamSize}
+                                onChange={(e) => setEditFormData({...editFormData, minTeamSize: e.target.value})}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Max Team Size</label>
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                value={editFormData.maxTeamSize}
+                                onChange={(e) => setEditFormData({...editFormData, maxTeamSize: e.target.value})}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">Max Teams (Capacity)</label>
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                value={editFormData.maxTeams}
+                                onChange={(e) => setEditFormData({...editFormData, maxTeams: e.target.value})}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1 mt-4">Event Poster</label>
+                        <div className="flex flex-col gap-3">
+                          {(posterPreview || editFormData.imageUrl) && (
+                            <img 
+                              src={posterPreview || editFormData.imageUrl} 
+                              alt="Event Poster Preview" 
+                              className="w-full max-w-sm rounded-xl border border-slate-200 object-cover aspect-video"
+                            />
+                          )}
+                          <div className="flex items-center gap-3">
+                            <label className="cursor-pointer px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors inline-block">
+                              Change Poster
+                              <input 
+                                type="file" 
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files[0];
+                                  if (file) {
+                                    setPosterFile(file);
+                                    setPosterPreview(URL.createObjectURL(file));
+                                  }
+                                }}
+                              />
+                            </label>
+                            {posterFile && (
+                              <span className="text-xs text-slate-500 font-medium truncate max-w-xs">New file selected: {posterFile.name}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1 mt-4">Event Description</label>
+                        <textarea
+                          className="w-full p-4 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[150px]"
+                          value={editFormData.description}
+                          onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                          placeholder="Enter event description..."
+                        />
+                      </div>
+                      
+                      <div className="flex gap-2 justify-end mt-4">
                         <button 
-                          onClick={() => setIsEditingDescription(false)}
-                          disabled={savingDescription}
+                          onClick={() => setIsEditingDetails(false)}
+                          disabled={savingDetails}
                           className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors disabled:opacity-50"
                         >
                           Cancel
                         </button>
                         <button 
-                          onClick={handleSaveDescription}
-                          disabled={savingDescription || !editedDescription.trim()}
+                          onClick={handleSaveDetails}
+                          disabled={savingDetails || !editFormData.title?.trim() || !editFormData.description?.trim()}
                           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                         >
-                          {savingDescription ? (
+                          {savingDetails ? (
                             <>
                               <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
                               Saving...
                             </>
-                          ) : 'Save Changes'}
+                          ) : 'Save Details'}
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
+                    <div>
+                      <h4 className="text-xl font-bold text-slate-800 mb-3">{event.title}</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-700">
+                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Category</strong> {event.category || 'N/A'}</div>
+                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Venue</strong> {event.venue || 'TBA'}</div>
+                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Date</strong> {event.date ? new Date(event.date).toLocaleString() : 'TBA'}</div>
+                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Type</strong> {event.registration_type === 'team' ? 'Team Event' : 'Individual Event'}</div>
+                        {event.registration_type === 'team' && (
+                          <>
+                            <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Min/Max Size</strong> {event.min_team_size} - {event.max_team_size} Members</div>
+                            <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Max Teams</strong> {event.max_teams || 'No Limit'}</div>
+                          </>
+                        )}
+                        {event.registration_deadline && (
+                          <div className="col-span-full md:col-span-1"><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Reg. Deadline</strong> {new Date(event.registration_deadline).toLocaleString()}</div>
+                        )}
+                      </div>
+                      <h5 className="text-sm font-bold text-slate-700 mb-2">Description</h5>
+                      <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -537,6 +754,39 @@ const ProposalWorkspace = () => {
                           <button onClick={() => setSelectedUserForAdd(null)} className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm transition-colors">Change User</button>
                         </div>
                         
+                        <div className="mb-4">
+                          <label className="block text-xs font-bold text-slate-700 mb-2">Organizer Type <span className="text-red-500">*</span></label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrganizerType('core')}
+                              className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
+                                selectedOrganizerType === 'core'
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              ⭐ Core Organizer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrganizerType('normal')}
+                              className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
+                                selectedOrganizerType === 'normal'
+                                  ? 'bg-slate-700 text-white border-slate-700'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              Normal Organizer
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {selectedOrganizerType === 'core'
+                              ? 'Core Organizers can access the Proposal Workspace and manage the organizing team.'
+                              : 'Normal Organizers help with the event but cannot manage the organizing team.'}
+                          </p>
+                        </div>
+
                         <div className="mb-4">
                           <label className="block text-xs font-bold text-slate-700 mb-2">Responsibility <span className="text-red-500">*</span></label>
                           <select 
@@ -645,24 +895,52 @@ const ProposalWorkspace = () => {
                        {team.filter(t => !t.global_role?.startsWith('faculty')).length === 0 && (
                          <li className="py-2 text-xs text-slate-400 italic">No students assigned yet.</li>
                        )}
-                       {team.filter(t => !t.global_role?.startsWith('faculty')).map(t => (
-                         <li key={t.id} className="py-3 flex justify-between items-center">
-                           <div>
-                             <p className="font-bold text-sm text-slate-800">
-                               {t.name}
-                               {t.role && (
-                                 <span className="ml-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full border border-slate-200">
-                                   {t.role}
+                       {team.filter(t => !t.global_role?.startsWith('faculty')).map(t => {
+                         const isProtected = t.user_id === event.proposed_by || t.user_id === event.student_organizer_id;
+                         const isCoreOrg = t.organizer_type === 'core';
+                         const canManage = (isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status);
+                         return (
+                           <li key={t.id} className="py-3 flex justify-between items-center gap-3">
+                             <div className="flex-1 min-w-0">
+                               <p className="font-bold text-sm text-slate-800 flex items-center flex-wrap gap-1.5">
+                                 {t.name}
+                                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${isCoreOrg ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                   {isCoreOrg ? '⭐ Core' : 'Normal'}
                                  </span>
-                               )}
-                             </p>
-                             <p className="text-xs text-slate-500 mt-0.5">{t.email}</p>
-                           </div>
-                           {(isCreator || isFaculty || user?.roles?.includes('admin')) && t.user_id !== event.proposed_by && t.user_id !== event.student_organizer_id && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                             <button onClick={() => handleRemoveTeamMember(t.id)} className="text-xs text-red-500 hover:text-red-700 font-bold px-3 py-1.5 bg-red-50 rounded-lg border border-red-100 transition-colors">Remove</button>
-                           )}
-                         </li>
-                       ))}
+                                 {t.role && (
+                                   <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-semibold rounded-full border border-slate-200">
+                                     {t.role}
+                                   </span>
+                                 )}
+                                 {isProtected && (
+                                   <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full border border-amber-200">Primary</span>
+                                 )}
+                               </p>
+                               <p className="text-xs text-slate-500 mt-0.5 truncate">{t.email}</p>
+                             </div>
+                             {canManage && (
+                               <div className="flex items-center gap-1.5 shrink-0">
+                                 {!isProtected && (
+                                   <button
+                                     onClick={() => handleChangeOrganizerType(t.id, isCoreOrg ? 'normal' : 'core')}
+                                     className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                                   >
+                                     {isCoreOrg ? 'Set Normal' : 'Set Core'}
+                                   </button>
+                                 )}
+                                 {!isProtected && (
+                                   <button
+                                     onClick={() => handleRemoveTeamMember(t.id)}
+                                     className="text-[10px] text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded-lg border border-red-100 transition-colors"
+                                   >
+                                     Remove
+                                   </button>
+                                 )}
+                               </div>
+                             )}
+                           </li>
+                         );
+                       })}
                      </ul>
                   </div>
                 </div>

@@ -206,14 +206,22 @@ const StudentOrgDashboard = () => {
                          Rejected: {evt.approvalRemarks}
                        </span>
                     )}
-                    {['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) && (
-                      <Link
-                        to={`/proposals/${evt._id || evt.id}`}
-                        className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-pastel-pink/10 text-pastel-pink border border-pastel-pink/20 hover:bg-pastel-pink/20 transition-all duration-300 shadow-sm"
-                      >
-                        Workspace
-                      </Link>
-                    )}
+                     {evt.status !== 'draft' && (() => {
+                       const userId = user?.id;
+                       const isCoreOrProposer =
+                         String(evt.proposed_by || '') === String(userId) ||
+                         String(evt.student_organizer_id || '') === String(userId) ||
+                         String(evt.faculty_id || '') === String(userId) ||
+                         evt.userOrganizerType === 'core';
+                       return isCoreOrProposer ? (
+                         <Link
+                           to={`/proposals/${evt._id || evt.id}`}
+                           className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-pastel-pink/10 text-pastel-pink border border-pastel-pink/20 hover:bg-pastel-pink/20 transition-all duration-300 shadow-sm"
+                         >
+                           Workspace
+                         </Link>
+                       ) : null;
+                     })()}
                   </div>
                 </div>
               ))}

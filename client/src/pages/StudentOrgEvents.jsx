@@ -746,14 +746,22 @@ const StudentOrgEvents = () => {
 
                       {/* Bottom Section: Actions */}
                       <div className="flex flex-wrap items-center justify-end gap-3">
-                        {evt.status !== 'draft' && (
-                          <Link
-                            to={`/proposals/${evt._id || evt.id}`}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300"
-                          >
-                            Proposal Workspace
-                          </Link>
-                        )}
+                        {evt.status !== 'draft' && (() => {
+                          const userId = user?.id;
+                          const isCoreOrProposer =
+                            String(evt.proposed_by || '') === String(userId) ||
+                            String(evt.student_organizer_id || '') === String(userId) ||
+                            String(evt.faculty_id || '') === String(userId) ||
+                            evt.userOrganizerType === 'core';
+                          return isCoreOrProposer ? (
+                            <Link
+                              to={`/proposals/${evt._id || evt.id}`}
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300"
+                            >
+                              Proposal Workspace
+                            </Link>
+                          ) : null;
+                        })()}
 
                         {evt.status === 'draft' && (
                           <>

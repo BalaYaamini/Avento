@@ -468,3 +468,34 @@ footer[class*="bg-slate-"] a:hover, footer[class*="bg-gray-"] a:hover, footer[cl
 [data-theme="dark"] thead {
   background-color: #1B2333 !important; /* Surface */
 }
+
+/* Splash screen loader animation */
+@keyframes splashProgress {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-splash-progress {
+  animation: splashProgress 3.2s ease-in-out forwards;
+}
+
+/* Subtle continuous slow background zoom/pan animation for Hero Section */
+@keyframes heroBgZoom {
+  0% {
+    transform: scale(1) translate(0%, 0%);
+  }
+  50% {
+    transform: scale(1.08) translate(-1%, -1%);
+  }
+  100% {
+    transform: scale(1) translate(0%, 0%);
+  }
+}
+
+.animate-hero-bg-zoom {
+  animation: heroBgZoom 25s ease-in-out infinite;
+}
