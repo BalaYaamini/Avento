@@ -908,6 +908,43 @@ const publishEvent = async (req, res) => {
   }
 };
 
+/** GET /events/:id/confirmed-team-members */
+const getConfirmedTeamMembers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get all registered teams for this event
+    const { data: confirmedTeams, error: teamsErr } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', id)
+      .eq('status', 'registered');
+      
+    if (teamsErr) throw teamsErr;
+    
+    if (!confirmedTeams || confirmedTeams.length === 0) {
+      return res.json([]);
+    }
+    
+    const teamIds = confirmedTeams.map(t => t.id);
+    
+    // Get users who have a registered status and belong to these teams
+    const { data: teamMembers, error: memErr } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('event_id', id)
+      .eq('status', 'registered')
+      .in('team_id', teamIds);
+
+    if (memErr) throw memErr;
+    
+    const userIds = (teamMembers || []).map(tm => tm.user_id);
+    res.json([...new Set(userIds)]); // unique
+  } catch (err) {
+    res.status(500).json({ message: 'Server error fetching confirmed team members.', error: err.message });
+  }
+};
+
 /** GET /events/:id/organizers */
 const getEventOrganizers = async (req, res) => {
   try {
@@ -952,6 +989,7 @@ const getEventOrganizers = async (req, res) => {
           id: `mem-${m.id}`,
           userId: m.user_id,
           category: m.role || 'Core Organizer',
+          organizerRole: 'core',
           joinedAt: new Date().toISOString(), // Fallback
           name: profilesMap[m.user_id]?.name || 'Unknown',
           email: profilesMap[m.user_id]?.email || '',
@@ -966,6 +1004,7 @@ const getEventOrganizers = async (req, res) => {
           id: org.id,
           userId: org.student_id,
           category: org.category,
+          organizerRole: org.organizer_role || 'normal',
           joinedAt: org.joined_at,
           name: profilesMap[org.student_id]?.name || 'Unknown Student',
           email: profilesMap[org.student_id]?.email || '',
@@ -984,11 +1023,13 @@ const getEventOrganizers = async (req, res) => {
 const recruitOrganizer = async (req, res) => {
   try {
     const { id } = req.params;
-    const { studentId, category } = req.body;
+    const { studentId, category, organizerRole } = req.body;
 
     if (!studentId || !category) {
       return res.status(400).json({ message: 'Student ID and Category are required.' });
     }
+
+    const selectedRole = organizerRole === 'core' ? 'core' : 'normal';
 
     const validCategories = [
       'Event Head',
@@ -1015,14 +1056,10 @@ const recruitOrganizer = async (req, res) => {
       return res.status(404).json({ message: 'Event not found.' });
     }
 
-    // Enforce owner authorization: only proposer or student_organizer can recruit
-    const isOwner = String(event.proposed_by) === String(req.user.id) ||
-                    String(event.student_organizer_id) === String(req.user.id) ||
-                    String(event.organizer_id) === String(req.user.id);
-    
-    const isAdmin = req.user.roles.includes('admin');
-    if (!isOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Only the event owner is authorized to manage organizers.' });
+    // Enforce Core Organizer access
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Only a Core Organizer is authorized to manage organizers.' });
     }
 
     // Check if student exists in Supabase profiles
@@ -1054,17 +1091,38 @@ const recruitOrganizer = async (req, res) => {
       return res.status(400).json({ message: 'This student is already an organizer for this event.' });
     }
 
-    // Rule 2: Verify student is not already participating as a team member
-    const { data: existingReg, error: regErr } = await supabase
+    // Rule 2: Verify student is not already participating as a member of a confirmed team
+    const { data: existingRegs, error: regErr } = await supabase
       .from('event_registrations')
-      .select('id')
+      .select('team_id')
       .eq('event_id', id)
       .eq('user_id', studentId)
-      .maybeSingle();
+      .eq('status', 'registered');
 
-    if (regErr) throw regErr;
-    if (existingReg) {
-      return res.status(400).json({ message: 'You are already participating as a team member for this event and cannot become an organizer or volunteer.' });
+    if (regErr) {
+      console.error("Error fetching registrations for recruitment:", regErr);
+      return res.status(500).json({ message: 'Error checking student eligibility.', error: regErr.message });
+    }
+
+    if (existingRegs && existingRegs.length > 0) {
+      const teamIds = existingRegs.map(r => r.team_id).filter(Boolean);
+      if (teamIds.length > 0) {
+        const { data: confirmedTeams, error: teamErr } = await supabase
+          .from('event_teams')
+          .select('id')
+          .in('id', teamIds)
+          .eq('status', 'registered')
+          .limit(1);
+
+        if (teamErr) {
+          console.error("Error fetching teams for recruitment:", teamErr);
+          return res.status(500).json({ message: 'Error checking student team status.', error: teamErr.message });
+        }
+
+        if (confirmedTeams && confirmedTeams.length > 0) {
+          return res.status(400).json({ message: 'This student is already a member of a confirmed team and cannot be recruited as an organizer.' });
+        }
+      }
     }
 
     // Insert into event_organizers
@@ -1072,6 +1130,7 @@ const recruitOrganizer = async (req, res) => {
       event_id: id,
       student_id: studentId,
       category: category,
+      organizer_role: selectedRole,
       joined_at: new Date().toISOString()
     };
 
@@ -1091,6 +1150,7 @@ const recruitOrganizer = async (req, res) => {
         id: inserted.id,
         userId: inserted.student_id,
         category: inserted.category,
+        organizerRole: inserted.organizer_role,
         joinedAt: inserted.joined_at,
         name: profile.name || profile.fullName,
         email: profile.email,
@@ -1118,14 +1178,10 @@ const removeOrganizer = async (req, res) => {
       return res.status(404).json({ message: 'Event not found.' });
     }
 
-    // Enforce owner authorization
-    const isOwner = String(event.proposed_by) === String(req.user.id) ||
-                    String(event.student_organizer_id) === String(req.user.id) ||
-                    String(event.organizer_id) === String(req.user.id);
-    
-    const isAdmin = req.user.roles.includes('admin');
-    if (!isOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Only the event owner is authorized to manage organizers.' });
+    // Enforce Core Organizer access
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Only a Core Organizer is authorized to manage organizers.' });
     }
 
     // Organizer Protection Rule
@@ -1175,12 +1231,9 @@ const toggleJoinTeam = async (req, res) => {
     if (fetchErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
     // Auth check
-    const isOwner = String(event.proposed_by) === String(req.user.id) ||
-                    String(event.student_organizer_id) === String(req.user.id) ||
-                    String(event.organizer_id) === String(req.user.id);
-    const isAdmin = req.user.roles.includes('admin');
-    if (!isOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Only the event owner is authorized to toggle join requests.' });
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Only a Core Organizer is authorized to toggle join requests.' });
     }
 
     const { data: updated, error: updateErr } = await supabase
@@ -1341,12 +1394,9 @@ const getOrganizerRequests = async (req, res) => {
     }
 
     // Auth check
-    const isOwner = String(event.proposed_by) === String(req.user.id) ||
-                    String(event.student_organizer_id) === String(req.user.id) ||
-                    String(event.organizer_id) === String(req.user.id);
-    const isAdmin = req.user.roles.includes('admin');
-    if (!isOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Only the event owner is authorized to view join requests.' });
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Only a Core Organizer is authorized to view join requests.' });
     }
 
     const { data: requests, error } = await supabase
@@ -1400,12 +1450,9 @@ const processJoinRequest = async (req, res) => {
     }
 
     // Auth check
-    const isOwner = String(event.proposed_by) === String(req.user.id) ||
-                    String(event.student_organizer_id) === String(req.user.id) ||
-                    String(event.organizer_id) === String(req.user.id);
-    const isAdmin = req.user.roles.includes('admin');
-    if (!isOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Only the event owner is authorized to manage join requests.' });
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Only a Core Organizer is authorized to manage join requests.' });
     }
 
     const { data: request, error: reqErr } = await supabase
@@ -1438,6 +1485,7 @@ const processJoinRequest = async (req, res) => {
             event_id: eventId,
             student_id: request.student_id,
             category: request.category,
+            organizer_role: 'normal',
             joined_at: new Date().toISOString()
           });
         if (insertErr) throw insertErr;
@@ -1591,9 +1639,20 @@ const checkCoreOrganizerAccess = async (eventId, event, user) => {
   if (!user || !user.id || !user.roles) return false;
   const isAdmin = user.roles.includes('admin');
   const isFaculty = user.id === event.faculty_id;
-  const isCreator = user.id === event.proposed_by || user.id === event.student_organizer_id;
+  const isCreator = user.id === event.proposed_by || user.id === event.student_organizer_id || user.id === event.organizer_id;
 
   if (isAdmin || isFaculty || isCreator) return true;
+
+  // Check if they are a core organizer in event_organizers
+  const { data: org } = await supabase
+    .from('event_organizers')
+    .select('id')
+    .eq('event_id', eventId)
+    .eq('student_id', user.id)
+    .eq('organizer_role', 'core')
+    .maybeSingle();
+
+  if (org) return true;
 
   // Check if they are explicitly assigned in event_members
   const { data: member } = await supabase
@@ -2223,6 +2282,7 @@ module.exports = {
   addTeamMember,
   removeTeamMember,
   publishEvent,
+  getConfirmedTeamMembers,
   getEventOrganizers,
   recruitOrganizer,
   removeOrganizer,

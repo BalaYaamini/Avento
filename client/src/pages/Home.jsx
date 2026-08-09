@@ -875,7 +875,7 @@ const Home = () => {
                           setSelectedStudentToAdd('');
                         }
                       }}
-                      className="px-4 py-2 text-xs font-bold rounded-xl btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-xs font-bold rounded-xl bg-fuchsia-600 text-white hover:bg-fuchsia-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Add
                     </button>

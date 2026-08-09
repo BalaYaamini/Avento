@@ -97,6 +97,9 @@ router.delete(
   eventController.removeTeamMember
 );
 
+// Get confirmed team members
+router.get('/:id/confirmed-team-members', eventController.getConfirmedTeamMembers);
+
 // Get event organizers
 router.get('/:id/organizers', eventController.getEventOrganizers);
 

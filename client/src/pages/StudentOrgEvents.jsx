@@ -79,6 +79,10 @@ const StudentOrgEvents = () => {
   const [orgMembers, setOrgMembers] = useState([]);
   const [selectedOrgStudent, setSelectedOrgStudent] = useState('');
   const [selectedOrgCategory, setSelectedOrgCategory] = useState('Event Head');
+  const [selectedOrganizerRole, setSelectedOrganizerRole] = useState('normal');
+  const [confirmedTeamMembers, setConfirmedTeamMembers] = useState([]);
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState(null);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
   
@@ -422,6 +426,9 @@ const StudentOrgEvents = () => {
     setJoinTeamEnabled(!!event.join_team_enabled);
     setSelectedOrgStudent('');
     setSelectedOrgCategory('Event Head');
+    setSelectedOrganizerRole('normal');
+    setStudentSearchQuery('');
+    setIsStudentDropdownOpen(false);
     setOrgFeedback(null);
     setIsOrgModalOpen(true);
     setLoadingOrgs(true);
@@ -443,6 +450,13 @@ const StudentOrgEvents = () => {
       console.error(err);
     } finally {
       setLoadingRequests(false);
+    }
+
+    try {
+      const res = await axios.get(`/api/events/${event._id || event.id}/confirmed-team-members`);
+      setConfirmedTeamMembers(res.data);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -507,7 +521,8 @@ const StudentOrgEvents = () => {
     try {
       await axios.post(`/api/events/${orgModalEvent._id || orgModalEvent.id}/organizers`, {
         studentId: studentObj.id,
-        category: selectedOrgCategory
+        category: selectedOrgCategory,
+        organizerRole: selectedOrganizerRole
       });
       
       setOrgFeedback({ type: 'success', message: 'Organizer recruited successfully!' });
@@ -1361,6 +1376,105 @@ const StudentOrgEvents = () => {
             </label>
           </div>
 
+          {/* Add Organizer Form */}
+          <form onSubmit={handleAddOrganizer} className="space-y-4 mb-6 pb-6 border-b border-slate-200/30">
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider font-display">Recruit Organizer</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="relative">
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Select Student *</label>
+                <div 
+                  className="relative"
+                  onMouseDown={(e) => {
+                    // Prevent blur on input when clicking inside the dropdown
+                    if (e.target.closest('.student-dropdown-menu')) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={studentSearchQuery}
+                    onChange={(e) => {
+                      setStudentSearchQuery(e.target.value);
+                      setIsStudentDropdownOpen(true);
+                      if (selectedOrgStudent) setSelectedOrgStudent('');
+                    }}
+                    onFocus={() => setIsStudentDropdownOpen(true)}
+                    onBlur={() => setIsStudentDropdownOpen(false)}
+                    placeholder="Search by full name..."
+                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                    required={!selectedOrgStudent}
+                  />
+                  {isStudentDropdownOpen && (
+                    <div className="student-dropdown-menu absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1">
+                      {(() => {
+                        const eligible = studentsList.filter(std => !confirmedTeamMembers.includes(std.id));
+                        const filtered = eligible.filter(std => {
+                          const query = studentSearchQuery.trim().toLowerCase();
+                          if (!query) return true;
+                          const name = (std.displayLabel || std.fullName || '').toLowerCase();
+                          return name.includes(query);
+                        });
+                        
+                        if (filtered.length === 0) {
+                          return <div className="px-3 py-3 text-xs text-slate-500 text-center font-medium">No eligible students found.</div>;
+                        }
+                        
+                        return filtered.map(std => (
+                          <div
+                            key={std.id}
+                            className={`px-3 py-2 text-sm cursor-pointer transition-colors ${selectedOrgStudent === std.id ? 'bg-fuchsia-50 text-fuchsia-700 font-bold' : 'text-slate-700 hover:bg-slate-50'}`}
+                            onClick={() => {
+                                setSelectedOrgStudent(std.id);
+                                setStudentSearchQuery(std.displayLabel || std.fullName);
+                                setIsStudentDropdownOpen(false);
+                            }}
+                          >
+                            {std.displayLabel || std.fullName}
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Category *</label>
+                <select
+                  required
+                  value={selectedOrgCategory}
+                  onChange={(e) => setSelectedOrgCategory(e.target.value)}
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
+                >
+                  {['Event Head', 'Technical Team', 'Design Team', 'Media Team', 'Hospitality Team', 'Logistics Team', 'Volunteer', 'Other'].map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Role Type *</label>
+                <select
+                  required
+                  value={selectedOrganizerRole}
+                  onChange={(e) => setSelectedOrganizerRole(e.target.value)}
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
+                >
+                  <option value="normal">Normal Organizer</option>
+                  <option value="core">Core Organizer</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-fuchsia-500/15"
+            >
+              + Recruit Organizer
+            </button>
+          </form>
+
           {/* Current Organizers list */}
           <div>
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 font-display">Recruited Organizers</h4>
@@ -1379,8 +1493,20 @@ const StudentOrgEvents = () => {
                       <div className="text-[10px] text-slate-600 font-medium">
                         {member.email} &bull; {member.department}
                       </div>
-                      <div className="text-[9px] font-bold text-fuchsia-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-fuchsia-500/10 border border-fuchsia-500/15">
-                        {member.category}
+                      <div>
+                        <div className="text-[9px] font-bold text-fuchsia-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-fuchsia-500/10 border border-fuchsia-500/15 mr-2">
+                          {member.category}
+                        </div>
+                        {member.organizerRole === 'core' && (
+                          <div className="text-[9px] font-bold text-rose-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/15">
+                            Core
+                          </div>
+                        )}
+                        {member.organizerRole !== 'core' && (
+                          <div className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/15">
+                            Normal
+                          </div>
+                        )}
                       </div>
                     </div>
                     {String(member.userId) !== String(orgModalEvent?.student_organizer_id) && String(member.userId) !== String(orgModalEvent?.proposed_by) && (
