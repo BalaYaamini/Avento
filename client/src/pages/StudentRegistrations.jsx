@@ -88,6 +88,7 @@ const StudentRegistrations = () => {
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [feedbackEvent, setFeedbackEvent] = useState(null);
+  const [teamAllocations, setTeamAllocations] = useState({});
 
   // Organizer Requests state
   const [activeSubTab, setActiveSubTab] = useState('registrations');
@@ -96,12 +97,37 @@ const StudentRegistrations = () => {
   const [withdrawRequestObj, setWithdrawRequestObj] = useState(null);
   const [withdrawingId, setWithdrawingId] = useState(null);
 
+  const fetchAllocationsForRegistrations = async (regs) => {
+    if (!regs || regs.length === 0) return;
+    const teamRegs = regs.filter(r => r.team_id || r.teamId);
+    const allocMap = {};
+
+    await Promise.all(
+      teamRegs.map(async (r) => {
+        const eventId = r.event_id || r.eventId?.id || r.eventId?._id;
+        if (eventId && !allocMap[eventId]) {
+          try {
+            const res = await axios.get(`/api/allocations/event/${eventId}/my-allocation`);
+            if (res.data && res.data.allocation) {
+              allocMap[eventId] = res.data.allocation;
+            }
+          } catch (err) {
+            // Silence allocation fetch error
+          }
+        }
+      })
+    );
+
+    setTeamAllocations(allocMap);
+  };
+
   const fetchRegistrations = async () => {
     try {
       setLoading(true);
       setError(null);
       const res = await axios.get('/api/registrations/my-registrations');
       setRegistrations(res.data);
+      fetchAllocationsForRegistrations(res.data);
     } catch (err) {
       console.error(err);
       setError('Failed to fetch registrations. Please reload.');
@@ -465,16 +491,6 @@ const StudentRegistrations = () => {
               </span>
             )}
           </button>
-          <button
-            onClick={() => setActiveSubTab('requests')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
-              activeSubTab === 'requests'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25'
-                : 'bg-white/10 text-slate-400 hover:bg-white/20 hover:text-white'
-            }`}
-          >
-            My Organizer Requests
-          </button>
         </div>
 
         {/* Sub-tab: Registrations list */}
@@ -632,78 +648,123 @@ const StudentRegistrations = () => {
                             View Pass
                           </button>
                         ) : null}
-                        {reg.teamId && (
-                          <button
-                            onClick={() => setTeamModalData(reg)}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
-                          >
-                            View Team
-                          </button>
-                        )}
-                        {evt.status !== 'completed' && (
-                          !reg.teamId ? (
-                            (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
-                              <button
-                                onClick={() => openConfirmCancel(reg)}
-                                disabled={cancellingId === reg.id}
-                                className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                              >
-                                {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
-                              </button>
-                            )
-                          ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
-                            <div className="flex gap-2 items-center">
-                              {reg.teamDetails?.teamStatus === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={() => handleEditTeamOpen(reg)}
-                                    className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
-                                  >
-                                    Edit Team
-                                  </button>
-                                  {(() => {
-                                    const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
-                                  const minRequired = evt.min_team_size || 1;
-                                  const isReady = acceptedCount >= minRequired;
-                                  const deadlinePassed = evt.registration_deadline && new Date() > new Date(evt.registration_deadline);
-                                  
-                                  if (deadlinePassed) {
-                                    return (
-                                      <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 flex items-center text-center">
-                                        Registration deadline has passed. This team can no longer be confirmed.
-                                      </span>
-                                    );
-                                  }
+                        {(() => {
+                          const isConfirmedReg = reg.status === 'registered' && (!reg.teamDetails || reg.teamDetails.teamStatus === 'registered');
+                          const currentCount = evt.confirmed_teams_count || evt.registered_count || 0;
+                          const isSlotsFull = (evt.registration_type === 'team' && evt.max_teams && currentCount >= evt.max_teams) ||
+                                              (evt.capacity && currentCount >= evt.capacity);
 
-                                  if (isReady) {
-                                    return (
-                                      <button
-                                        onClick={() => handleConfirmTeam(reg)}
-                                        disabled={processingId === reg.teamId.id}
-                                        className="px-5 py-2 text-xs font-bold rounded-xl transition-all duration-300 disabled:opacity-50 bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20"
-                                      >
-                                        {processingId === reg.teamId.id ? 'Confirming...' : 'Confirm Team'}
-                                      </button>
-                                    );
-                                  }
-                                  
-                                  return null; // When not ready, the badge above handles the display
-                                })()}
-                                </>
-                              )}
-                              {reg.teamDetails?.teamStatus !== 'registered' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                          if (!isConfirmedReg && isSlotsFull) {
+                            return (
+                              <span className="px-5 py-2 text-xs font-bold rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 flex items-center text-center">
+                                SLOTS FULL — No more team slots are available.
+                              </span>
+                            );
+                          }
+
+                          return (
+                            <>
+                              {reg.teamId && (
                                 <button
-                                  onClick={() => openConfirmCancel(reg)}
-                                  disabled={cancellingId === reg.id}
-                                  className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                                  onClick={() => setTeamModalData(reg)}
+                                  className="px-5 py-2 text-xs font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
                                 >
-                                  {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
+                                  View Team
                                 </button>
                               )}
-                            </div>
-                          ) : null
-                        )}
+                              {evt.status !== 'completed' && (
+                                !reg.teamId ? (
+                                  (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                                    <button
+                                      onClick={() => openConfirmCancel(reg)}
+                                      disabled={cancellingId === reg.id}
+                                      className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                                    >
+                                      {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
+                                    </button>
+                                  )
+                                ) : (reg.teamDetails?.leader_id === reg.user_id) ? (
+                                  <div className="flex gap-2 items-center">
+                                    {reg.teamDetails?.teamStatus === 'pending' && (
+                                      <>
+                                        <button
+                                          onClick={() => handleEditTeamOpen(reg)}
+                                          className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                                        >
+                                          Edit Team
+                                        </button>
+                                        {(() => {
+                                           const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                           const minRequired = evt.min_team_size || 1;
+                                           const isReady = acceptedCount >= minRequired;
+                                           const deadlinePassed = evt.registration_deadline && new Date() > new Date(evt.registration_deadline);
+                                         
+                                           if (deadlinePassed) {
+                                             return (
+                                               <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 flex items-center text-center">
+                                                 Registration deadline has passed. This team can no longer be confirmed.
+                                               </span>
+                                             );
+                                           }
+
+                                           if (isReady) {
+                                             return (
+                                               <button
+                                                 onClick={() => handleConfirmTeam(reg)}
+                                                 disabled={processingId === reg.teamId.id}
+                                                 className="px-5 py-2 text-xs font-bold rounded-xl transition-all duration-300 disabled:opacity-50 bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-500/20"
+                                               >
+                                                 {processingId === reg.teamId.id ? 'Confirming...' : 'Confirm Team'}
+                                               </button>
+                                             );
+                                           }
+                                           
+                                           return null;
+                                         })()}
+                                      </>
+                                    )}
+                                    {reg.teamDetails?.teamStatus !== 'registered' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                                      <button
+                                        onClick={() => openConfirmCancel(reg)}
+                                        disabled={cancellingId === reg.id}
+                                        className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                                      >
+                                        {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : null
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
+
+                      {/* Team Allocation Card (Student View) */}
+                      {(() => {
+                        const eventId = evt.id || evt._id;
+                        const alloc = teamAllocations[eventId];
+                        if (!alloc) return null;
+
+                        return (
+                          <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in">
+                            <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                              <span>🎯</span>
+                              <span>Your Event Allocation ({alloc.teamName})</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div className="bg-white/60 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/10">
+                                <span className="text-text-secondary font-semibold">📍 Venue / Room: </span>
+                                <span className="font-bold text-text-primary">{alloc.venueRoom}</span>
+                              </div>
+                              <div className="bg-white/60 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/10">
+                                <span className="text-text-secondary font-semibold">📌 Problem Statement: </span>
+                                <span className="font-bold text-text-primary">{alloc.problemStatement}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}

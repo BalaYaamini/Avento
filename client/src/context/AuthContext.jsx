@@ -18,9 +18,7 @@ export const inferRole = (email) => {
 };
 
 export const getRedirectPath = (roles = []) => {
-  if (roles.includes('admin')) return '/admin';
-  if (roles.includes('faculty') || roles.includes('faculty_organizer')) return '/faculty-organizer';
-  return '/'; // students go to home
+  return '/'; // All authenticated roles redirect to Homepage
 };
 
 export const AuthProvider = ({ children }) => {

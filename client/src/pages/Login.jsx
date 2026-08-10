@@ -31,7 +31,9 @@ const Login = () => {
       }
       
       const defaultPath = getRedirectPath(user.roles || []);
-      const origin = location.state?.from?.pathname || defaultPath;
+      const fromPath = location.state?.from?.pathname;
+      const isDashboardPath = fromPath === '/admin' || fromPath === '/faculty-organizer' || fromPath === '/student-organizer' || fromPath === '/dashboard';
+      const origin = (fromPath && !isDashboardPath) ? fromPath : defaultPath;
       navigate(origin, { replace: true });
     }
   }, [user]);

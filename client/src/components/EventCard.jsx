@@ -18,9 +18,8 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
     return new Date(dateString).toLocaleDateString('en-US', options);
   };
 
-  const isFull = event.registration_type === 'team' 
-    ? (event.max_teams ? ((event.registeredCount || 0) >= event.max_teams) : false) 
-    : ((event.registeredCount || 0) >= event.capacity);
+  const isFull = (event.capacity && (event.registeredCount || 0) >= event.capacity) ||
+    (event.registration_type === 'team' && event.max_teams && (event.registeredCount || 0) >= event.max_teams);
   const isActive = event.status === 'published' || event.status === 'active';
 
   // Category styling map — vibrant pastel colors
@@ -183,7 +182,14 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               )}
             </div>
 
-            {!user ? (
+            {isFull ? (
+              <button
+                disabled
+                className="w-full px-4 py-2.5 text-xs font-bold rounded-2xl bg-pastel-coral/20 text-red-500 border border-pastel-coral cursor-not-allowed uppercase tracking-wider text-center"
+              >
+                🔴 SLOTS FULL — Registration Closed
+              </button>
+            ) : !user ? (
               <Link
                 to="/login"
                 className="block w-full text-center px-4 py-2.5 text-sm font-bold rounded-2xl btn-secondary"
@@ -205,8 +211,18 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               </div>
             ) : (
               <>
-                {/* Main Register button */}
-                {isRegistered ? (
+                {/* Main Action Button */}
+                {isOrganizer ? (
+                  <Link
+                    to={`/workspace/${event._id || event.id}`}
+                    className="w-full btn-primary px-4 py-2.5 text-sm font-bold font-heading rounded-2xl shadow-pastel-glow flex items-center justify-center gap-2 bg-gradient-to-r from-pastel-pink to-pastel-lavender text-white hover:opacity-90 transition-all text-center"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    Workspace
+                  </Link>
+                ) : isRegistered ? (
                   <div className="w-full flex flex-col gap-1.5">
                     <button
                       disabled
@@ -256,19 +272,12 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                   >
                     Event Closed
                   </button>
-                ) : isFull ? (
-                  <button
-                    disabled
-                    className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-coral/20 text-red-400 border border-pastel-coral cursor-not-allowed"
-                  >
-                    {event.registration_type === 'team' ? 'Team Registration Full' : 'Registration Full'}
-                  </button>
-                ) : isOrganizer || requestStatus === 'pending' ? (
+                ) : requestStatus === 'pending' ? (
                   <button
                     disabled
                     className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
                   >
-                    Register
+                    Request Pending
                   </button>
                 ) : (
                   <button
@@ -281,7 +290,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                 )}
 
                 {/* Join organizing team button */}
-                {isActive && joinTeamEnabled && (
+                {isActive && joinTeamEnabled && !isOrganizer && (
                   <div className="w-full mt-1">
                     {isOrganizer ? (
                       <button

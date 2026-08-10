@@ -40,14 +40,14 @@ router.get(
 router.post(
   '/',
   authMiddleware,
-  roleMiddleware(['student']),
+  roleMiddleware(['admin', 'student']),
   eventController.createEvent
 );
 
 router.put(
   '/:id',
   authMiddleware,
-  roleMiddleware(['admin', 'student']),
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
   eventController.editEvent
 );
 
@@ -70,7 +70,7 @@ router.put(
 router.put(
   '/:id/publish',
   authMiddleware,
-  roleMiddleware(['student']),
+  roleMiddleware(['admin', 'student']),
   eventController.publishEvent
 );
 

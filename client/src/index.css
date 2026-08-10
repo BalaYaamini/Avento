@@ -260,7 +260,9 @@ footer[class*="bg-slate-"] a:hover, footer[class*="bg-gray-"] a:hover, footer[cl
 /* Base Body & Root Container */
 [data-theme="dark"] body,
 [data-theme="dark"] .bg-background,
-[data-theme="dark"] .bg-\[\#fdfbf7\] {
+[data-theme="dark"] .bg-\[\#fdfbf7\],
+[data-theme="dark"] .bg-\[\#FFFDFB\],
+[data-theme="dark"] .splash-screen {
   background-color: var(--color-bg-base) !important;
   color: var(--color-text-primary) !important;
   background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px) !important;

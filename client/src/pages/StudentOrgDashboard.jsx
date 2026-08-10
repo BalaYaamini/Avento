@@ -110,12 +110,6 @@ const StudentOrgDashboard = () => {
               <p className="font-quicksand font-bold text-text-secondary text-sm mt-1.5">Manage your events and track participants</p>
             </div>
           </div>
-          <div className="relative">
-             <ArrowDoodle className="w-12 h-12 text-pastel-pink absolute -top-8 -left-10 -rotate-12 hidden md:block" />
-             <Link to="/student-organizer/events" className="btn-primary px-5 py-3 rounded-2xl text-sm font-heading font-bold text-white shadow-pastel-glow inline-block text-center shrink-0">
-               Create / Manage Events
-             </Link>
-          </div>
         </div>
 
         {/* Dashboard Card Grid */}
@@ -215,7 +209,7 @@ const StudentOrgDashboard = () => {
                          evt.userOrganizerType === 'core';
                        return isCoreOrProposer ? (
                          <Link
-                           to={`/proposals/${evt._id || evt.id}`}
+                           to={`/workspace/${evt._id || evt.id}`}
                            className="px-4 py-1.5 text-[10px] font-bold rounded-lg bg-pastel-pink/10 text-pastel-pink border border-pastel-pink/20 hover:bg-pastel-pink/20 transition-all duration-300 shadow-sm"
                          >
                            Workspace

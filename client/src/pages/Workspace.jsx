@@ -9,6 +9,9 @@ import CertificateManager from '../components/CertificateManager';
 import FeedbackAnalytics from '../components/FeedbackAnalytics';
 import OrganizerRegistrations from '../components/OrganizerRegistrations';
 import ConfirmedTeamsOverview from '../components/ConfirmedTeamsOverview';
+import Modal from '../components/Modal';
+import QRScanner from '../components/QRScanner';
+import TeamAllocation from '../components/TeamAllocation';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -28,6 +31,83 @@ const Workspace = () => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
+  
+  // QR Scanner State
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
+
+  // Edit Event Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    description: '',
+    category: '',
+    venue: '',
+    date: '',
+    registrationDeadline: '',
+    capacity: '',
+    maxTeams: '',
+    minTeamSize: '1',
+    maxTeamSize: '4',
+    imageUrl: '',
+    registrationType: 'individual'
+  });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editFeedback, setEditFeedback] = useState(null);
+
+  const openEditModal = () => {
+    if (!event) return;
+    setEditFeedback(null);
+    setEditFormData({
+      title: event.title || '',
+      description: event.description || '',
+      category: event.category || 'General',
+      venue: event.venue || '',
+      date: event.date ? new Date(event.date).toISOString().slice(0, 16) : '',
+      registrationDeadline: event.registration_deadline ? new Date(event.registration_deadline).toISOString().slice(0, 16) : '',
+      capacity: event.capacity || '',
+      maxTeams: event.max_teams || '',
+      minTeamSize: event.min_team_size || 1,
+      maxTeamSize: event.max_team_size || 4,
+      imageUrl: event.image_url || event.imageUrl || '',
+      registrationType: event.registration_type || 'individual'
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditFeedback(null);
+    setEditSubmitting(true);
+    try {
+      const res = await axios.put(`/api/events/${eventId}`, editFormData);
+      setEditFeedback({ type: 'success', message: 'Event details updated successfully!' });
+      setEvent(prev => ({ ...prev, ...res.data }));
+      setTimeout(() => {
+        setIsEditModalOpen(false);
+      }, 1200);
+    } catch (err) {
+      setEditFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to update event details.' });
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const handleScanSuccess = async (registrationId) => {
+    if (!registrationId) return;
+    setScanFeedback(null);
+    try {
+      const res = await axios.post('/api/attendance/verify', { registrationId, eventId });
+      if (res.data.success && res.data.student) {
+        const { name } = res.data.student;
+        setScanFeedback({ type: 'success', message: `Attendance marked successfully for ${name}.` });
+      } else {
+        setScanFeedback({ type: 'success', message: res.data.message || 'Attendance recorded.' });
+      }
+    } catch (err) {
+      setScanFeedback({ type: 'error', message: err.response?.data?.message || 'Invalid QR code.' });
+    }
+  };
   
   // Filters state
   const [filters, setFilters] = useState({
@@ -192,6 +272,32 @@ const Workspace = () => {
           <p className="text-text-secondary">Manage tasks and coordinate with your team</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={openEditModal}
+            className="px-4 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 font-heading font-bold text-sm rounded-xl hover:bg-amber-500/20 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span>Edit Event</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setScanFeedback(null);
+              setIsScannerOpen(true);
+            }}
+            className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-fuchsia-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2.5 border border-white/20 shadow-md"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" />
+              <path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01" strokeWidth="3" />
+            </svg>
+            <span>Scan QR</span>
+          </button>
           {hasFullAccess() && event.status !== 'completed' && (
             <button 
               onClick={handleMarkCompleted}
@@ -230,14 +336,25 @@ const Workspace = () => {
           Event Registrations
         </button>
         {event?.registration_type === 'team' && (
-          <button
-            onClick={() => setActiveTab('confirmed_teams')}
-            className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-              activeTab === 'confirmed_teams' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            }`}
-          >
-            Confirmed Teams
-          </button>
+          <>
+            <button
+              onClick={() => setActiveTab('confirmed_teams')}
+              className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+                activeTab === 'confirmed_teams' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              Confirmed Teams
+            </button>
+
+            <button
+              onClick={() => setActiveTab('allocation')}
+              className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+                activeTab === 'allocation' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              Team Allocation
+            </button>
+          </>
         )}
       </div>
 
@@ -250,6 +367,12 @@ const Workspace = () => {
       {activeTab === 'confirmed_teams' && event?.registration_type === 'team' && (
         <div className="mb-8">
           <ConfirmedTeamsOverview eventId={eventId} eventTitle={event.title} />
+        </div>
+      )}
+
+      {activeTab === 'allocation' && event?.registration_type === 'team' && (
+        <div className="mb-8">
+          <TeamAllocation eventId={eventId} eventTitle={event.title} />
         </div>
       )}
 
@@ -390,6 +513,208 @@ const Workspace = () => {
         currentUserId={user.id}
         onUpdate={() => fetchWorkspaceData(true)}
       />
+
+      {/* QR Scanner Modal */}
+      {isScannerOpen && (
+        <Modal
+          isOpen={isScannerOpen}
+          onClose={() => setIsScannerOpen(false)}
+          title="Scan Participant QR Code"
+        >
+          <div className="flex flex-col items-center gap-4 py-4">
+            {scanFeedback && (
+              <div className={`w-full p-3 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
+                scanFeedback.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' : 'bg-red-500/10 border-red-500/20 text-red-500'
+              }`}>
+                <span>{scanFeedback.type === 'success' ? '✓' : '⚠'}</span>
+                <span>{scanFeedback.message}</span>
+              </div>
+            )}
+
+            <div className="w-full max-w-sm rounded-xl overflow-hidden border border-slate-200">
+              <QRScanner
+                onScanSuccess={handleScanSuccess}
+                onScanFailure={() => {}}
+              />
+            </div>
+
+            <div className="mt-2 flex justify-end w-full">
+              <button
+                onClick={() => setIsScannerOpen(false)}
+                className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit Event Modal */}
+      {isEditModalOpen && (
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title="Edit Event Details"
+          subtitle="Update event information. Changes persist without altering publication status."
+        >
+          {editFeedback && (
+            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${
+              editFeedback.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-red-500/10 border-red-500/20 text-red-500'
+            }`}>
+              <span>{editFeedback.type === 'success' ? '✓' : '⚠'}</span>
+              <span>{editFeedback.message}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Event Title *</label>
+              <input
+                type="text"
+                required
+                value={editFormData.title}
+                onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Description *</label>
+              <textarea
+                rows={3}
+                required
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60 resize-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Category *</label>
+                <select
+                  value={editFormData.category}
+                  onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                >
+                  {['General', 'Workshop', 'Cultural', 'Tech', 'Hackathon', 'Sports', 'Seminar', 'Web Development', 'Gaming', 'Competition'].map(cat => (
+                    <option key={cat} value={cat} className="dark:bg-slate-900 text-text-primary">{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Venue *</label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.venue}
+                  onChange={(e) => setEditFormData({ ...editFormData, venue: e.target.value })}
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Event Date & Time *</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={editFormData.date}
+                  onChange={(e) => setEditFormData({ ...editFormData, date: e.target.value })}
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Registration Closing Date</label>
+                <input
+                  type="datetime-local"
+                  value={editFormData.registrationDeadline}
+                  onChange={(e) => setEditFormData({ ...editFormData, registrationDeadline: e.target.value })}
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                />
+              </div>
+            </div>
+
+            {editFormData.registrationType === 'team' ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Max Teams</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editFormData.maxTeams}
+                    onChange={(e) => setEditFormData({ ...editFormData, maxTeams: e.target.value })}
+                    className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Min Team Size</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editFormData.minTeamSize}
+                    onChange={(e) => setEditFormData({ ...editFormData, minTeamSize: e.target.value })}
+                    className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Max Team Size</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editFormData.maxTeamSize}
+                    onChange={(e) => setEditFormData({ ...editFormData, maxTeamSize: e.target.value })}
+                    className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Number of Slots (Capacity)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editFormData.capacity}
+                  onChange={(e) => setEditFormData({ ...editFormData, capacity: e.target.value })}
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Event Poster Image URL</label>
+              <input
+                type="text"
+                placeholder="https://..."
+                value={editFormData.imageUrl}
+                onChange={(e) => setEditFormData({ ...editFormData, imageUrl: e.target.value })}
+                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 border-t border-pastel-lavender/20">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-5 py-2.5 text-xs font-bold rounded-xl btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editSubmitting}
+                className="btn-primary px-6 py-2.5 text-xs font-bold rounded-xl text-white shadow-lg disabled:opacity-50"
+              >
+                {editSubmitting ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };

@@ -1,5 +1,35 @@
 const supabase = require('../config/supabaseClient');
 
+const checkIsEventOrganizer = async (event, user) => {
+  if (!user || !user.id) return false;
+  if (user.roles && user.roles.includes('admin')) return true;
+  if (String(event.organizer_id) === String(user.id) ||
+      String(event.student_organizer_id) === String(user.id) ||
+      String(event.proposed_by) === String(user.id) ||
+      String(event.created_by) === String(user.id) ||
+      String(event.faculty_id) === String(user.id)) {
+    return true;
+  }
+
+  const { data: org } = await supabase
+    .from('event_organizers')
+    .select('id')
+    .eq('event_id', event.id)
+    .eq('student_id', user.id)
+    .maybeSingle();
+
+  if (org) return true;
+
+  const { data: member } = await supabase
+    .from('event_members')
+    .select('id')
+    .eq('event_id', event.id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  return !!member;
+};
+
 // Verify QR token and mark attendance
 exports.verifyQrToken = async (req, res) => {
   try {
@@ -29,12 +59,7 @@ exports.verifyQrToken = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Attendance is closed because this event has already ended.' });
     }
 
-    const isOwner = req.user.roles.includes('admin') || 
-                    event.organizer_id === req.user.id || 
-                    event.student_organizer_id === req.user.id || 
-                    event.proposed_by === req.user.id ||
-                    event.faculty_id === req.user.id;
-    
+    const isOwner = await checkIsEventOrganizer(event, req.user);
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
     if (registration.attendance_status === 'Present') {
@@ -81,12 +106,7 @@ exports.getEventAttendance = async (req, res) => {
     const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
-    const isOwner = req.user.roles.includes('admin') || 
-                    event.organizer_id === req.user.id || 
-                    event.student_organizer_id === req.user.id || 
-                    event.proposed_by === req.user.id ||
-                    event.faculty_id === req.user.id;
-    
+    const isOwner = await checkIsEventOrganizer(event, req.user);
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
     const { data: attendance, error } = await supabase
       .from('event_registrations')

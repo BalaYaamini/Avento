@@ -24,6 +24,13 @@ const AdminUsers = () => {
   // Edit form state
   const [editForm, setEditForm] = useState({ fullName: '', department: '', role: '' });
 
+  // Bulk Selection State
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const isAdmin = (u) => u.roles?.some(r => r.toLowerCase().includes('admin'));
+
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -57,6 +64,40 @@ const AdminUsers = () => {
 
     return matchesRole && matchesSearch;
   });
+
+  const nonAdminUsersInView = filteredUsers.filter(u => !isAdmin(u));
+  const isAllSelected = nonAdminUsersInView.length > 0 && nonAdminUsersInView.every(u => selectedUserIds.includes(u.id || u._id));
+
+  const handleSelectAllToggle = () => {
+    if (isAllSelected) {
+      const viewIds = new Set(nonAdminUsersInView.map(u => u.id || u._id));
+      setSelectedUserIds(prev => prev.filter(id => !viewIds.has(id)));
+    } else {
+      const viewIds = nonAdminUsersInView.map(u => u.id || u._id);
+      setSelectedUserIds(prev => Array.from(new Set([...prev, ...viewIds])));
+    }
+  };
+
+  const handleUserSelectToggle = (id) => {
+    setSelectedUserIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDeleteSubmit = async () => {
+    setBulkDeleting(true);
+    try {
+      const res = await axios.post('/api/users/bulk-delete', { userIds: selectedUserIds });
+      alert(res.data.message || `Successfully deleted ${res.data.deletedCount} user(s).`);
+      setSelectedUserIds([]);
+      setIsBulkDeleteModalOpen(false);
+      fetchUsers();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to perform bulk user deletion.');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const handleResetPassword = async () => {
     try {
@@ -145,11 +186,23 @@ const AdminUsers = () => {
             />
           </div>
 
-          {/* Import Users Button */}
-          <div className="w-full lg:w-auto mt-4 lg:mt-0">
+          {/* Import & Bulk Delete Buttons */}
+          <div className="w-full lg:w-auto mt-4 lg:mt-0 flex items-center gap-3">
+            {selectedUserIds.length > 0 && (
+              <button
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                className="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete Selected ({selectedUserIds.length})
+              </button>
+            )}
+
             <button
               onClick={() => setIsImportModalOpen(true)}
-              className="w-full lg:w-auto btn-primary px-6 py-2.5 rounded-xl text-sm font-bold shadow-pastel-glow flex items-center justify-center gap-2"
+              className="w-full sm:w-auto btn-primary px-6 py-2.5 rounded-xl text-sm font-bold shadow-pastel-glow flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -190,6 +243,16 @@ const AdminUsers = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
+                    <th className="px-4 py-4 text-center w-12">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={handleSelectAllToggle}
+                        disabled={nonAdminUsersInView.length === 0}
+                        title="Select All Eligible Users (Excludes Admin)"
+                        className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                      />
+                    </th>
                     <th className="px-6 py-4">Full Name</th>
                     <th className="px-6 py-4">Email / ID</th>
                     <th className="px-6 py-4">Role</th>
@@ -206,6 +269,18 @@ const AdminUsers = () => {
                       className="hover:bg-white/20 transition-all duration-300 animate-fade-in-up"
                       style={{ animationDelay: `${i * 20 + 100}ms` }}
                     >
+                      <td className="px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          disabled={isAdmin(user)}
+                          checked={selectedUserIds.includes(user.id || user._id)}
+                          onChange={() => handleUserSelectToggle(user.id || user._id)}
+                          title={isAdmin(user) ? "Admin accounts cannot be selected or deleted" : "Select user"}
+                          className={`w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 ${
+                            isAdmin(user) ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
+                        />
+                      </td>
                       <td className="px-6 py-4 font-display font-bold text-slate-800">
                         {user.fullName}
                       </td>
@@ -363,6 +438,56 @@ const AdminUsers = () => {
             <div className="flex justify-center gap-3">
               <button onClick={() => setIsDeleteModalOpen(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors">Cancel</button>
               <button onClick={handleDelete} className="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-pastel-glow transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {isBulkDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 bg-red-50/50 flex justify-between items-center">
+              <h2 className="font-heading text-lg font-bold text-red-600 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Confirm Bulk User Deletion
+              </h2>
+              <button onClick={() => setIsBulkDeleteModalOpen(false)} className="text-slate-400 hover:text-slate-600"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <p className="text-sm font-semibold text-slate-800">
+                Are you sure you want to permanently delete <span className="font-bold text-red-600">{selectedUserIds.length} selected user account(s)</span>?
+              </p>
+
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-start gap-2">
+                <span>🛡️</span>
+                <span><strong>Admin Protection Guaranteed:</strong> The Administrator account is protected and will NOT be deleted.</span>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600">
+                ℹ️ This action will only remove the user credentials. Application events, registrations, teams, certificates, and attendance data will remain completely intact.
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteModalOpen(false)}
+                  className="px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteSubmit}
+                  disabled={bulkDeleting}
+                  className="bg-red-500 hover:bg-red-600 text-white px-6 py-2.5 text-xs font-bold rounded-xl shadow-md transition-all disabled:opacity-50"
+                >
+                  {bulkDeleting ? 'Deleting Users...' : `Delete ${selectedUserIds.length} Users`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

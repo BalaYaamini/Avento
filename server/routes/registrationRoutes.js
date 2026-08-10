@@ -22,9 +22,9 @@ router.post('/:registrationId/accept', authMiddleware, registrationController.ac
 router.post('/:registrationId/reject', authMiddleware, registrationController.rejectTeamInvitation);
 router.post('/team/leave', authMiddleware, registrationController.leaveTeam);
 
-// Admin-only features (protected)
+// Admin & Organizer features (protected)
 router.get('/all', authMiddleware, adminMiddleware, registrationController.getAllRegistrations);
-router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);
-router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.getConfirmedTeams);
+router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);
+router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getConfirmedTeams);
 
 module.exports = router;

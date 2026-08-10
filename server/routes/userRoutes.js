@@ -13,6 +13,7 @@ router.get('/search', authMiddleware, userController.searchUsers);
 router.get('/', authMiddleware, adminMiddleware, userController.getUsers);
 
 router.post('/import', authMiddleware, adminMiddleware, userController.importUsers);
+router.post('/bulk-delete', authMiddleware, adminMiddleware, userController.bulkDeleteUsers);
 router.post('/profile/complete-first-login', authMiddleware, userController.completeFirstLogin);
 router.put('/:id/reset-password', authMiddleware, adminMiddleware, userController.resetPassword);
 router.put('/:id/deactivate', authMiddleware, adminMiddleware, userController.deactivateUser);

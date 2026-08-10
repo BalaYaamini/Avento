@@ -81,6 +81,29 @@ const Navbar = () => {
     }
   };
 
+  const handleNotificationItemClick = (notif) => {
+    if (!notif.isRead) {
+      handleMarkAsRead(notif.id);
+    }
+    setIsNotifOpen(false);
+    setIsOpen(false);
+
+    const title = (notif.title || '').toLowerCase();
+    const message = (notif.message || '').toLowerCase();
+    const type = (notif.type || '').toLowerCase();
+
+    const isCertificateNotif = 
+      title.includes('certificate') || 
+      message.includes('certificate') || 
+      type.includes('cert');
+
+    if (isCertificateNotif) {
+      navigate('/my-certificates');
+    } else {
+      navigate('/my-registrations');
+    }
+  };
+
   /* ── Scroll listener for backdrop effect ── */
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -114,8 +137,8 @@ const Navbar = () => {
   };
 
   const navLinkClass = ({ isActive }) =>
-    `text-sm font-semibold tracking-wide transition-all duration-300 hover:text-pastel-coral font-quicksand ${
-      isActive ? 'text-pastel-lavender border-b-4 border-pastel-lavender pb-1 translate-y-[-2px]' : 'text-text-secondary'
+    `text-sm font-semibold tracking-wide transition-all duration-300 hover:text-pastel-coral font-quicksand inline-flex items-center py-1 ${
+      isActive ? 'text-pastel-lavender border-b-2 border-pastel-lavender font-bold' : 'text-text-secondary'
     }`;
 
   const mobileNavLinkClass = ({ isActive }) =>
@@ -128,16 +151,16 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo Section */}
-          <div className="flex-shrink-0 flex items-center">
-            <Link to="/" className="flex items-center gap-3 group">
-              <div className="relative flex items-center pl-2">
+          <div className="w-52 flex-shrink-0 flex items-center">
+            <Link to="/" className="flex items-center group">
+              <div className="relative flex items-center">
                 {/* Subtle pastel blob behind logo */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-pastel-lavender/5 rounded-full blur-md pointer-events-none"></div>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-pastel-lavender/10 rounded-full blur-md pointer-events-none"></div>
                 
                 <img 
                   src="/logo.png?v=3" 
                   alt="Avento Logo" 
-                  className="h-10 md:h-[52px] w-auto object-contain transition-all duration-300 ease-in-out group-hover:scale-[1.05] relative z-10"
+                  className="h-14 sm:h-16 md:h-[72px] w-auto object-contain transition-all duration-300 ease-in-out group-hover:scale-[1.05] relative z-10"
                 />
 
                 {/* Tiny hand-drawn sparkle nearby */}
@@ -145,14 +168,11 @@ const Navbar = () => {
                   <path d="M12 2C12 7.52285 16.4772 12 22 12C16.4772 12 12 16.4772 12 22C12 16.4772 7.52285 12 2 12C7.52285 12 12 7.52285 12 2Z" fill="currentColor"/>
                 </svg>
               </div>
-              <span className="font-heading font-bold text-[28px] tracking-[0.5px] bg-gradient-to-r from-pastel-coral via-pastel-lavender to-pastel-yellow bg-clip-text text-transparent">
-                AVENTO
-              </span>
             </Link>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center space-x-8">
+          {/* Centered Desktop Navigation Links */}
+          <div className="hidden md:flex items-center justify-center flex-1 space-x-8 px-2">
             <NavLink to="/" end className={navLinkClass}>Home</NavLink>
             {/* TODO: RE-ENABLE About page — <NavLink to="/about" className={navLinkClass}>About</NavLink> */}
             <NavLink to="/contact" className={navLinkClass}>Contact</NavLink>
@@ -160,8 +180,6 @@ const Navbar = () => {
             {/* Student Navigation (unified) */}
             {user && user.roles?.includes('student') && (
               <>
-                <NavLink to="/student-organizer" end className={navLinkClass}>Dashboard</NavLink>
-                
                 {/* My Workspace Dropdown */}
                 <div 
                   className="relative" 
@@ -190,13 +208,6 @@ const Navbar = () => {
                   >
                     <div className="bg-white rounded-xl shadow-lg border border-pastel-lavender/20 overflow-hidden flex flex-col py-2 relative z-[60]">
                       <NavLink 
-                        to="/student-organizer/events"  
-                        onClick={() => setIsWorkspaceOpen(false)}
-                        className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
-                      >
-                        My Events
-                      </NavLink>
-                      <NavLink 
                         to="/my-registrations" 
                         onClick={() => setIsWorkspaceOpen(false)}
                         className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
@@ -221,8 +232,8 @@ const Navbar = () => {
             {/* Faculty Organizer Navigation */}
             {user && (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) && (
                <>
-                 <NavLink to="/faculty-organizer" end className={navLinkClass}>Dashboard</NavLink>
                  <NavLink to="/faculty-organizer/events" className={navLinkClass}>Proposals</NavLink>
+                 <NavLink to="/profile" className={navLinkClass}>Profile</NavLink>
                </>
              )}
 
@@ -237,9 +248,9 @@ const Navbar = () => {
            </div>
 
            {/* Profile & Auth Section (Desktop) */}
-           <div className="hidden md:flex items-center space-x-4">
+           <div className="hidden md:flex items-center justify-end w-52 space-x-3 flex-shrink-0">
              {user ? (
-               <div className="flex items-center gap-4">
+               <div className="flex items-center gap-3">
                  
                  {/* Theme Toggle (Desktop) */}
                  <button 
@@ -300,11 +311,11 @@ const Navbar = () => {
                            notifications.map(notif => (
                              <div 
                                key={notif.id} 
-                               onClick={() => !notif.isRead && handleMarkAsRead(notif.id)}
+                               onClick={() => handleNotificationItemClick(notif)}
                                onKeyDown={(e) => {
-                                 if ((e.key === 'Enter' || e.key === ' ') && !notif.isRead) {
+                                 if (e.key === 'Enter' || e.key === ' ') {
                                    e.preventDefault();
-                                   handleMarkAsRead(notif.id);
+                                   handleNotificationItemClick(notif);
                                  }
                                }}
                                tabIndex={0}
@@ -324,21 +335,20 @@ const Navbar = () => {
                    </div>
                  </div>
 
-                 <div className="flex items-center gap-4 bg-white px-4 py-2 rounded-full border-2 border-pastel-lavender/20 shadow-sm">
-                   <div className="text-right">
-                    <p className="text-[10px] font-bold text-pastel-coral uppercase tracking-widest font-quicksand">
-                      {user.roles?.includes('admin') ? 'Admin' : 
-                       (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) ? 'Faculty' : 
-                       'Student'}
-                    </p>
-                   <p className="text-sm font-bold text-text-primary font-body">{user.fullName}</p>
-                 </div>
-                 <button
-                   onClick={handleLogout}
-                   className="btn-secondary px-4 py-1.5 text-sm font-bold rounded-xl"
-                 >
-                   Logout
-                 </button>
+                 {/* Single Initial Badge + Logout */}
+                 <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 px-3 py-1.5 rounded-full border border-pastel-lavender/30 shadow-soft">
+                   <div 
+                     className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white font-heading font-black text-sm flex items-center justify-center shadow-sm"
+                     title={user.fullName || user.name || 'User'}
+                   >
+                     {(user.fullName || user.name || user.email || 'U').charAt(0).toUpperCase()}
+                   </div>
+                   <button
+                     onClick={handleLogout}
+                     className="btn-secondary px-3.5 py-1 text-xs font-bold rounded-xl"
+                   >
+                     Logout
+                   </button>
                  </div>
                </div>
              ) : (
@@ -409,12 +419,9 @@ const Navbar = () => {
 
            {user && user.roles?.includes('student') && (
              <>
-               <NavLink to="/student-organizer" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
-               
                <div className="py-2 space-y-1">
                  <div className="px-4 py-2 text-sm font-bold text-text-primary uppercase tracking-wider">My Workspace</div>
                  <div className="pl-4 border-l-2 border-pastel-lavender/30 ml-4 space-y-1">
-                   <NavLink to="/student-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>My Events</NavLink>
                    <NavLink to="/my-registrations" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Registrations</NavLink>
                    <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
                  </div>
@@ -426,8 +433,8 @@ const Navbar = () => {
 
            {user && (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) && (
              <>
-               <NavLink to="/faculty-organizer" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
                <NavLink to="/faculty-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Proposals</NavLink>
+               <NavLink to="/profile" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Profile</NavLink>
              </>
            )}
 
@@ -456,7 +463,7 @@ const Navbar = () => {
                   notifications.map(notif => (
                     <div 
                       key={notif.id} 
-                      onClick={() => !notif.isRead && handleMarkAsRead(notif.id)}
+                      onClick={() => handleNotificationItemClick(notif)}
                       className={`p-3 mb-2 rounded-xl border border-gray-100 cursor-pointer ${!notif.isRead ? 'bg-pastel-lavender/10' : 'bg-gray-50'}`}
                     >
                       <div className="flex justify-between items-start">
@@ -474,17 +481,21 @@ const Navbar = () => {
           {user ? (
             <div className="pt-4 pb-2 mt-2 border-t border-pastel-lavender/20">
               <div className="flex items-center justify-between bg-pastel-lavender/10 p-4 rounded-2xl">
-                <div>
-                  <p className="text-xs font-bold text-pastel-coral uppercase tracking-widest">
-                    {user.roles?.includes('admin') ? 'Admin' : 
-                     (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) ? 'Faculty' : 
-                     'Student'}
-                  </p>
-                  <p className="text-base font-bold text-text-primary">{user.fullName}</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white font-heading font-black text-base flex items-center justify-center shadow-sm">
+                    {(user.fullName || user.name || user.email || 'U').charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-pastel-coral uppercase tracking-widest font-quicksand">
+                      {user.roles?.includes('admin') ? 'Admin' : 
+                       (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) ? 'Faculty' : 
+                       'Student'}
+                    </p>
+                  </div>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="btn-secondary px-4 py-2 text-sm"
+                  className="btn-secondary px-4 py-2 text-sm font-bold rounded-xl"
                 >
                   Logout
                 </button>

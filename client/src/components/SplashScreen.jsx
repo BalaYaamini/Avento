@@ -16,6 +16,7 @@ const SplashScreen = () => {
   const [show, setShow] = useState(true);
   const [animateIn, setAnimateIn] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
+  const isDark = (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark') || (typeof localStorage !== 'undefined' && localStorage.getItem('theme') === 'dark');
 
   useEffect(() => {
     if (!show) return;
@@ -46,11 +47,11 @@ const SplashScreen = () => {
 
   return (
     <div
-      className={`fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-[#FFFDFB] select-none pointer-events-none transition-opacity duration-700 ease-in-out ${
+      className={`splash-screen fixed inset-0 z-[999999] flex flex-col items-center justify-center bg-[#FFFDFB] select-none pointer-events-none transition-opacity duration-700 ease-in-out ${
         fadeOut ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
-        backgroundImage: 'radial-gradient(#FFF1A6 1.5px, transparent 1.5px)',
+        backgroundImage: isDark ? 'radial-gradient(rgba(255, 255, 255, 0.08) 1.5px, transparent 1.5px)' : 'radial-gradient(#FFF1A6 1.5px, transparent 1.5px)',
         backgroundSize: '24px 24px'
       }}
     >

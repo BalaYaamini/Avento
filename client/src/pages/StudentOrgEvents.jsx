@@ -590,14 +590,8 @@ const StudentOrgEvents = () => {
           <div className="relative">
             <StickyNoteDoodle className="absolute -top-6 -left-10 w-10 h-10 text-pastel-yellow opacity-80 animate-wobble hidden md:block" />
             <h1 className="font-display text-3xl font-black text-text-primary">My <span className="heading-gradient text-fuchsia-400">Proposals</span></h1>
-            <p className="font-body text-slate-600 text-sm mt-1.5">Draft, submit, and publish your events</p>
+            <p className="font-body text-slate-600 text-sm mt-1.5">View your assigned events and proposals</p>
           </div>
-          <button
-            onClick={openCreateModal}
-            className="btn-primary px-6 py-3 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 self-start"
-          >
-            + New Event Proposal
-          </button>
         </div>
 
         {/* Tabs */}
@@ -651,8 +645,7 @@ const StudentOrgEvents = () => {
                   </svg>
                 </div>
                 <h3 className="text-xl font-display font-bold text-slate-800 mb-2">No Proposals Found</h3>
-                <p className="text-sm font-body text-slate-600 mb-6">Start planning your first campus event.</p>
-                <button onClick={openCreateModal} className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white">Draft Proposal</button>
+                <p className="text-sm font-body text-slate-600">You do not have any active event proposals assigned.</p>
               </div>
             ) : myProposals.filter(e => activeTab === 'all' || e.status === activeTab).length === 0 ? (
               <div className="text-center py-24 glass-panel rounded-2xl animate-fade-in-scale">
@@ -755,10 +748,10 @@ const StudentOrgEvents = () => {
                             evt.userOrganizerType === 'core';
                           return isCoreOrProposer ? (
                             <Link
-                              to={`/proposals/${evt._id || evt.id}`}
+                              to={`/workspace/${evt._id || evt.id}`}
                               className="px-5 py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300"
                             >
-                              Proposal Workspace
+                              Workspace
                             </Link>
                           ) : null;
                         })()}

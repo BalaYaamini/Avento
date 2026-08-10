@@ -54,6 +54,8 @@ exports.registerForEvent = async (req, res) => {
     const isOrganizer = (event.organizer_id && String(event.organizer_id) === String(userId)) ||
                         (event.student_organizer_id && String(event.student_organizer_id) === String(userId)) ||
                         (event.proposed_by && String(event.proposed_by) === String(userId)) ||
+                        (event.created_by && String(event.created_by) === String(userId)) ||
+                        (event.faculty_id && String(event.faculty_id) === String(userId)) ||
                         !!recruitedOrg ||
                         !!memberOrg;
     if (isOrganizer) {
@@ -62,8 +64,17 @@ exports.registerForEvent = async (req, res) => {
       });
     }
 
-    if (event.registered_count >= event.capacity) {
-      return res.status(400).json({ message: 'Event capacity has been reached.' });
+    // Check capacity (409 Conflict if full)
+    const { count: currentRegsCount } = await supabase
+      .from('event_registrations')
+      .select('*', { count: 'exact', head: true })
+      .eq('event_id', eventId)
+      .eq('status', 'registered');
+
+    const effectiveCount = Math.max(event.registered_count || 0, currentRegsCount || 0);
+
+    if (event.capacity && effectiveCount >= event.capacity) {
+      return res.status(409).json({ message: 'Slots Full — Registration Closed' });
     }
 
     const { data: existingRegistration, error: existErr } = await supabase
@@ -92,10 +103,20 @@ exports.registerForEvent = async (req, res) => {
 
     if (regErr) throw regErr;
 
-    // Update event registered count
-    await supabase.rpc('increment_registered_count', { row_id: eventId });
-    // Alternative if rpc not available:
-    await supabase.from('events').update({ registered_count: event.registered_count + 1 }).eq('id', eventId);
+    // Atomic race-condition safe count increment
+    const { data: updatedEvt } = await supabase
+      .from('events')
+      .update({ registered_count: (event.registered_count || 0) + 1 })
+      .eq('id', eventId)
+      .lt('registered_count', event.capacity || 999999)
+      .select()
+      .maybeSingle();
+
+    if (!updatedEvt && event.capacity) {
+      // Race condition rollback: undo registration insert
+      await supabase.from('event_registrations').delete().eq('id', registration.id);
+      return res.status(409).json({ message: 'Slots Full — Registration Closed' });
+    }
 
     // Notify user
     try {
@@ -452,11 +473,27 @@ exports.getEventRegistrations = async (req, res) => {
 
     if (eventErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
+    const { data: orgRec } = await supabase
+      .from('event_organizers')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('student_id', req.user.id)
+      .maybeSingle();
+
+    const { data: memberRec } = await supabase
+      .from('event_members')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
     const isOwner = req.user.roles.includes('admin') || 
-                    event.organizer_id === req.user.id || 
-                    event.student_organizer_id === req.user.id || 
-                    event.proposed_by === req.user.id ||
-                    event.faculty_id === req.user.id;
+                    String(event.organizer_id) === String(req.user.id) || 
+                    String(event.student_organizer_id) === String(req.user.id) || 
+                    String(event.proposed_by) === String(req.user.id) ||
+                    String(event.faculty_id) === String(req.user.id) ||
+                    !!orgRec ||
+                    !!memberRec;
     
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
@@ -541,6 +578,19 @@ exports.registerTeamForEvent = async (req, res) => {
       return res.status(400).json({ message: `Team size must be between ${event.min_team_size} and ${event.max_team_size} members.` });
     }
 
+    // Validate overall event capacity (409 Conflict if full)
+    const { count: currentRegsCount } = await supabase
+      .from('event_registrations')
+      .select('*', { count: 'exact', head: true })
+      .eq('event_id', eventId)
+      .eq('status', 'registered');
+
+    const effectiveCount = Math.max(event.registered_count || 0, currentRegsCount || 0);
+
+    if (event.capacity && effectiveCount >= event.capacity) {
+      return res.status(409).json({ message: 'Slots Full — Registration Closed' });
+    }
+
     if (event.max_teams) {
       const { count, error: countErr } = await supabase
         .from('event_teams')
@@ -549,7 +599,7 @@ exports.registerTeamForEvent = async (req, res) => {
         .eq('status', 'registered');
       
       if (!countErr && count >= event.max_teams) {
-        return res.status(400).json({ message: 'The maximum number of teams for this event has been reached.' });
+        return res.status(409).json({ message: 'Slots Full — Registration Closed' });
       }
     }
 
@@ -564,20 +614,21 @@ exports.registerTeamForEvent = async (req, res) => {
       .select('user_id')
       .eq('event_id', eventId);
     
-    const organizerIds = (organizers || []).map(o => o.student_id);
-    if (event.organizer_id) organizerIds.push(event.organizer_id);
-    if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
-    if (event.proposed_by) organizerIds.push(event.proposed_by);
-    if (event.faculty_id) organizerIds.push(event.faculty_id);
+    const organizerIds = (organizers || []).map(o => String(o.student_id));
+    if (event.organizer_id) organizerIds.push(String(event.organizer_id));
+    if (event.student_organizer_id) organizerIds.push(String(event.student_organizer_id));
+    if (event.proposed_by) organizerIds.push(String(event.proposed_by));
+    if (event.faculty_id) organizerIds.push(String(event.faculty_id));
+    if (event.created_by) organizerIds.push(String(event.created_by));
     // Add pre-publication organizers from event_members
-    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(m.user_id); });
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(String(m.user_id)); });
 
-    const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(id));
+    const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(String(id)));
     if (hasOrganizer) {
       return res.status(403).json({ message: 'One or more selected members are organizing this event and cannot be added as team members.' });
     }
-    if (organizerIds.includes(leaderId)) {
-      return res.status(403).json({ message: 'You are an organizer for this event and cannot create a team.' });
+    if (organizerIds.includes(String(leaderId))) {
+      return res.status(403).json({ message: 'You are an organizer for this event and cannot register as a participant.' });
     }
 
     // Validate existing active registrations for the leader
@@ -895,6 +946,43 @@ exports.acceptTeamInvitation = async (req, res) => {
       return res.status(400).json({ message: 'You are already a confirmed member of a team for this event.' });
     }
 
+    // Strictly enforce capacity on pending invitation acceptance (No exceptions for pending invites)
+    const { data: fullEventDetails } = await supabase
+      .from('events')
+      .select('capacity, registered_count, max_teams, status')
+      .eq('id', event.id)
+      .single();
+
+    if (fullEventDetails) {
+      const { count: currentRegsCount } = await supabase
+        .from('event_registrations')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+        .eq('status', 'registered');
+
+      const effectiveCount = Math.max(fullEventDetails.registered_count || 0, currentRegsCount || 0);
+
+      if (fullEventDetails.capacity && effectiveCount >= fullEventDetails.capacity) {
+        return res.status(409).json({
+          message: 'No more team slots are available. Registration is full.'
+        });
+      }
+
+      if (fullEventDetails.max_teams) {
+        const { count: confirmedTeamsCount } = await supabase
+          .from('event_teams')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_id', event.id)
+          .eq('status', 'registered');
+
+        if (confirmedTeamsCount >= fullEventDetails.max_teams) {
+          return res.status(409).json({
+            message: 'No more team slots are available. Registration is full.'
+          });
+        }
+      }
+    }
+
     // 1. Update the target registration to registered
     const { error: updateErr } = await supabase
       .from('event_registrations')
@@ -1061,10 +1149,10 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: 'A valid 10-digit Indian mobile number is required for the Team Leader.' });
     }
 
-    // Get the event_id for this team
+    // 1. Fetch team & associated event details
     const { data: teamData, error: teamErr } = await supabase
       .from('event_teams')
-      .select('event_id')
+      .select('*, events(*)')
       .eq('id', teamId)
       .eq('leader_id', leaderId)
       .single();
@@ -1073,20 +1161,47 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(404).json({ message: 'Team not found or unauthorized.' });
     }
 
-    // We only update the LEADER's registration to 'registered'.
-    // Other members who accepted are ALREADY 'registered'.
-    // Pending members MUST remain 'pending' so they are not included as confirmed members.
-    const { error: regErr } = await supabase
-      .from('event_registrations')
-      .update({ status: 'registered' })
-      .eq('team_id', teamId)
-      .eq('user_id', leaderId);
-
-    if (regErr) {
-      return res.status(400).json({ message: regErr.message || 'Failed to update team registration status.' });
+    const event = teamData.events;
+    if (!event) {
+      return res.status(404).json({ message: 'Associated event not found.' });
     }
 
-    // Save the leader contact number
+    // 2. STRICT CHECK: Event published status
+    if (event.status !== 'published') {
+      return res.status(400).json({ message: 'Registration is closed because the event is not active/published.' });
+    }
+
+    // 3. STRICT CHECK: Registration deadline
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'Registration has closed. The registration deadline has passed.' });
+    }
+
+    // 4. STRICT CHECK: Max Teams / Capacity Slots Available
+    if (event.max_teams) {
+      const { count: confirmedTeamsCount, error: countErr } = await supabase
+        .from('event_teams')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+        .eq('status', 'registered');
+
+      if (!countErr && confirmedTeamsCount >= event.max_teams) {
+        return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
+      }
+    }
+
+    if (event.capacity) {
+      const { count: currentRegsCount, error: capErr } = await supabase
+        .from('event_registrations')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+        .eq('status', 'registered');
+
+      if (!capErr && currentRegsCount >= event.capacity) {
+        return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
+      }
+    }
+
+    // 5. Save the leader contact number
     const { error: contactErr } = await supabase
       .from('event_teams')
       .update({ leader_contact_number: leaderContactNumber })
@@ -1096,18 +1211,29 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: contactErr.message || 'Failed to save team leader contact number.' });
     }
 
-    // Note: We do NOT update event_teams status to 'registered' here.
-    // The RPC `confirm_team_registration` handles locking, limit checks,
-    // setting team status, and incrementing the event's registered_count.
-
-    // We must call the RPC to do the rest of the checks and increment the event count
+    // 6. Call atomic RPC for DB row locking & final confirmation
     const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
       p_team_id: teamId,
       p_leader_id: leaderId
     });
 
     if (rpcErr) {
-      return res.status(400).json({ message: rpcErr.message || 'Failed to confirm team registration.' });
+      const rpcMsg = rpcErr.message || '';
+      if (rpcMsg.includes('Maximum number of teams') || rpcMsg.includes('max_teams')) {
+        return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
+      }
+      return res.status(400).json({ message: rpcMsg || 'Failed to confirm team registration.' });
+    }
+
+    // 7. Update leader's registration status ONLY AFTER RPC succeeds
+    const { error: regErr } = await supabase
+      .from('event_registrations')
+      .update({ status: 'registered' })
+      .eq('team_id', teamId)
+      .eq('user_id', leaderId);
+
+    if (regErr) {
+      console.error('Error setting leader registration status:', regErr.message);
     }
 
     res.json({ message: 'Team registration confirmed successfully!' });
@@ -1143,8 +1269,17 @@ exports.getConfirmedTeams = async (req, res) => {
         .eq('event_id', eventId);
       
       const isOrganizer = (organizers || []).some(org => org.student_id === req.user.id);
+
+      const { data: memberRec } = await supabase
+        .from('event_members')
+        .select('id')
+        .eq('event_id', eventId)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+
+      const isMember = !!memberRec;
       
-      if (!isFaculty && !isEventHead && !isOrganizer) {
+      if (!isFaculty && !isEventHead && !isOrganizer && !isMember) {
         return res.status(403).json({ message: 'Access denied. Organizer permissions required.' });
       }
     }
@@ -1293,6 +1428,31 @@ exports.addTeamMember = async (req, res) => {
     }
 
     const event = team.events;
+
+    // Check overall event capacity (409 Conflict if event is full)
+    const { count: currentEventRegsCount } = await supabase
+      .from('event_registrations')
+      .select('*', { count: 'exact', head: true })
+      .eq('event_id', event.id)
+      .eq('status', 'registered');
+
+    const effectiveEventCount = Math.max(event.registered_count || 0, currentEventRegsCount || 0);
+
+    if (event.capacity && effectiveEventCount >= event.capacity) {
+      return res.status(409).json({ message: 'Slots Full — No additional participants can be added.' });
+    }
+
+    if (event.max_teams) {
+      const { count: confirmedTeamsCount } = await supabase
+        .from('event_teams')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', event.id)
+        .eq('status', 'registered');
+
+      if (confirmedTeamsCount >= event.max_teams) {
+        return res.status(409).json({ message: 'Slots Full — No additional participants can be added.' });
+      }
+    }
 
     // Check current active member count (accepted + pending)
     const { data: currentRegs, error: regsErr } = await supabase

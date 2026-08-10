@@ -32,7 +32,22 @@ const getEvents = async (req, res) => {
         .from('event_organizers')
         .select('student_id')
         .eq('event_id', evt.id);
-      evt.organizerIds = (orgs || []).map(o => o.student_id);
+      const { data: members } = await supabase
+        .from('event_members')
+        .select('user_id')
+        .eq('event_id', evt.id);
+
+      const allOrgIds = [
+        ...(orgs || []).map(o => o.student_id),
+        ...(members || []).map(m => m.user_id)
+      ].filter(Boolean);
+
+      if (evt.faculty_id) allOrgIds.push(evt.faculty_id);
+      if (evt.proposed_by) allOrgIds.push(evt.proposed_by);
+      if (evt.student_organizer_id) allOrgIds.push(evt.student_organizer_id);
+      if (evt.organizer_id) allOrgIds.push(evt.organizer_id);
+
+      evt.organizerIds = [...new Set(allOrgIds)];
       evt.organizersCount = evt.organizerIds.length;
 
       const { data: reqs } = await supabase
@@ -73,62 +88,42 @@ const getMyEvents = async (req, res) => {
       const { data, error } = await supabase.from('events').select('*').order('date', { ascending: true });
       if (error) throw error;
       events = data || [];
-    } else if (req.user.roles.includes('faculty') || req.user.roles.includes('faculty_organizer')) {
-      const { data, error } = await supabase.from('events').select('*').eq('faculty_id', req.user.id).order('date', { ascending: true });
-      if (error) throw error;
-      events = data || [];
-    } else if (req.user.roles.includes('student_organizer') || req.user.roles.includes('student')) {
-      // 1. Fetch events proposed by the user
-      const { data: proposedData, error: propErr } = await supabase
+    } else {
+      // 1. Fetch events where user is faculty_id, proposed_by, student_organizer_id, or organizer_id
+      const { data: directEvents } = await supabase
         .from('events')
         .select('*')
-        .eq('proposed_by', req.user.id);
-      if (propErr) throw propErr;
+        .or(`faculty_id.eq.${req.user.id},proposed_by.eq.${req.user.id},student_organizer_id.eq.${req.user.id},organizer_id.eq.${req.user.id}`);
 
       // 2. Fetch events where user is in event_organizers (post-publication)
       const { data: orgs } = await supabase
         .from('event_organizers')
         .select('event_id')
         .eq('student_id', req.user.id);
-        
-      const eventIds = (orgs || []).map(o => o.event_id);
-      let organizingData = [];
-      
-      if (eventIds.length > 0) {
-        const { data: orgData, error: orgErr } = await supabase
-          .from('events')
-          .select('*')
-          .in('id', eventIds);
-        if (orgErr) throw orgErr;
-        organizingData = orgData || [];
-      }
+      const orgEventIds = (orgs || []).map(o => o.event_id).filter(Boolean);
 
-      // 3. Fetch events where user is in event_members (pre-publication organizers — Core & Normal)
-      const { data: memberEntries } = await supabase
+      // 3. Fetch events where user is in event_members (pre-publication organizers)
+      const { data: members } = await supabase
         .from('event_members')
         .select('event_id')
         .eq('user_id', req.user.id);
-      const memberEventIds = (memberEntries || []).map(m => m.event_id).filter(Boolean);
-      let memberEventData = [];
-      if (memberEventIds.length > 0) {
-        const { data: mData, error: mErr } = await supabase
+      const memberEventIds = (members || []).map(m => m.event_id).filter(Boolean);
+
+      const allRelEventIds = [...new Set([...orgEventIds, ...memberEventIds])];
+      let relEvents = [];
+      if (allRelEventIds.length > 0) {
+        const { data: relData } = await supabase
           .from('events')
           .select('*')
-          .in('id', memberEventIds);
-        if (mErr) throw mErr;
-        memberEventData = mData || [];
+          .in('id', allRelEventIds);
+        relEvents = relData || [];
       }
 
-      // Merge and deduplicate based on event id
-      const allEvents = [...(proposedData || []), ...organizingData, ...memberEventData];
+      // Merge and deduplicate by event ID
       const uniqueEventsMap = new Map();
-      allEvents.forEach(e => uniqueEventsMap.set(e.id, e));
+      [...(directEvents || []), ...relEvents].forEach(evt => uniqueEventsMap.set(evt.id, evt));
       events = Array.from(uniqueEventsMap.values());
-      
-      // Sort by date ascending
       events.sort((a, b) => new Date(a.date) - new Date(b.date));
-    } else {
-      return res.status(403).json({ message: 'Access denied.' });
     }
 
     // For each event, fetch team members from event_members
@@ -204,7 +199,8 @@ const getEventById = async (req, res) => {
     // Faculty Coordinators can only view proposals assigned to them
     const isProposal = event.status !== 'published' && event.status !== 'active' && event.status !== 'completed' && event.status !== 'cancelled';
     if (isProposal && req.user && (req.user.roles.includes('faculty') || req.user.roles.includes('faculty_organizer')) && !req.user.roles.includes('admin')) {
-      if (!event.faculty_id || event.faculty_id !== req.user.id) {
+      const isOrganizer = await checkCoreOrganizerAccess(id, event, req.user);
+      if (!isOrganizer) {
         return res.status(403).json({ message: 'Access denied. This proposal is not assigned to you.' });
       }
     }
@@ -318,20 +314,21 @@ const createEvent = async (req, res) => {
       }
     }
 
+    const isAdmin = req.user.roles.includes('admin');
     const isStudent = (req.user.roles.includes('student') || req.user.roles.includes('student_organizer')) &&
                       !req.user.roles.includes('admin') &&
                       !req.user.roles.includes('faculty');
 
-    if (!isStudent) {
-      return res.status(403).json({ message: 'Access denied. Only students are authorized to create event proposals.' });
+    if (!isAdmin && !isStudent) {
+      return res.status(403).json({ message: 'Access denied. Only students and administrators are authorized to create events.' });
     }
 
     // Students and student organizers MUST select a faculty coordinator
-    if (!assignedFacultyId) {
+    if (isStudent && !assignedFacultyId) {
       return res.status(400).json({ message: 'Please select a Faculty Coordinator for your event proposal.' });
     }
 
-    // Verify assigned faculty exists and has faculty role
+    // Verify assigned faculty exists and has faculty role (if assignedFacultyId provided)
     if (assignedFacultyId) {
       const { data: faculty, error: facErr } = await supabase
         .from('profiles')
@@ -343,7 +340,7 @@ const createEvent = async (req, res) => {
       }
     }
 
-    // Prevent duplicate proposals for same event name + date by same student
+    // Prevent duplicate proposals for same event name + date by same user
     const { data: existingDups, error: dupErr } = await supabase
       .from('events')
       .select('id')
@@ -356,9 +353,9 @@ const createEvent = async (req, res) => {
       return res.status(400).json({ message: 'An event proposal with the same name and date has already been submitted by you.' });
     }
 
-    let status = 'pending_approval';
+    let status = req.body.status || (isAdmin ? 'draft' : 'pending_approval');
     let proposedBy = req.user.id;
-    let facultyId = assignedFacultyId;
+    let facultyId = assignedFacultyId || null;
     let organizerId = null;
 
     const newEvent = {
@@ -382,39 +379,63 @@ const createEvent = async (req, res) => {
       team_leader_registration_required: teamLeaderRegistrationRequired !== undefined ? teamLeaderRegistrationRequired : true,
       registration_deadline: registrationDeadline || null,
       join_team_enabled: false,
+      faculty_id: facultyId,
     };
 
     if (proposedBy) newEvent.proposed_by = proposedBy;
-    if (facultyId) newEvent.faculty_id = facultyId;
     if (organizerId) newEvent.organizer_id = organizerId;
 
     const { data: event, error } = await supabase.from('events').insert(newEvent).select().single();
     if (error) throw error;
 
     // Log timeline event for new proposal
-    await supabase.from('proposal_timeline').insert({
-      proposal_id: event.id,
-      user_id: req.user.id,
-      action: 'Proposal Submitted',
-      details: 'Initial proposal submitted for review.'
-    });
+    try {
+      await supabase.from('proposal_timeline').insert({
+        proposal_id: event.id,
+        user_id: req.user.id,
+        action: isAdmin ? 'Draft Created' : 'Proposal Submitted',
+        details: isAdmin ? 'Initial event draft created by administrator.' : 'Initial proposal submitted for review.'
+      });
+    } catch (timelineErr) {
+      console.warn('Non-fatal proposal_timeline error:', timelineErr.message);
+    }
 
-    // Make the creator the primary student organizer and auto-add to event_members
-    const { error: memberErr } = await supabase.from('event_members').insert({
-      event_id: event.id,
-      user_id: req.user.id,
-      role: 'organizer',
-      organizer_type: 'core'
-    });
+    // Make the creator the primary organizer and auto-add to event_members
+    try {
+      const { data: userProfile } = await supabase.from('profiles').select('name, email, roll_number').eq('id', req.user.id).maybeSingle();
+      const userName = userProfile?.name || req.user.fullName || (isAdmin ? 'Administrator' : 'Student Organizer');
+      const userEmail = userProfile?.email || req.user.email || '';
 
-    if (facultyId) {
-      // Automatically add the Faculty Coordinator to the proposal team as a Core Organizer
-      await supabase.from('event_members').insert({
+      const { error: memberErr } = await supabase.from('event_members').insert({
         event_id: event.id,
-        user_id: facultyId,
-        role: 'Faculty Coordinator',
+        user_id: req.user.id,
+        name: userName,
+        email: userEmail,
+        roll_number: userProfile?.roll_number || null,
+        role: isAdmin ? 'Admin' : 'organizer',
         organizer_type: 'core'
       });
+      if (memberErr) {
+        console.warn('event_members insert warning:', memberErr.message);
+      }
+    } catch (memErr) {
+      console.warn('Non-fatal event_members error:', memErr.message);
+    }
+
+    if (facultyId) {
+      try {
+        const { data: facProfile } = await supabase.from('profiles').select('name, email').eq('id', facultyId).maybeSingle();
+        await supabase.from('event_members').insert({
+          event_id: event.id,
+          user_id: facultyId,
+          name: facProfile?.name || 'Faculty Coordinator',
+          email: facProfile?.email || '',
+          role: 'Faculty Coordinator',
+          organizer_type: 'core'
+        });
+      } catch (facMemErr) {
+        console.warn('Non-fatal faculty event_members insert error:', facMemErr.message);
+      }
 
       // Notify assigned faculty
       try {
@@ -453,8 +474,8 @@ const createEvent = async (req, res) => {
 
     res.status(201).json(event);
   } catch (err) {
-    console.error('createEvent error:', err.message);
-    res.status(500).json({ message: 'Server error creating event.', error: err.message });
+    console.error('createEvent error:', err);
+    res.status(500).json({ message: err.message || 'Server error creating event.', error: err.details || err.hint || err.message || 'Internal error' });
   }
 };
 
@@ -472,39 +493,19 @@ const editEvent = async (req, res) => {
       .from('events').select('*').eq('id', id).single();
     if (fetchErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
-    const isStudent = req.user.roles.includes('student') &&
-                      !req.user.roles.includes('admin') &&
-                      !req.user.roles.includes('faculty');
-
-    // Faculty members must NOT be able to modify proposal content
-    if ((req.user.roles.includes('faculty') || req.user.roles.includes('faculty_organizer')) && !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Faculty members are not authorized to modify proposal content.' });
+    // Authorization check: Admin OR core organizer of this event
+    const hasAccess = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied. You can only edit events you organize.' });
     }
 
-    if (date !== undefined) {
+    if (date !== undefined && date) {
       const selectedDate = new Date(date);
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(0, 0, 0, 0);
       if (selectedDate < tomorrow) {
         return res.status(400).json({ message: 'Event date must be at least one day in the future.' });
-      }
-    }
-
-    if (!req.user.roles.includes('admin')) {
-      const isOwner =
-        event.organizer_id === req.user.id ||
-        event.student_organizer_id === req.user.id ||
-        event.proposed_by === req.user.id;
-      if (!isOwner) {
-        return res.status(403).json({ message: 'Access denied. You can only edit your own events.' });
-      }
-    }
-
-    // Students must be allowed to edit their proposals only if status is submitted or rejected
-    if (isStudent) {
-      if (event.status !== 'submitted' && event.status !== 'rejected') {
-        return res.status(400).json({ message: 'You can only edit proposals that are submitted or rejected.' });
       }
     }
 
@@ -547,7 +548,6 @@ const editEvent = async (req, res) => {
     }
 
     if (assignedFacultyId !== undefined) {
-      // Verify assigned faculty exists and has faculty role
       const { data: faculty, error: facErr } = await supabase
         .from('profiles')
         .select('role')
@@ -559,37 +559,7 @@ const editEvent = async (req, res) => {
       updates.faculty_id = assignedFacultyId;
     }
 
-    // Prevent duplicate proposals for same event name + date by same student (excluding current event)
-    if (isStudent) {
-      const checkTitle = title !== undefined ? title : event.title;
-      const checkDate = date !== undefined ? date : event.date;
-      
-      const { data: existingDups, error: dupErr } = await supabase
-        .from('events')
-        .select('id')
-        .eq('proposed_by', req.user.id)
-        .eq('date', checkDate)
-        .ilike('title', checkTitle)
-        .neq('id', id);
-
-      if (dupErr) throw dupErr;
-      if (existingDups && existingDups.length > 0) {
-        return res.status(400).json({ message: 'An event proposal with the same name and date has already been submitted by you.' });
-      }
-
-      // If a student edits ANY field, reset status to pending_approval and clear remarks
-      updates.status = 'pending_approval';
-      updates.approval_remarks = null;
-    } else if (req.user.roles.includes('admin') && status !== undefined) {
-      if (status === 'published') {
-        if (event.status !== 'approved') {
-          return res.status(400).json({ message: 'Event must be approved by the assigned Faculty Coordinator before publishing.' });
-        }
-        const expectedTag = `[Approved By: ${event.faculty_id}]`;
-        if (!event.approval_remarks || !event.approval_remarks.includes(expectedTag)) {
-          return res.status(400).json({ message: 'This event has not been approved by the assigned Faculty Coordinator.' });
-        }
-      }
+    if (req.user.roles.includes('admin') && status !== undefined) {
       updates.status = status;
     }
 
@@ -926,14 +896,17 @@ const publishEvent = async (req, res) => {
       .from('events').select('*').eq('id', id).single();
     if (fetchErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
-    if (event.status !== 'approved') {
-      return res.status(400).json({ message: 'Only approved events can be published.' });
-    }
+    const isAdmin = req.user.roles.includes('admin');
+    if (!isAdmin) {
+      if (event.status !== 'approved') {
+        return res.status(400).json({ message: 'Only approved events can be published.' });
+      }
 
-    // Only proposal owner can publish
-    const isOwner = event.proposed_by === req.user.id;
-    if (!isOwner) {
-      return res.status(403).json({ message: 'Only the event proposal owner is authorized to publish this event.' });
+      // Only proposal owner can publish
+      const isOwner = event.proposed_by === req.user.id;
+      if (!isOwner) {
+        return res.status(403).json({ message: 'Only the event proposal owner is authorized to publish this event.' });
+      }
     }
 
     const updates = {
@@ -1106,7 +1079,7 @@ const recruitOrganizer = async (req, res) => {
       return res.status(403).json({ message: 'Only a Core Organizer is authorized to manage organizers.' });
     }
 
-    // Check if student exists in Supabase profiles
+    // Check if user exists in Supabase profiles
     const { data: profile, error: profErr } = await supabase
       .from('profiles')
       .select('*')
@@ -1114,12 +1087,13 @@ const recruitOrganizer = async (req, res) => {
       .maybeSingle();
 
     if (profErr || !profile) {
-      return res.status(404).json({ message: 'Student profile not found.' });
+      return res.status(404).json({ message: 'User profile not found.' });
     }
 
-    // Verify profile is indeed student or student_organizer
-    if (profile.role !== 'student' && profile.role !== 'student_organizer') {
-      return res.status(400).json({ message: 'Only students can be recruited as event organizers.' });
+    // Verify profile is student, student_organizer, faculty, or faculty_organizer
+    const allowedRoles = ['student', 'student_organizer', 'faculty', 'faculty_organizer'];
+    if (!allowedRoles.includes(profile.role)) {
+      return res.status(400).json({ message: 'Only students and faculty members can be recruited as event organizers.' });
     }
 
     // Check if already recruited
@@ -1132,10 +1106,10 @@ const recruitOrganizer = async (req, res) => {
 
     if (existErr) throw existErr;
     if (existing) {
-      return res.status(400).json({ message: 'This student is already an organizer for this event.' });
+      return res.status(400).json({ message: 'This user is already an organizer for this event.' });
     }
 
-    // Rule 2: Verify student is not already participating as a member of a confirmed team
+    // Verify user is not already participating as a member of a confirmed team
     const { data: existingRegs, error: regErr } = await supabase
       .from('event_registrations')
       .select('team_id')
@@ -1145,7 +1119,7 @@ const recruitOrganizer = async (req, res) => {
 
     if (regErr) {
       console.error("Error fetching registrations for recruitment:", regErr);
-      return res.status(500).json({ message: 'Error checking student eligibility.', error: regErr.message });
+      return res.status(500).json({ message: 'Error checking user eligibility.', error: regErr.message });
     }
 
     if (existingRegs && existingRegs.length > 0) {
@@ -1160,11 +1134,29 @@ const recruitOrganizer = async (req, res) => {
 
         if (teamErr) {
           console.error("Error fetching teams for recruitment:", teamErr);
-          return res.status(500).json({ message: 'Error checking student team status.', error: teamErr.message });
+          return res.status(500).json({ message: 'Error checking user team status.', error: teamErr.message });
         }
 
         if (confirmedTeams && confirmedTeams.length > 0) {
-          return res.status(400).json({ message: 'This student is already a member of a confirmed team and cannot be recruited as an organizer.' });
+          return res.status(400).json({ message: 'This user is already a member of a confirmed team and cannot be recruited as an organizer.' });
+        }
+      }
+    }
+
+    // Dynamic Edge Case Cleanup: If user has an individual or pending participant registration for this event, clean it up
+    const { data: userRegs } = await supabase
+      .from('event_registrations')
+      .select('id, status, team_id')
+      .eq('event_id', id)
+      .eq('user_id', studentId);
+
+    if (userRegs && userRegs.length > 0) {
+      for (const reg of userRegs) {
+        if (reg.status === 'registered' && !reg.team_id) {
+          await supabase.from('event_registrations').delete().eq('id', reg.id);
+          await supabase.from('events').update({ registered_count: Math.max(0, event.registered_count - 1) }).eq('id', id);
+        } else if (reg.status === 'pending') {
+          await supabase.from('event_registrations').delete().eq('id', reg.id);
         }
       }
     }
@@ -1185,15 +1177,13 @@ const recruitOrganizer = async (req, res) => {
 
     if (insertErr) throw insertErr;
 
-    // Note: Global roles are not updated; roles are computed dynamically in authMiddleware.
-
     res.status(201).json({
-      message: 'Student recruited successfully as organizer.',
+      message: 'Organizer added successfully.',
       organizer: {
         id: inserted.id,
         userId: inserted.student_id,
         category: inserted.category,
-        organizerRole: selectedRole, // fallback to selectedRole since DB doesn't store it yet
+        organizerRole: selectedRole,
         joinedAt: inserted.joined_at,
         name: profile.name || profile.fullName,
         email: profile.email,
@@ -1676,33 +1666,34 @@ const withdrawOrganizerRequest = async (req, res) => {
 // PROPOSAL WORKSPACE CONTROLLERS
 // ==========================================
 
-// Helper function to check if user is a Core Organizer for the Proposal Workspace
+// Helper function to check if user is an Organizer for the Proposal Workspace
 const checkCoreOrganizerAccess = async (eventId, event, user) => {
   if (!user || !user.id || !user.roles) return false;
   const isAdmin = user.roles.includes('admin');
-  const isFaculty = user.id === event.faculty_id;
-  const isCreator = user.id === event.proposed_by || user.id === event.student_organizer_id || user.id === event.organizer_id;
+  const isFaculty = String(user.id) === String(event.faculty_id);
+  const isCreator = String(user.id) === String(event.proposed_by) || 
+                    String(user.id) === String(event.student_organizer_id) || 
+                    String(user.id) === String(event.organizer_id) ||
+                    String(user.id) === String(event.created_by);
 
   if (isAdmin || isFaculty || isCreator) return true;
 
-  // Check if they are a core organizer in event_organizers
+  // Check if they are an organizer in event_organizers (student or faculty organizer)
   const { data: org } = await supabase
     .from('event_organizers')
     .select('id')
     .eq('event_id', eventId)
     .eq('student_id', user.id)
-    .eq('organizer_role', 'core')
     .maybeSingle();
 
   if (org) return true;
 
-  // Check if they are explicitly assigned as core in event_members
+  // Check if they are an organizer in event_members
   const { data: member } = await supabase
     .from('event_members')
     .select('id')
     .eq('event_id', eventId)
     .eq('user_id', user.id)
-    .eq('organizer_type', 'core')
     .maybeSingle();
 
   return !!member;
@@ -2421,6 +2412,7 @@ const removeProposalDocument = async (req, res) => {
 };
 
 module.exports = {
+  checkCoreOrganizerAccess,
   getEvents,
   getEventById,
   createEvent,

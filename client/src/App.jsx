@@ -100,7 +100,7 @@ const AnimatedRoutes = () => {
         <Route
           path="/profile"
           element={
-            <ProtectedRoute allowedRoles={['student']}>
+            <ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'admin']}>
               <Profile />
             </ProtectedRoute>
           }

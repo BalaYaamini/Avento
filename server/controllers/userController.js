@@ -534,3 +534,63 @@ exports.deleteUser = async (req, res) => {
     res.status(500).json({ message: 'Failed to delete user.', error: err.message });
   }
 };
+
+exports.bulkDeleteUsers = async (req, res) => {
+  try {
+    const { userIds } = req.body;
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'No user IDs provided for bulk deletion.' });
+    }
+
+    // Fetch target profiles to strictly protect Admin accounts
+    const { data: targetProfiles, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .in('id', userIds.map(String));
+
+    if (profErr) throw profErr;
+
+    // Filter out any admin accounts
+    const eligibleUserIds = (targetProfiles || [])
+      .filter(p => p.role !== 'admin')
+      .map(p => p.id);
+
+    if (eligibleUserIds.length === 0) {
+      return res.status(400).json({ message: 'No eligible non-admin users found for deletion.' });
+    }
+
+    const User = require('../models/User');
+    let deletedCount = 0;
+
+    for (const uId of eligibleUserIds) {
+      const idStr = String(uId);
+
+      // Supabase Auth deletion
+      try {
+        await supabase.auth.admin.deleteUser(idStr);
+      } catch (authErr) {
+        console.warn(`Supabase Auth bulk delete warning for ${idStr}:`, authErr.message);
+      }
+
+      // Supabase profiles deletion
+      await supabase.from('profiles').delete().eq('id', idStr);
+
+      // MongoDB deletion
+      try {
+        await User.findByIdAndDelete(idStr);
+      } catch (mongoErr) {
+        console.warn(`MongoDB bulk delete warning for ${idStr}:`, mongoErr.message);
+      }
+
+      deletedCount++;
+    }
+
+    res.json({
+      message: `Successfully deleted ${deletedCount} user account(s). Admin accounts remain completely protected.`,
+      deletedCount
+    });
+  } catch (err) {
+    console.error('bulkDeleteUsers error:', err.message);
+    res.status(500).json({ message: 'Failed to perform bulk user deletion.', error: err.message });
+  }
+};

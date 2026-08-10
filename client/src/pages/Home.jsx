@@ -147,6 +147,21 @@ const Home = () => {
   };
 
   const openConfirmReg = (event) => {
+    if (isUserOrganizer(event)) {
+      alert('You are an organizer for this event and cannot register as a participant.');
+      return;
+    }
+    const isDeadlinePassed = event.registration_deadline && new Date() > new Date(event.registration_deadline);
+    if (isDeadlinePassed) {
+      alert('Registration has closed. The registration deadline has passed.');
+      return;
+    }
+    const isFull = (event.capacity && (event.registeredCount || 0) >= event.capacity) ||
+      (event.registration_type === 'team' && event.max_teams && (event.registeredCount || 0) >= event.max_teams);
+    if (isFull) {
+      alert('No more team slots are available. Registration is full.');
+      return;
+    }
     // Check if user already has a pending or registered status for this event
     const eventIdStr = String(event.id || event._id);
     const existingReg = myRegistrations.find(reg => {
@@ -394,6 +409,7 @@ const Home = () => {
     if (evt.proposed_by && String(evt.proposed_by) === String(userId)) return true;
     if (evt.student_organizer_id && String(evt.student_organizer_id) === String(userId)) return true;
     if (evt.organizer_id && String(evt.organizer_id) === String(userId)) return true;
+    if (evt.faculty_id && String(evt.faculty_id) === String(userId)) return true;
 
     return false;
   };
