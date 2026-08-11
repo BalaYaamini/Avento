@@ -747,23 +747,15 @@ exports.registerTeamForEvent = async (req, res) => {
     try {
       const dateStrTeam = new Date(event.date).toLocaleDateString();
       
-      // Fetch profiles to build the team members table
-      const { data: memberProfiles } = await supabase.from('profiles').select('id, name, email').in('id', allTeamUserIds);
+      // Fetch profiles (MongoDB-first) to build the team members table
       const teamMembers = [];
       let teamLeaderName = 'Unknown';
-      if (memberProfiles) {
-        for (const p of memberProfiles) {
-          const role = p.id === leaderId ? 'Team Lead' : 'Member';
-          if (role === 'Team Lead') teamLeaderName = p.name;
-          teamMembers.push({
-            name: p.name,
-            email: p.email,
-            role: role
-          });
-        }
+      for (const uid of allTeamUserIds) {
+        const profile = await resolveUserProfile(uid);
+        const role = uid === leaderId ? 'Team Lead' : 'Member';
+        if (role === 'Team Lead') teamLeaderName = profile.name;
+        teamMembers.push({ name: profile.name, email: profile.email, role });
       }
-      
-      // Sort so Team Lead is always first
       teamMembers.sort((a, b) => (a.role === 'Team Lead' ? -1 : b.role === 'Team Lead' ? 1 : 0));
 
       for (const uid of allTeamUserIds) {
@@ -1659,21 +1651,25 @@ exports.addTeamMember = async (req, res) => {
       throw insertErr;
     }
 
-    // Notify user
+    // Notify invited member
     try {
       const dateStr = new Date(event.date).toLocaleDateString();
+      const leaderProfile = await resolveUserProfile(userId);
       await notifyUser({
         recipientId: memberId,
         title: 'New Team Invitation',
-        message: `You have been invited to join team "${team.name}" for "${event.title}".`,
+        message: `You have been invited by ${leaderProfile.name} to join team "${team.name}" for "${event.title}". Please accept or reject this invitation.`,
         type: 'info',
         eventId: event.id,
         emailSubject: `Team Invitation – ${event.title}`,
         emailData: {
           eventName: event.title,
           date: dateStr,
+          venue: event.venue || 'TBA',
           teamName: team.name,
-          status: 'Pending Acceptance'
+          teamLeader: leaderProfile.name,
+          status: 'Pending Acceptance',
+          instructions: 'Log in to your Avento dashboard to accept or reject this invitation.'
         }
       });
     } catch (notifErr) {
