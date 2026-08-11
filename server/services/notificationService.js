@@ -1,13 +1,19 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const nodemailer = require('nodemailer');
 const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  family: 4,
   connectionTimeout: 15000,
   greetingTimeout: 10000,
   socketTimeout: 30000,
