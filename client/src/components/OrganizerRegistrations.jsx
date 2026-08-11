@@ -76,13 +76,21 @@ const OrganizerRegistrations = ({ eventId, event }) => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {teamList.map(team => {
-              const acceptedMembers = team.members.filter(m => m.status === 'registered');
-              const pendingMembers = team.members.filter(m => m.status === 'pending');
-              const rejectedMembers = team.members.filter(m => m.status === 'rejected');
-              const expiredMembers = team.members.filter(m => m.status === 'expired');
+              const leaderId = team.leader_id;
+              const acceptedUserIds = new Set();
+              if (leaderId) acceptedUserIds.add(String(leaderId));
+              (team.members || []).forEach(m => {
+                if (m.status === 'registered') {
+                  acceptedUserIds.add(String(m.user_id || m.userId));
+                }
+              });
+              const acceptedCount = acceptedUserIds.size;
+              const pendingMembers = (team.members || []).filter(m => m.status === 'pending' && String(m.user_id || m.userId) !== String(leaderId));
+              const rejectedMembers = (team.members || []).filter(m => m.status === 'rejected');
+              const expiredMembers = (team.members || []).filter(m => m.status === 'expired');
 
               const isFinalized = event.registration_deadline && new Date() > new Date(event.registration_deadline);
-              const meetsMinRequirement = acceptedMembers.length >= (event.min_team_size || 1);
+              const meetsMinRequirement = acceptedCount >= (event.min_team_size || 1);
 
               return (
                 <div key={team.id} className="glass-panel p-6 rounded-2xl border border-slate-200/60 flex flex-col hover:shadow-md transition-shadow">
@@ -116,7 +124,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
 
                   <div className="flex gap-2 mb-4 flex-wrap">
                     <div className="px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100 flex flex-col items-center flex-1">
-                      <span className="text-lg font-black text-emerald-600">{acceptedMembers.length}</span>
+                      <span className="text-lg font-black text-emerald-600">{acceptedCount}</span>
                       <span className="text-[10px] text-emerald-700 font-bold uppercase">Accepted</span>
                     </div>
                     <div className="px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-100 flex flex-col items-center flex-1">

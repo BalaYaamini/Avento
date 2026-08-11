@@ -209,9 +209,17 @@ const Workspace = () => {
     setIsDetailsModalOpen(true);
   };
 
+  const canAssignTasks = () => {
+    if (!event || !user) return false;
+    const isAdmin = user.roles?.includes('admin') || user.role === 'admin';
+    const isFacultyRole = user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer') || user.role === 'faculty' || user.role === 'faculty_organizer';
+    const isEventFaculty = String(user.id) === String(event.faculty_id);
+    const isFacultyOrg = (organizers || []).some(org => String(org.userId) === String(user.id) && (org.category === 'Faculty' || org.category === 'Faculty Organizer'));
+    return isAdmin || (isFacultyRole && (isEventFaculty || isFacultyOrg));
+  };
+
   const hasFullAccess = () => {
-    if (!event) return false;
-    return user.roles.includes('admin') || user.id === event.faculty_id || user.id === event.student_organizer_id || user.id === event.proposed_by;
+    return canAssignTasks();
   };
 
   // Stats

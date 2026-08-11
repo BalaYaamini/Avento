@@ -70,10 +70,16 @@ const startRegistrationClosingJob = () => {
       } else if (allEventTeams && allEventTeams.length > 0) {
         for (const team of allEventTeams) {
           const minSize = team.events?.min_team_size || 1;
-          const acceptedMembers = team.event_registrations ? team.event_registrations.filter(r => r.status === 'registered') : [];
+          const leaderId = team.leader_id;
+          const acceptedRegs = team.event_registrations ? team.event_registrations.filter(r => r.status === 'registered') : [];
+          const acceptedUserIds = new Set(acceptedRegs.map(r => String(r.user_id)));
+          if (leaderId) {
+            acceptedUserIds.add(String(leaderId));
+          }
+          const totalAcceptedCount = acceptedUserIds.size;
           
-          if (acceptedMembers.length < minSize) {
-            console.log(`[RegistrationClosingJob] Disqualifying team ${team.id} (${team.name}) - Size ${acceptedMembers.length} < Min ${minSize}`);
+          if (totalAcceptedCount < minSize) {
+            console.log(`[RegistrationClosingJob] Disqualifying team ${team.id} (${team.name}) - Size ${totalAcceptedCount} < Min ${minSize}`);
             
             // 1. Delete all registrations
             await supabase.from('event_registrations').delete().eq('team_id', team.id);

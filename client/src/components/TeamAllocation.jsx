@@ -421,11 +421,11 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         <td className="px-6 py-4">
                           {team.isAllocated ? (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                              Allocated
+                              Allocation Assigned
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-amber-500/10 text-amber-500 border-amber-500/20">
-                              Pending
+                              Pending Allocation
                             </span>
                           )}
                         </td>

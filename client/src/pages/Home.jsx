@@ -385,8 +385,16 @@ const Home = () => {
 
     if (!pendingReg) return null;
 
-    const leaderId = pendingReg.teamDetails?.leader_id || pendingReg.teamId?.leader_id;
-    const acceptedCount = pendingReg.teamDetails?.members?.filter(m => m.status === 'registered' || String(m.id) === String(leaderId)).length || 0;
+    const leaderId = pendingReg.teamDetails?.leader_id || pendingReg.teamId?.leader_id || pendingReg.user_id;
+    const members = pendingReg.teamDetails?.members || [];
+    const acceptedUserIds = new Set();
+    if (leaderId) acceptedUserIds.add(String(leaderId));
+    members.forEach(m => {
+      if (m.status === 'registered') {
+        acceptedUserIds.add(String(m.id || m.user_id));
+      }
+    });
+    const acceptedCount = acceptedUserIds.size;
     const minRequired = event.min_team_size || 1;
     const isReady = acceptedCount >= minRequired;
     
@@ -399,6 +407,8 @@ const Home = () => {
     if (!user) return false;
     const userId = user.id || user._id;
     if (!userId) return false;
+
+    if (user.roles?.includes('admin') || user.role === 'admin') return true;
 
     if (evt.organizerIds && Array.isArray(evt.organizerIds)) {
       if (evt.organizerIds.some(id => String(id) === String(userId))) {

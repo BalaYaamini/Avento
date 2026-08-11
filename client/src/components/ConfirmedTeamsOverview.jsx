@@ -45,7 +45,8 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
           'Member Name': member.name,
           'Roll Number': member.rollNumber,
           'Email ID': member.email,
-          'Department': member.department
+          'Department': member.department,
+          'Attendance Status': member.attendanceStatus === 'Present' ? 'Attendance Marked' : 'Not Marked'
         });
       });
     });
@@ -64,6 +65,7 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
       { wch: 20 }, // Roll Number
       { wch: 30 }, // Email ID
       { wch: 30 }, // Department
+      { wch: 20 }, // Attendance Status
     ];
     worksheet['!cols'] = colWidths;
 
@@ -156,12 +158,23 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
             <div className="divide-y divide-gray-50">
               {team.members.map((member) => (
                 <div key={member.userId} className="p-4 sm:px-6 hover:bg-gray-50/50 transition-colors">
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-gray-900">{member.name}</span>
                       {member.userId === team.leaderId && (
                         <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">
                           Team Leader
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      {member.attendanceStatus === 'Present' ? (
+                        <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200 flex items-center gap-1">
+                          <span>✓</span> Attendance Marked
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 bg-gray-100 text-gray-500 text-xs font-medium rounded-full border border-gray-200">
+                          Not Marked
                         </span>
                       )}
                     </div>

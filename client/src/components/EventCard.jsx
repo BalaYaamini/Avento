@@ -182,7 +182,75 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               )}
             </div>
 
-            {isFull ? (
+            {isOrganizer ? (
+              <div className="w-full flex flex-col gap-2">
+                {isFull && (
+                  <button
+                    disabled
+                    className="w-full px-4 py-2.5 text-xs font-bold rounded-2xl bg-pastel-coral/20 text-red-500 border border-pastel-coral cursor-not-allowed uppercase tracking-wider text-center"
+                  >
+                    🔴 SLOTS FULL — Registration Closed
+                  </button>
+                )}
+                <Link
+                  to={`/workspace/${event._id || event.id}`}
+                  className="w-full btn-primary px-4 py-2.5 text-sm font-bold font-heading rounded-2xl shadow-pastel-glow flex items-center justify-center gap-2 bg-gradient-to-r from-pastel-pink to-pastel-lavender text-white hover:opacity-90 transition-all text-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  Workspace
+                </Link>
+              </div>
+            ) : isRegistered ? (
+              <div className="w-full flex flex-col gap-1.5">
+                <button
+                  disabled
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-mint/20 text-green-600 border border-pastel-mint cursor-not-allowed"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  {isFull ? 'REGISTERED · SLOTS FULL' : 'Registered!'}
+                </button>
+                {event.registration_type !== 'team' && (!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
+                  <button
+                    type="button"
+                    onClick={onCancelRegister}
+                    className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
+                  >
+                    Cancel Registration
+                  </button>
+                )}
+              </div>
+            ) : isPendingRegistration ? (
+              <div className="w-full flex flex-col gap-1.5">
+                {isFull && (
+                  <div className="w-full px-4 py-1.5 text-[10px] font-bold rounded-xl bg-pastel-coral/20 text-red-500 border border-pastel-coral text-center uppercase tracking-wider mb-0.5">
+                    🔴 SLOTS FULL
+                  </div>
+                )}
+                <button
+                  disabled
+                  className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border cursor-not-allowed ${
+                    isPendingRegistration === 'Ready for Team Confirmation'
+                      ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+                      : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                  }`}
+                >
+                  {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation' : '🟡 Waiting for Member Approval'}
+                </button>
+                {(!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
+                  <button
+                    type="button"
+                    onClick={onCancelRegister}
+                    className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
+                  >
+                    Cancel Registration
+                  </button>
+                )}
+              </div>
+            ) : isFull ? (
               <button
                 disabled
                 className="w-full px-4 py-2.5 text-xs font-bold rounded-2xl bg-pastel-coral/20 text-red-500 border border-pastel-coral cursor-not-allowed uppercase tracking-wider text-center"
@@ -212,60 +280,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
             ) : (
               <>
                 {/* Main Action Button */}
-                {isOrganizer ? (
-                  <Link
-                    to={`/workspace/${event._id || event.id}`}
-                    className="w-full btn-primary px-4 py-2.5 text-sm font-bold font-heading rounded-2xl shadow-pastel-glow flex items-center justify-center gap-2 bg-gradient-to-r from-pastel-pink to-pastel-lavender text-white hover:opacity-90 transition-all text-center"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                    Workspace
-                  </Link>
-                ) : isRegistered ? (
-                  <div className="w-full flex flex-col gap-1.5">
-                    <button
-                      disabled
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-mint/20 text-green-600 border border-pastel-mint cursor-not-allowed"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      Registered!
-                    </button>
-                    {event.registration_type !== 'team' && (!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
-                      <button
-                        type="button"
-                        onClick={onCancelRegister}
-                        className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
-                      >
-                        Cancel Registration
-                      </button>
-                    )}
-                  </div>
-                ) : isPendingRegistration ? (
-                  <div className="w-full flex flex-col gap-1.5">
-                    <button
-                      disabled
-                      className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border cursor-not-allowed ${
-                        isPendingRegistration === 'Ready for Team Confirmation'
-                          ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                          : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                      }`}
-                    >
-                      {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation' : '🟡 Waiting for Member Approval'}
-                    </button>
-                    {(!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
-                      <button
-                        type="button"
-                        onClick={onCancelRegister}
-                        className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
-                      >
-                        Cancel Registration
-                      </button>
-                    )}
-                  </div>
-                ) : !isActive ? (
+                {!isActive ? (
                   <button
                     disabled
                     className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
@@ -292,27 +307,13 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                 {/* Join organizing team button */}
                 {isActive && joinTeamEnabled && !isOrganizer && (
                   <div className="w-full mt-1">
-                    {isOrganizer ? (
-                      <button
-                        disabled
-                        className="w-full px-4 py-2.5 text-xs font-bold rounded-2xl bg-pastel-lavender/10 text-pastel-lavender border border-pastel-lavender/30 cursor-not-allowed"
-                      >
-                        Organizing
-                      </button>
-                    ) : requestStatus === 'pending' ? (
+                    {requestStatus === 'pending' ? (
                       <button
                         disabled
                         className="w-full px-4 py-2.5 text-xs font-bold rounded-2xl bg-pastel-lavender/10 text-pastel-lavender border border-pastel-lavender/30 cursor-not-allowed flex items-center justify-center gap-2"
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-pastel-lavender animate-pulse" />
                         Request Pending
-                      </button>
-                    ) : isRegistered ? (
-                      <button
-                        disabled
-                        className="w-full px-4 py-2.5 text-xs font-bold rounded-2xl bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
-                      >
-                        Join Team
                       </button>
                     ) : (
                       <button

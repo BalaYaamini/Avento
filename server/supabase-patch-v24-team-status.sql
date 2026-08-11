@@ -85,10 +85,13 @@ BEGIN
     FROM public.events
     WHERE id = v_event_id;
 
-    -- 3. Check accepted members count
-    SELECT COUNT(*) INTO v_accepted_members
-    FROM public.event_registrations
-    WHERE team_id = p_team_id AND status = 'registered';
+    -- 3. Check accepted members count (Team Leader + Accepted Team Members)
+    SELECT COUNT(DISTINCT user_id) INTO v_accepted_members
+    FROM (
+        SELECT user_id FROM public.event_registrations WHERE team_id = p_team_id AND status = 'registered'
+        UNION
+        SELECT p_leader_id AS user_id
+    ) t;
 
     IF v_accepted_members < v_min_size THEN
         RAISE EXCEPTION 'Minimum team size not reached yet.';

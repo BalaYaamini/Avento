@@ -27,8 +27,9 @@ exports.getEventAllocations = async (req, res) => {
     // Fetch confirmed teams for this event
     const { data: teams, error: teamErr } = await supabase
       .from('event_teams')
-      .select('id, name, leader_id')
-      .eq('event_id', eventId);
+      .select('id, name, leader_id, status')
+      .eq('event_id', eventId)
+      .in('status', ['registered', 'confirmed']);
 
     if (teamErr) throw teamErr;
 
@@ -82,7 +83,11 @@ exports.getAllocationTemplateData = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const { data: teams } = await supabase.from('event_teams').select('id, name').eq('event_id', eventId);
+    const { data: teams } = await supabase
+      .from('event_teams')
+      .select('id, name, status')
+      .eq('event_id', eventId)
+      .in('status', ['registered', 'confirmed']);
 
     let allocations = [];
     const { data: allocData } = await supabase.from('team_allocations').select('*').eq('event_id', eventId);
@@ -128,8 +133,12 @@ exports.saveTeamAllocations = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Fetch valid team IDs for this event ONLY to strictly enforce event scoping
-    const { data: validTeams } = await supabase.from('event_teams').select('id, name').eq('event_id', eventId);
+    // Fetch valid CONFIRMED team IDs for this event ONLY to strictly enforce event scoping
+    const { data: validTeams } = await supabase
+      .from('event_teams')
+      .select('id, name, status')
+      .eq('event_id', eventId)
+      .in('status', ['registered', 'confirmed']);
     const validTeamMap = new Map((validTeams || []).map(t => [t.id, t.name]));
 
     const seenTeams = new Set();
@@ -142,9 +151,9 @@ exports.saveTeamAllocations = async (req, res) => {
       const venueRoom = String(item.venueRoom || item['Venue / Room'] || '').trim();
       const problemStatement = String(item.problemStatement || item['Problem Statement'] || '').trim();
 
-      // Team Validation: Must exist in current event
+      // Team Validation: Must exist in current event and be confirmed
       if (!teamId || !validTeamMap.has(teamId)) {
-        return res.status(400).json({ message: `Team not found for this event: ${teamName} (${teamId || 'No ID'})` });
+        return res.status(400).json({ message: `Team not found or is not a confirmed team for this event: ${teamName} (${teamId || 'No ID'})` });
       }
 
       // Venue / Room Validation
@@ -198,19 +207,54 @@ exports.getMyTeamAllocation = async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user.id;
 
-    // Find student's team registration for this event
+    // Check 1: Find student's team registration for this event
     const { data: registration } = await supabase
       .from('event_registrations')
-      .select('team_id, status')
+      .select('team_id, status, attendance_status')
       .eq('event_id', eventId)
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!registration || !registration.team_id) {
-      return res.json({ allocation: null });
+    if (!registration || !registration.team_id || registration.status !== 'registered') {
+      return res.json({
+        allocation: null,
+        teamConfirmed: false,
+        checkedIn: false,
+        message: 'No active team registration found.'
+      });
     }
 
-    // Fetch team allocation
+    // Check 2: Check if student's team is CONFIRMED
+    const { data: team } = await supabase
+      .from('event_teams')
+      .select('id, name, status')
+      .eq('id', registration.team_id)
+      .maybeSingle();
+
+    const isTeamConfirmed = team && (team.status === 'registered' || team.status === 'confirmed');
+
+    if (!isTeamConfirmed) {
+      return res.json({
+        allocation: null,
+        teamConfirmed: false,
+        checkedIn: registration.attendance_status === 'Present',
+        message: 'Team registration is not confirmed yet.'
+      });
+    }
+
+    // Check 3: Check if student has successfully checked in via QR scan for THIS event
+    const isCheckedIn = registration.attendance_status === 'Present';
+
+    if (!isCheckedIn) {
+      return res.json({
+        allocation: null,
+        teamConfirmed: true,
+        checkedIn: false,
+        message: 'Allocation will be available after check-in.'
+      });
+    }
+
+    // If all 3 conditions pass, fetch team allocation details
     const { data: alloc, error: allocErr } = await supabase
       .from('team_allocations')
       .select('venue_room, problem_statement, updated_at')
@@ -219,23 +263,24 @@ exports.getMyTeamAllocation = async (req, res) => {
       .maybeSingle();
 
     if (allocErr || !alloc) {
-      return res.json({ allocation: null });
+      return res.json({
+        allocation: null,
+        teamConfirmed: true,
+        checkedIn: true,
+        message: 'Allocation has not been assigned by organizers yet.'
+      });
     }
-
-    // Fetch team name
-    const { data: team } = await supabase
-      .from('event_teams')
-      .select('name')
-      .eq('id', registration.team_id)
-      .maybeSingle();
 
     res.json({
       allocation: {
         teamName: team ? team.name : 'Your Team',
         venueRoom: alloc.venue_room,
         problemStatement: alloc.problem_statement,
-        updatedAt: alloc.updated_at
-      }
+        updatedAt: alloc.updated_at,
+        statusText: 'Allocation Assigned'
+      },
+      teamConfirmed: true,
+      checkedIn: true
     });
   } catch (err) {
     console.error('getMyTeamAllocation error:', err.message);

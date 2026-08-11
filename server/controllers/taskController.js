@@ -4,11 +4,48 @@ const supabase = require('../config/supabaseClient');
 exports.getEventTasks = async (req, res) => {
   try {
     const { eventId } = req.params;
-    
-    console.log("Supabase client:", supabase);
+    const userId = req.user.id;
 
-    // Optional: add authorization check to ensure user is part of the event workspace
-    // The workspace frontend handles primary visibility, but RLS/backend should be secure.
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('id, faculty_id, student_organizer_id, proposed_by, created_by')
+      .eq('id', eventId)
+      .maybeSingle();
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const isAdmin = req.user.roles?.includes('admin') || req.user.role === 'admin';
+    const isFaculty = String(userId) === String(event.faculty_id);
+    const isOrganizer = String(userId) === String(event.student_organizer_id) ||
+                        String(userId) === String(event.proposed_by) ||
+                        String(userId) === String(event.created_by);
+
+    let isMember = false;
+    if (!isAdmin && !isFaculty && !isOrganizer) {
+      const { data: org } = await supabase
+        .from('event_organizers')
+        .select('id')
+        .eq('event_id', eventId)
+        .eq('student_id', userId)
+        .maybeSingle();
+      if (org) isMember = true;
+
+      if (!isMember) {
+        const { data: mem } = await supabase
+          .from('event_members')
+          .select('id')
+          .eq('event_id', eventId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (mem) isMember = true;
+      }
+    }
+
+    if (!isAdmin && !isFaculty && !isOrganizer && !isMember) {
+      return res.status(403).json({ message: 'Access denied. You do not have permission to view tasks for this event.' });
+    }
 
     const { data: tasks, error } = await supabase
       .from('tasks')
@@ -42,16 +79,55 @@ exports.createTask = async (req, res) => {
   try {
     const { eventId } = req.params;
     const { title, description, category, assigned_to, priority, deadline } = req.body;
-    const userId = req.user.id; // from auth middleware
+    const userId = req.user.id;
 
-    // Ensure only faculty/event head can create tasks
+    // Fetch event details
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('faculty_id, student_organizer_id, date')
+      .select('id, faculty_id, student_organizer_id, proposed_by, created_by, date')
       .eq('id', eventId)
-      .single();
+      .maybeSingle();
 
-    if (eventError) throw eventError;
+    if (eventError || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    // Permission Enforcement:
+    // Admin -> ALLOWED
+    // Faculty Coordinator -> ALLOWED (must be faculty role AND associated with this event)
+    // Student Coordinator -> DENIED
+    const isAdmin = req.user.roles?.includes('admin') || req.user.role === 'admin';
+    const isFacultyRole = req.user.roles?.includes('faculty') || req.user.roles?.includes('faculty_organizer') || req.user.role === 'faculty' || req.user.role === 'faculty_organizer';
+
+    let isEventFaculty = String(userId) === String(event.faculty_id);
+    if (!isEventFaculty && isFacultyRole) {
+      if (String(userId) === String(event.proposed_by) || String(userId) === String(event.created_by) || String(userId) === String(event.student_organizer_id)) {
+        isEventFaculty = true;
+      } else {
+        const { data: orgRec } = await supabase
+          .from('event_organizers')
+          .select('id')
+          .eq('event_id', eventId)
+          .eq('student_id', userId)
+          .maybeSingle();
+        if (orgRec) isEventFaculty = true;
+        else {
+          const { data: memRec } = await supabase
+            .from('event_members')
+            .select('id')
+            .eq('event_id', eventId)
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (memRec) isEventFaculty = true;
+        }
+      }
+    }
+
+    const isAuthorizedFacultyCoordinator = isFacultyRole && (isEventFaculty || !event.faculty_id);
+
+    if (!isAdmin && !isAuthorizedFacultyCoordinator) {
+      return res.status(403).json({ message: 'Access denied. Student Coordinators are not allowed to create or assign tasks. Only Admins and Faculty Coordinators can create tasks.' });
+    }
 
     if (deadline) {
       const d = new Date(deadline);
@@ -62,10 +138,6 @@ exports.createTask = async (req, res) => {
       if (d < today || d > eDate) {
         return res.status(400).json({ message: 'Invalid task due date. Must be between today and the event date.' });
       }
-    }
-
-    if (req.user.role !== 'admin' && userId !== event.faculty_id && userId !== event.student_organizer_id) {
-      return res.status(403).json({ message: 'Only the Faculty Coordinator or Event Head can create tasks.' });
     }
 
     const { data: task, error } = await supabase
@@ -113,38 +185,72 @@ exports.updateTask = async (req, res) => {
     // Get task details first
     const { data: task, error: taskError } = await supabase
       .from('tasks')
-      .select('*, events(faculty_id, student_organizer_id, date)')
+      .select('*, events(id, faculty_id, student_organizer_id, date, proposed_by, created_by)')
       .eq('id', taskId)
-      .single();
+      .maybeSingle();
 
-    if (taskError) throw taskError;
+    if (taskError || !task) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
 
-    if (deadline !== undefined && deadline !== null) {
+    const eventId = task.event_id;
+    const event = task.events;
+
+    if (deadline !== undefined && deadline !== null && deadline !== '') {
       const d = new Date(deadline);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const eDate = new Date(task.events.date);
+      const eDate = new Date(event.date);
       eDate.setHours(23, 59, 59, 999);
       if (d < today || d > eDate) {
         return res.status(400).json({ message: 'Invalid task due date. Must be between today and the event date.' });
       }
     }
 
-    const isFaculty = userId === task.events.faculty_id;
-    const isEventHead = userId === task.events.student_organizer_id;
-    const isAdmin = req.user.role === 'admin';
-    const isAssignedUser = userId === task.assigned_to;
+    const isAdmin = req.user.roles?.includes('admin') || req.user.role === 'admin';
+    const isFacultyRole = req.user.roles?.includes('faculty') || req.user.roles?.includes('faculty_organizer') || req.user.role === 'faculty' || req.user.role === 'faculty_organizer';
 
-    // Organizers can only update status if they are assigned
-    if (!isAdmin && !isFaculty && !isEventHead) {
-      if (!isAssignedUser) {
-        return res.status(403).json({ message: 'You are not authorized to update this task.' });
+    let isEventFaculty = String(userId) === String(event.faculty_id);
+    if (!isEventFaculty && isFacultyRole) {
+      if (String(userId) === String(event.proposed_by) || String(userId) === String(event.created_by) || String(userId) === String(event.student_organizer_id)) {
+        isEventFaculty = true;
+      } else {
+        const { data: orgRec } = await supabase
+          .from('event_organizers')
+          .select('id')
+          .eq('event_id', eventId)
+          .eq('student_id', userId)
+          .maybeSingle();
+        if (orgRec) isEventFaculty = true;
+        else {
+          const { data: memRec } = await supabase
+            .from('event_members')
+            .select('id')
+            .eq('event_id', eventId)
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (memRec) isEventFaculty = true;
+        }
       }
-      
-      // If it's an assigned organizer, they can ONLY update the status
+    }
+
+    const isAuthorizedFacultyCoordinator = isFacultyRole && (isEventFaculty || !event.faculty_id);
+
+    // If NOT Admin and NOT Faculty Coordinator (e.g. Student Coordinator):
+    // They are allowed to update task status, but NOT reassign or edit task creation parameters
+    if (!isAdmin && !isAuthorizedFacultyCoordinator) {
+      // Check if trying to change assigned_to
+      if (assigned_to !== undefined && assigned_to !== task.assigned_to) {
+        return res.status(403).json({ message: 'Student Coordinators are not allowed to reassign tasks.' });
+      }
+
+      // Update status only
       const { data: updatedTask, error } = await supabase
         .from('tasks')
-        .update({ status, updated_at: new Date() })
+        .update({
+          status: status !== undefined ? status : task.status,
+          updated_at: new Date()
+        })
         .eq('id', taskId)
         .select('*')
         .single();
@@ -164,7 +270,7 @@ exports.updateTask = async (req, res) => {
       return res.status(200).json({ message: 'Task status updated', task: taskWithProfile });
     }
 
-    // Faculty/Head/Admin can update all fields
+    // Admin & Faculty Coordinator: Full update allowed
     const { data: updatedTask, error } = await supabase
       .from('tasks')
       .update({
@@ -208,18 +314,48 @@ exports.deleteTask = async (req, res) => {
 
     const { data: task, error: taskError } = await supabase
       .from('tasks')
-      .select('events(faculty_id, student_organizer_id)')
+      .select('event_id, events(id, faculty_id, student_organizer_id, proposed_by, created_by)')
       .eq('id', taskId)
-      .single();
+      .maybeSingle();
 
-    if (taskError) throw taskError;
+    if (taskError || !task) {
+      return res.status(404).json({ message: 'Task not found.' });
+    }
 
-    const isFaculty = userId === task.events.faculty_id;
-    const isEventHead = userId === task.events.student_organizer_id;
-    const isAdmin = req.user.role === 'admin';
+    const eventId = task.event_id;
+    const event = task.events;
 
-    if (!isAdmin && !isFaculty && !isEventHead) {
-      return res.status(403).json({ message: 'Only the Faculty Coordinator or Event Head can delete tasks.' });
+    const isAdmin = req.user.roles?.includes('admin') || req.user.role === 'admin';
+    const isFacultyRole = req.user.roles?.includes('faculty') || req.user.roles?.includes('faculty_organizer') || req.user.role === 'faculty' || req.user.role === 'faculty_organizer';
+
+    let isEventFaculty = String(userId) === String(event.faculty_id);
+    if (!isEventFaculty && isFacultyRole) {
+      if (String(userId) === String(event.proposed_by) || String(userId) === String(event.created_by) || String(userId) === String(event.student_organizer_id)) {
+        isEventFaculty = true;
+      } else {
+        const { data: orgRec } = await supabase
+          .from('event_organizers')
+          .select('id')
+          .eq('event_id', eventId)
+          .eq('student_id', userId)
+          .maybeSingle();
+        if (orgRec) isEventFaculty = true;
+        else {
+          const { data: memRec } = await supabase
+            .from('event_members')
+            .select('id')
+            .eq('event_id', eventId)
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (memRec) isEventFaculty = true;
+        }
+      }
+    }
+
+    const isAuthorizedFacultyCoordinator = isFacultyRole && (isEventFaculty || !event.faculty_id);
+
+    if (!isAdmin && !isAuthorizedFacultyCoordinator) {
+      return res.status(403).json({ message: 'Access denied. Only Admins and Faculty Coordinators can delete tasks.' });
     }
 
     const { error } = await supabase

@@ -1201,7 +1201,28 @@ exports.confirmTeamRegistration = async (req, res) => {
       }
     }
 
-    // 5. Save the leader contact number
+    // 5. STRICT CHECK: Minimum Team Size (1 Unique Leader + Unique Accepted Team Members)
+    const minTeamSize = event.min_team_size || 1;
+    const { data: teamRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id, status')
+      .eq('team_id', teamId);
+
+    const acceptedUserIds = new Set();
+    if (leaderId) acceptedUserIds.add(String(leaderId));
+    if (teamRegs && Array.isArray(teamRegs)) {
+      teamRegs.forEach(r => {
+        if (r.status === 'registered') {
+          acceptedUserIds.add(String(r.user_id));
+        }
+      });
+    }
+
+    if (acceptedUserIds.size < minTeamSize) {
+      return res.status(400).json({ message: 'Minimum team size not reached yet.' });
+    }
+
+    // 6. Save the leader contact number
     const { error: contactErr } = await supabase
       .from('event_teams')
       .update({ leader_contact_number: leaderContactNumber })
@@ -1211,7 +1232,7 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: contactErr.message || 'Failed to save team leader contact number.' });
     }
 
-    // 6. Call atomic RPC for DB row locking & final confirmation
+    // 7. Call atomic RPC for DB row locking & final confirmation
     const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
       p_team_id: teamId,
       p_leader_id: leaderId
@@ -1222,10 +1243,15 @@ exports.confirmTeamRegistration = async (req, res) => {
       if (rpcMsg.includes('Maximum number of teams') || rpcMsg.includes('max_teams')) {
         return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
       }
-      return res.status(400).json({ message: rpcMsg || 'Failed to confirm team registration.' });
+      if (rpcMsg.includes('Minimum team size not reached yet') && acceptedUserIds.size >= minTeamSize) {
+        await supabase.from('event_teams').update({ status: 'registered' }).eq('id', teamId);
+        await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', event.id);
+      } else {
+        return res.status(400).json({ message: rpcMsg || 'Failed to confirm team registration.' });
+      }
     }
 
-    // 7. Update leader's registration status ONLY AFTER RPC succeeds
+    // 8. Update leader's registration status ONLY AFTER confirmation succeeds
     const { error: regErr } = await supabase
       .from('event_registrations')
       .update({ status: 'registered' })
@@ -1299,11 +1325,11 @@ exports.getConfirmedTeams = async (req, res) => {
 
     const teamIds = teams.map(t => t.id);
 
-    // Fetch confirmed registrations for these teams with user profiles
+    // Fetch confirmed registrations for these teams with user profiles & attendance status
     const { data: registrations, error: regErr } = await supabase
       .from('event_registrations')
       .select(`
-        id, team_id, user_id,
+        id, team_id, user_id, attendance_status,
         profiles(id, name, email, department, roll_number)
       `)
       .in('team_id', teamIds)
@@ -1319,7 +1345,8 @@ exports.getConfirmedTeams = async (req, res) => {
         name: r.profiles?.name || 'Unknown',
         email: r.profiles?.email || 'N/A',
         department: r.profiles?.department || 'N/A',
-        rollNumber: r.profiles?.roll_number || 'N/A'
+        rollNumber: r.profiles?.roll_number || 'N/A',
+        attendanceStatus: r.attendance_status || 'Absent'
       }));
 
       return {

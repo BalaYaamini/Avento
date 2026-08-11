@@ -108,8 +108,8 @@ const StudentRegistrations = () => {
         if (eventId && !allocMap[eventId]) {
           try {
             const res = await axios.get(`/api/allocations/event/${eventId}/my-allocation`);
-            if (res.data && res.data.allocation) {
-              allocMap[eventId] = res.data.allocation;
+            if (res.data) {
+              allocMap[eventId] = res.data;
             }
           } catch (err) {
             // Silence allocation fetch error
@@ -578,7 +578,16 @@ const StudentRegistrations = () => {
                             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
                               {reg.teamId && reg.teamDetails?.teamStatus === 'pending' ? (
                                 (() => {
-                                  const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                  const leaderId = reg.teamDetails?.leader_id || reg.teamId?.leader_id || reg.user_id;
+                                  const members = reg.teamDetails?.members || [];
+                                  const acceptedUserIds = new Set();
+                                  if (leaderId) acceptedUserIds.add(String(leaderId));
+                                  members.forEach(m => {
+                                    if (m.status === 'registered') {
+                                      acceptedUserIds.add(String(m.id || m.user_id));
+                                    }
+                                  });
+                                  const acceptedCount = acceptedUserIds.size;
                                   const minRequired = evt.min_team_size || 1;
                                   const isReady = acceptedCount >= minRequired;
                                   return isReady ? (
@@ -694,7 +703,16 @@ const StudentRegistrations = () => {
                                           Edit Team
                                         </button>
                                         {(() => {
-                                           const acceptedCount = reg.teamDetails?.members?.filter(m => m.status === 'registered' || m.id === reg.teamId.leader_id).length || 0;
+                                           const leaderId = reg.teamDetails?.leader_id || reg.teamId?.leader_id || reg.user_id;
+                                           const members = reg.teamDetails?.members || [];
+                                           const acceptedUserIds = new Set();
+                                           if (leaderId) acceptedUserIds.add(String(leaderId));
+                                           members.forEach(m => {
+                                             if (m.status === 'registered') {
+                                               acceptedUserIds.add(String(m.id || m.user_id));
+                                             }
+                                           });
+                                           const acceptedCount = acceptedUserIds.size;
                                            const minRequired = evt.min_team_size || 1;
                                            const isReady = acceptedCount >= minRequired;
                                            const deadlinePassed = evt.registration_deadline && new Date() > new Date(evt.registration_deadline);
@@ -743,23 +761,64 @@ const StudentRegistrations = () => {
                       {/* Team Allocation Card (Student View) */}
                       {(() => {
                         const eventId = evt.id || evt._id;
-                        const alloc = teamAllocations[eventId];
-                        if (!alloc) return null;
+                        const allocData = teamAllocations[eventId];
+                        if (!allocData) return null;
 
+                        const { allocation, teamConfirmed, checkedIn, message } = allocData;
+
+                        // Only show for confirmed teams
+                        if (!teamConfirmed) return null;
+
+                        // If team is confirmed but student hasn't scanned QR / checked in yet
+                        if (!checkedIn) {
+                          return (
+                            <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in">
+                              <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>📍</span>
+                                <span>Event Allocation</span>
+                              </div>
+                              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium mt-1">
+                                Allocation will be available after check-in.
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        // If checked in, but allocation not assigned by organizers yet
+                        if (!allocation) {
+                          return (
+                            <div className="mt-4 p-4 bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/20 rounded-2xl animate-fade-in">
+                              <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>📍</span>
+                                <span>Event Allocation</span>
+                              </div>
+                              <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mt-1">
+                                {message || 'Allocation pending from organizers.'}
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        // Team confirmed + QR checked in + Allocation assigned!
                         return (
                           <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in">
-                            <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                              <span>🎯</span>
-                              <span>Your Event Allocation ({alloc.teamName})</span>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>🎯</span>
+                                <span>Your Event Allocation ({allocation.teamName})</span>
+                              </div>
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
+                                Allocation Assigned
+                              </span>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                               <div className="bg-white/60 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/10">
                                 <span className="text-text-secondary font-semibold">📍 Venue / Room: </span>
-                                <span className="font-bold text-text-primary">{alloc.venueRoom}</span>
+                                <span className="font-bold text-text-primary">{allocation.venueRoom}</span>
                               </div>
                               <div className="bg-white/60 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/10">
-                                <span className="text-text-secondary font-semibold">📌 Problem Statement: </span>
-                                <span className="font-bold text-text-primary">{alloc.problemStatement}</span>
+                                <span className="text-text-secondary font-semibold">💡 Problem Statement: </span>
+                                <span className="font-bold text-text-primary">{allocation.problemStatement}</span>
                               </div>
                             </div>
                           </div>

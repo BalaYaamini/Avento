@@ -75,7 +75,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, organizers, hasFullAccess, cu
 
   if (!task) return null;
 
-  const canUpdateStatus = hasFullAccess || task.assigned_to === currentUserId;
+  const canUpdateStatus = true;
   const isAssignedToMe = task.assigned_to === currentUserId;
 
   const priorityColors = {
