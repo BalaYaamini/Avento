@@ -1,14 +1,6 @@
-const { Resend } = require('resend');
+const axios = require('axios');
 const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
-
-let resend = null;
-if (process.env.RESEND_API_KEY) {
-  resend = new Resend(process.env.RESEND_API_KEY);
-  console.log('[EMAIL] Resend API configured');
-} else {
-  console.warn('[EMAIL] RESEND_API_KEY not set - emails will be logged only');
-}
 
 let emailCountToday = 0;
 let lastResetDate = new Date().toDateString();
@@ -21,45 +13,58 @@ const resetDailyCount = () => {
   }
 };
 
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'admin.avento@gmail.com';
+const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Avento';
+
+if (BREVO_API_KEY) {
+  console.log('[EMAIL] Brevo API configured');
+} else {
+  console.warn('[EMAIL] BREVO_API_KEY not set - emails will be logged only');
+}
+
 const verifySMTPConnection = async () => {
-  if (!resend) {
-    console.warn('[EMAIL] Resend not configured - emails will be logged only');
+  if (!BREVO_API_KEY) {
+    console.warn('[EMAIL] Brevo not configured - emails will be logged only');
     return false;
   }
-  console.log('[EMAIL] Resend API ready');
+  console.log('[EMAIL] Brevo API ready');
   return true;
 };
 
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
-  if (!resend) {
+  if (!BREVO_API_KEY) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}`);
     return;
   }
 
   resetDailyCount();
-  if (emailCountToday >= 2000) {
-    console.warn(`[EMAIL] Daily limit reached. Email to ${recipientEmail} queued.`);
+  if (emailCountToday >= 300) {
+    console.warn(`[EMAIL] Daily limit reached (300). Email to ${recipientEmail} queued.`);
     return;
   }
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'Avento <onboarding@resend.dev>',
-      to: recipientEmail,
+    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
+      sender: { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME },
+      to: [{ email: recipientEmail }],
       subject,
-      html: htmlBody,
+      htmlContent: htmlBody,
+    }, {
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      timeout: 15000,
     });
 
-    if (error) {
-      console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${error.message}`);
-      return;
-    }
-
     emailCountToday++;
-    console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | ID: ${data?.id} | Count: ${emailCountToday}/2000`);
-    return data;
+    console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | Count: ${emailCountToday}/300`);
+    return response.data;
   } catch (err) {
-    console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${err.message}`);
+    const errMsg = err.response?.data?.message || err.message;
+    console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${errMsg}`);
   }
 };
 
@@ -93,8 +98,6 @@ const generateEmailHtml = (title, message, data = {}) => {
     ${data.date ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;width:40%;"><strong>Date</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.date}</td></tr>` : ''}
     ${data.time ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Time</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.time}</td></tr>` : ''}
     ${data.venue ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Venue</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.venue}</td></tr>` : ''}
-    ${data.category ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Category</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.category}</td></tr>` : ''}
-    ${data.organizer ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Organizer</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.organizer}</td></tr>` : ''}
     ${data.teamName ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamName}</td></tr>` : ''}
     ${data.teamLeader ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Leader</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamLeader}</td></tr>` : ''}
     ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#c084fc;">${data.registrationId}</td></tr>` : ''}
@@ -104,47 +107,39 @@ const generateEmailHtml = (title, message, data = {}) => {
 
   const notesHtml = data.instructions ? `
 <div style="background-color:#f8fafc;border-radius:12px;padding:16px;margin-top:20px;border-left:4px solid #c084fc;">
-  <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;"><strong>Important Notes:</strong><br>${data.instructions}</p>
+  <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;"><strong>Note:</strong><br>${data.instructions}</p>
 </div>` : '';
 
   const btnHtml = data.eventId ? `
 <div style="text-align:center;margin-top:40px;">
   <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/workspace/${data.eventId}" style="display:inline-block;background:linear-gradient(135deg,#c084fc,#a78bfa);color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:30px;box-shadow:0 4px 15px rgba(167,139,250,0.4);">View Event</a>
-</div>` : `
-<div style="text-align:center;margin-top:40px;">
-  <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}" style="display:inline-block;background:linear-gradient(135deg,#c084fc,#a78bfa);color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:30px;box-shadow:0 4px 15px rgba(167,139,250,0.4);">Open AVENTO</a>
-</div>`;
+</div>` : '';
 
   return `
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Avento Notification</title></head>
-<body style="margin:0;padding:0;font-family:'Quicksand','Nunito','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#fdfbf7;-webkit-font-smoothing:antialiased;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#fdfbf7;padding:40px 20px;">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:sans-serif;background-color:#fdfbf7;">
+  <table width="100%" style="background-color:#fdfbf7;padding:40px 20px;">
     <tr><td align="center">
-      <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.05);">
+      <table style="max-width:600px;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.05);">
         <tr><td style="padding:40px 40px 20px;text-align:center;">
-          <img src="https://joekmqnkpfjuptcgzpmh.supabase.co/storage/v1/object/public/public-assets/avento-logo-public.png" alt="Avento Logo" width="60" style="display:block;margin:0 auto 15px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-          <h1 style="margin:0;font-size:28px;font-weight:700;color:#1e293b;letter-spacing:0.5px;">AVENTO</h1>
-          <p style="margin:5px 0 0;color:#64748b;font-size:14px;font-weight:500;">Event Management Platform</p>
+          <h1 style="margin:0;font-size:28px;font-weight:700;color:#1e293b;">AVENTO</h1>
+          <p style="margin:5px 0 0;color:#64748b;font-size:14px;">Event Management Platform</p>
         </td></tr>
         <tr><td style="padding:0 40px;"><hr style="border:0;border-top:1px solid #f1f5f9;margin:0;"></td></tr>
         <tr><td style="padding:30px 40px;">
-          <h2 style="margin:0 0 10px;font-size:24px;color:#1e293b;font-weight:700;">${title}</h2>
+          <h2 style="margin:0 0 10px;font-size:24px;color:#1e293b;">${title}</h2>
           <p style="margin:0 0 25px;font-size:16px;color:#64748b;line-height:1.6;">
-            ${data.recipientName ? `Hello ${data.recipientName},<br>` : ''}Here's an update regarding your event.
+            ${data.recipientName ? `Hello ${data.recipientName},<br>` : ''}
           </p>
           <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #c084fc;">${message}</p>
           ${eventHtml}${notesHtml}${btnHtml}
         </td></tr>
         <tr><td style="padding:0 40px 30px;">
           <hr style="border:0;border-top:1px solid #f1f5f9;margin:0 0 20px;">
-          <p style="margin:0 0 5px;font-size:14px;font-weight:700;color:#94a3b8;text-align:center;">AVENTO</p>
-          <p style="margin:0 0 15px;font-size:12px;color:#94a3b8;text-align:center;">Smart Campus Event Management</p>
-          <p style="margin:0;font-size:11px;color:#cbd5e1;text-align:center;line-height:1.5;">
-            This is an automated notification from AVENTO. Please do not reply.<br>
-            Timestamp: ${data.timestamp || new Date().toLocaleString()}<br>
-            &copy; ${new Date().getFullYear()} AVENTO. All Rights Reserved.
+          <p style="margin:0;font-size:11px;color:#cbd5e1;text-align:center;">
+            AVENTO - Smart Campus Event Management | ${new Date().toLocaleString()}
           </p>
         </td></tr>
       </table>
@@ -168,9 +163,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
           targetEmail = mongoUser.email;
           targetName = mongoUser.name;
         }
-      } catch (e) {
-        console.log('[NOTIFY] MongoDB lookup failed:', e.message);
-      }
+      } catch (e) {}
 
       if (!targetEmail) {
         try {
@@ -180,43 +173,34 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
             targetEmail = profile.email;
             targetName = profile.name;
           }
-        } catch (e) {
-          console.log('[NOTIFY] Profiles lookup failed:', e.message);
-        }
+        } catch (e) {}
       }
     }
 
-    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && resend;
+    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && BREVO_API_KEY;
 
     if (!targetEmail) {
       console.log('[NOTIFY] No email found for user', recipientId);
       return;
     }
 
-    if (targetEmail && emailEnabled) {
-      const finalSubject = emailSubject || title;
+    if (emailEnabled) {
       const htmlBody = generateEmailHtml(title, message, {
         eventId,
         recipientName: targetName,
         timestamp: new Date().toLocaleString(),
         ...emailData
       });
-
-      await sendEmailNotification({ recipientEmail: targetEmail, subject: finalSubject, htmlBody });
+      await sendEmailNotification({ recipientEmail: targetEmail, subject: emailSubject || title, htmlBody });
     }
   } catch (err) {
-    console.error('[NOTIFY] Error in notifyUser:', err.message);
+    console.error('[NOTIFY] Error:', err.message);
   }
 };
 
 const getEmailStats = () => {
   resetDailyCount();
-  return {
-    sentToday: emailCountToday,
-    dailyLimit: 2000,
-    remaining: 2000 - emailCountToday,
-    configured: !!resend
-  };
+  return { sentToday: emailCountToday, dailyLimit: 300, remaining: 300 - emailCountToday, configured: !!BREVO_API_KEY };
 };
 
 module.exports = {
