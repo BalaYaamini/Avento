@@ -1,5 +1,20 @@
 const supabase = require('../config/supabaseClient');
+const User = require('../models/User');
 const { notifyUser } = require('../services/notificationService');
+
+const resolveUserProfile = async (userId) => {
+  try {
+    const mongoUser = await User.findById(userId).select('name email');
+    if (mongoUser && mongoUser.email) {
+      return { id: userId, name: mongoUser.name, email: mongoUser.email };
+    }
+  } catch (e) {}
+  try {
+    const { data } = await supabase.from('profiles').select('id, name, email').eq('id', userId).maybeSingle();
+    if (data && data.email) return data;
+  } catch (e) {}
+  return { id: userId, name: 'Unknown', email: null };
+};
 
 // Register a user for an event
 exports.registerForEvent = async (req, res) => {
@@ -996,6 +1011,24 @@ exports.acceptTeamInvitation = async (req, res) => {
       throw updateErr;
     }
 
+    // Notify team leader that member accepted
+    try {
+      const { data: teamInfo } = await supabase.from('event_teams').select('name, leader_id, event_id').eq('id', reg.team_id).maybeSingle();
+      const memberProfile = await resolveUserProfile(userId);
+      const eventTitle = event.title || 'the event';
+      await notifyUser({
+        recipientId: teamInfo.leader_id,
+        title: 'Member Joined Team',
+        message: `${memberProfile.name} has accepted the invitation and joined team "${teamInfo.name}" for "${eventTitle}".`,
+        type: 'success',
+        eventId: event.id,
+        emailSubject: `Team Update – ${memberProfile.name} Joined ${teamInfo.name}`,
+        emailData: { eventName: eventTitle, teamName: teamInfo.name, status: 'Member Joined' }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending accept notification:', notifErr.message);
+    }
+
     res.json({ message: 'Team invitation accepted successfully.' });
   } catch (err) {
     res.status(500).json({ message: 'Server error accepting invitation.', error: err.message });
@@ -1038,6 +1071,24 @@ exports.rejectTeamInvitation = async (req, res) => {
       .eq('id', registrationId);
 
     if (delErr) throw delErr;
+
+    // Notify team leader that member rejected
+    try {
+      const { data: teamInfo } = await supabase.from('event_teams').select('name, leader_id, event_id').eq('id', reg.team_id).maybeSingle();
+      const memberProfile = await resolveUserProfile(userId);
+      const eventTitle = event.title || 'the event';
+      await notifyUser({
+        recipientId: teamInfo.leader_id,
+        title: 'Member Rejected Invitation',
+        message: `${memberProfile.name} has rejected the invitation to join team "${teamInfo.name}" for "${eventTitle}".`,
+        type: 'warning',
+        eventId: event.id,
+        emailSubject: `Team Update – ${memberProfile.name} Rejected Invitation`,
+        emailData: { eventName: eventTitle, teamName: teamInfo.name, status: 'Invitation Rejected' }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending reject notification:', notifErr.message);
+    }
 
     res.json({ message: 'Team invitation rejected.' });
   } catch (err) {
@@ -1123,6 +1174,22 @@ exports.leaveTeam = async (req, res) => {
       throw updateErr;
     }
     console.log(`[Leave Team] DB Response: Update successful.`);
+
+    // Notify team leader that member left
+    try {
+      const memberProfile = await resolveUserProfile(userId);
+      await notifyUser({
+        recipientId: teamInfo.leader_id,
+        title: 'Member Left Team',
+        message: `${memberProfile.name} has left team "${teamInfo.name}". You can invite a new member.`,
+        type: 'warning',
+        eventId: teamInfo.event_id,
+        emailSubject: `Team Update – ${memberProfile.name} Left ${teamInfo.name}`,
+        emailData: { eventName: teamInfo.name, teamName: teamInfo.name, status: 'Member Left' }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending leave notification:', notifErr.message);
+    }
 
     console.log('--- LEAVE TEAM REQUEST SUCCESS ---\n');
     res.json({ message: 'Successfully left the team.' });
@@ -1260,6 +1327,31 @@ exports.confirmTeamRegistration = async (req, res) => {
 
     if (regErr) {
       console.error('Error setting leader registration status:', regErr.message);
+    }
+
+    // Notify all confirmed team members
+    try {
+      const { data: confirmedRegs } = await supabase.from('event_registrations').select('user_id').eq('team_id', teamId).eq('status', 'registered');
+      const eventTitle = event.title || 'the event';
+      const dateStr = new Date(event.date).toLocaleDateString();
+      const teamName = teamData.name || 'your team';
+
+      if (confirmedRegs) {
+        for (const r of confirmedRegs) {
+          const profile = await resolveUserProfile(r.user_id);
+          await notifyUser({
+            recipientId: r.user_id,
+            title: 'Team Registration Confirmed',
+            message: `Your team "${teamName}" has been confirmed for "${eventTitle}". See you there!`,
+            type: 'success',
+            eventId: event.id,
+            emailSubject: `Team Confirmed – ${eventTitle}`,
+            emailData: { eventName: eventTitle, date: dateStr, venue: event.venue || 'TBA', teamName, status: 'Confirmed', recipientName: profile.name }
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Non-fatal error sending team confirmation notifications:', notifErr.message);
     }
 
     res.json({ message: 'Team registration confirmed successfully!' });
@@ -1577,14 +1669,12 @@ exports.addTeamMember = async (req, res) => {
         type: 'info',
         eventId: event.id,
         emailSubject: `Team Invitation – ${event.title}`,
-        emailHtml: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-            <h2 style="color: #4f46e5;">New Team Invitation</h2>
-            <p>You have been invited to join team <strong>${team.name}</strong> for the event <strong>${event.title}</strong>.</p>
-            <p><strong>Date:</strong> ${dateStr}</p>
-            <p>Please log in to your dashboard to accept or reject this invitation.</p>
-          </div>
-        `
+        emailData: {
+          eventName: event.title,
+          date: dateStr,
+          teamName: team.name,
+          status: 'Pending Acceptance'
+        }
       });
     } catch (notifErr) {
       console.error('Failed to send notification for new member:', notifErr);
@@ -1883,6 +1973,22 @@ exports.adminApproveTeamRequest = async (req, res) => {
       .eq('id', registrationId);
 
     if (updateErr) throw updateErr;
+
+    // Notify student that their team request was approved
+    try {
+      const eventTitle = 'your event';
+      await notifyUser({
+        recipientId: reg.user_id,
+        title: 'Team Request Approved',
+        message: `Your team request has been approved by the admin.`,
+        type: 'success',
+        eventId: reg.event_id,
+        emailSubject: `Team Approved – ${eventTitle}`,
+        emailData: { eventName: eventTitle, status: 'Approved by Admin' }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending admin approve notification:', notifErr.message);
+    }
 
     res.json({ message: 'Student team request approved successfully by Admin.' });
   } catch (err) {
