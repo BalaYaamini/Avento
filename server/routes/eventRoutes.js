@@ -40,7 +40,7 @@ router.get(
 router.post(
   '/',
   authMiddleware,
-  roleMiddleware(['student']),
+  roleMiddleware(['admin', 'student']),
   eventController.createEvent
 );
 

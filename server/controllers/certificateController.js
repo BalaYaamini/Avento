@@ -546,8 +546,7 @@ exports.verifyCertificate = async (req, res) => {
       .from('certificates')
       .select(`
         *,
-        eventId:events (title, date),
-        userId:profiles (name)
+        eventId:events (title, date)
       `)
       .eq('certificate_id', certificateId)
       .maybeSingle();
@@ -556,9 +555,20 @@ exports.verifyCertificate = async (req, res) => {
       return res.status(404).json({ valid: false, message: 'Invalid or missing certificate.' });
     }
 
+    // Fetch profile separately
+    let studentName = null;
+    if (cert.user_id) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', cert.user_id)
+        .maybeSingle();
+      studentName = profile?.name || null;
+    }
+
     res.json({
       valid: true,
-      studentName: cert.userId?.name,
+      studentName,
       eventName: cert.eventId?.title,
       eventDate: cert.eventId?.date,
       issuedAt: cert.issued_at

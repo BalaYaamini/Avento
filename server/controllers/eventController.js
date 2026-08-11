@@ -1,7 +1,7 @@
 // server/controllers/eventController.js
 const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
-const { notifyUser } = require('../services/notificationService');
+const { notifyUser, sendInAppNotification } = require('../services/notificationService');
 
 const cleanEventRemarks = (evt) => {
   if (!evt) return evt;
@@ -276,27 +276,19 @@ const createEvent = async (req, res) => {
       }
     }
 
-    const isStudent = (req.user.roles.includes('student') || req.user.roles.includes('student_organizer')) &&
-                      !req.user.roles.includes('admin') &&
-                      !req.user.roles.includes('faculty');
+    const isAdmin = req.user.roles.includes('admin');
+    const isFaculty = req.user.roles.includes('faculty') || req.user.roles.includes('faculty_organizer');
+    const isStudent = (req.user.roles.includes('student') || req.user.roles.includes('student_organizer')) && !isAdmin && !isFaculty;
 
-    if (!isStudent) {
-      return res.status(403).json({ message: 'Access denied. Only students are authorized to create event proposals.' });
-    }
-
-    // Students and student organizers MUST select a faculty coordinator
-    if (!assignedFacultyId) {
+    // Students MUST select a faculty coordinator
+    if (isStudent && !assignedFacultyId) {
       return res.status(400).json({ message: 'Please select a Faculty Coordinator for your event proposal.' });
     }
 
     // Verify assigned faculty exists and has faculty role
     if (assignedFacultyId) {
-      const { data: faculty, error: facErr } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', assignedFacultyId)
-        .maybeSingle();
-      if (facErr || !faculty || faculty.role !== 'faculty') {
+      const facUser = await User.findById(assignedFacultyId).select('role');
+      if (!facUser || !['faculty', 'faculty_organizer'].includes(facUser.role)) {
         return res.status(400).json({ message: 'Invalid Faculty Coordinator selected.' });
       }
     }
@@ -314,10 +306,16 @@ const createEvent = async (req, res) => {
       return res.status(400).json({ message: 'An event proposal with the same name and date has already been submitted by you.' });
     }
 
-    let status = 'pending_approval';
+    let status;
     let proposedBy = req.user.id;
     let facultyId = assignedFacultyId;
     let organizerId = null;
+
+    if (isAdmin || isFaculty) {
+      status = 'published';
+    } else {
+      status = 'pending_approval';
+    }
 
     const newEvent = {
       title,
@@ -329,7 +327,6 @@ const createEvent = async (req, res) => {
       registered_count: 0,
       attendance_count: 0,
       image_url: imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800',
-      created_by: req.user.id,
       status,
       created_at: new Date().toISOString(),
       registration_type: registrationType || 'individual',
@@ -342,7 +339,7 @@ const createEvent = async (req, res) => {
       join_team_enabled: false,
     };
 
-    if (proposedBy) newEvent.proposed_by = proposedBy;
+    if (isStudent && proposedBy) newEvent.proposed_by = proposedBy;
     if (facultyId) newEvent.faculty_id = facultyId;
     if (organizerId) newEvent.organizer_id = organizerId;
 
@@ -353,22 +350,30 @@ const createEvent = async (req, res) => {
     await supabase.from('proposal_timeline').insert({
       proposal_id: event.id,
       user_id: req.user.id,
-      action: 'Proposal Submitted',
-      details: 'Initial proposal submitted for review.'
+      action: isAdmin || isFaculty ? 'Event Created' : 'Proposal Submitted',
+      details: isAdmin || isFaculty ? 'Event created and published directly.' : 'Initial proposal submitted for review.'
     });
 
     // Make the creator the primary student organizer and auto-add to event_members
+    const creatorName = req.user.fullName || req.user.email || 'User';
     const { error: memberErr } = await supabase.from('event_members').insert({
       event_id: event.id,
       user_id: req.user.id,
+      name: creatorName,
+      email: req.user.email,
       role: 'organizer'
     });
+    if (memberErr) console.error('[EVENT] member insert error (creator):', memberErr);
 
     if (facultyId) {
       // Automatically add the Faculty Coordinator to the proposal team as a Core Organizer
+      const facUser = await User.findById(facultyId).select('name email');
+      const facName = facUser?.name || facUser?.email || 'Faculty';
       await supabase.from('event_members').insert({
         event_id: event.id,
         user_id: facultyId,
+        name: facName,
+        email: facUser?.email,
         role: 'Faculty Coordinator'
       });
 
@@ -504,12 +509,8 @@ const editEvent = async (req, res) => {
 
     if (assignedFacultyId !== undefined) {
       // Verify assigned faculty exists and has faculty role
-      const { data: faculty, error: facErr } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', assignedFacultyId)
-        .maybeSingle();
-      if (facErr || !faculty || faculty.role !== 'faculty') {
+      const facUser = await User.findById(assignedFacultyId).select('role');
+      if (!facUser || !['faculty', 'faculty_organizer'].includes(facUser.role)) {
         return res.status(400).json({ message: 'Invalid Faculty Coordinator selected.' });
       }
       updates.faculty_id = assignedFacultyId;
@@ -694,8 +695,44 @@ const updateStatus = async (req, res) => {
         return res.status(400).json({ message: 'This event has not been approved by the assigned Faculty Coordinator.' });
       }
 
-      const { error: pubErr } = await supabase.from('events').update({ status: 'published' }).eq('id', id);
+      const { error: pubErr } = await supabase.from('events').update({
+        status: 'published',
+        published_at: new Date().toISOString(),
+        published_by: req.user.id
+      }).eq('id', id);
       if (pubErr) throw pubErr;
+
+      // Notify all students about the new published event (fire-and-forget)
+      (async () => {
+        try {
+          const allStudents = await User.find({ role: { $in: ['student', 'organizer'] } }).select('name email');
+          console.log(`[NOTIFY] Sending event published notifications to ${allStudents.length} students for "${event.title}"`);
+
+          for (const student of allStudents) {
+            const sid = student._id.toString();
+            await notifyUser({
+              recipientId: sid,
+              recipientEmail: student.email,
+              title: 'New Event Published',
+              message: `A new event "${event.title}" has been published and is now open for registration.`,
+              type: 'info',
+              eventId: id,
+              emailSubject: `New Event: ${event.title}`,
+              emailData: {
+                eventName: event.title,
+                date: new Date(event.date).toLocaleDateString(),
+                venue: event.venue || 'TBA',
+                category: event.category || 'N/A',
+                status: 'Published',
+                submissionTime: new Date().toLocaleString()
+              }
+            });
+          }
+          console.log(`[NOTIFY] All student notifications sent for "${event.title}"`);
+        } catch (notifErr) {
+          console.error('[NOTIFY] Error sending bulk student notifications:', notifErr.message);
+        }
+      })();
 
     } else if (status === 'completed') {
       // Allow Admin, Faculty Coordinator, and Event Head
@@ -902,6 +939,29 @@ const publishEvent = async (req, res) => {
       .from('events').update(updates).eq('id', id).select().single();
     if (updateErr) throw updateErr;
 
+    // Notify all students about the new published event (fire-and-forget)
+    // In-app notification only - no email on event publish
+    (async () => {
+      try {
+        const allStudents = await User.find({ role: { $in: ['student', 'organizer'] } }).select('_id');
+        console.log(`[NOTIFY] Sending in-app notifications to ${allStudents.length} students for "${event.title}"`);
+
+        for (const student of allStudents) {
+          const sid = student._id.toString();
+          await sendInAppNotification({
+            recipientId: sid,
+            title: 'New Event Published',
+            message: `A new event "${event.title}" has been published and is now open for registration.`,
+            type: 'info',
+            eventId: id
+          });
+        }
+        console.log(`[NOTIFY] All student in-app notifications sent for "${event.title}"`);
+      } catch (notifErr) {
+        console.error('[NOTIFY] Error sending bulk student notifications:', notifErr.message);
+      }
+    })();
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: 'Server error publishing event.', error: err.message });
@@ -970,7 +1030,7 @@ const getEventOrganizers = async (req, res) => {
       ...(members || []).map(m => m.user_id)
     ].filter(Boolean));
 
-    // Fetch profiles
+    // Fetch profiles (fallback to MongoDB)
     let profilesMap = {};
     if (userIds.size > 0) {
       const { data: profilesData } = await supabase
@@ -978,6 +1038,20 @@ const getEventOrganizers = async (req, res) => {
         .select('id, name, email, department')
         .in('id', Array.from(userIds));
       profilesMap = (profilesData || []).reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+
+      // MongoDB fallback
+      const missingIds = Array.from(userIds).filter(id => !profilesMap[id]);
+      if (missingIds.length > 0) {
+        const mongoUsers = await User.find({ _id: { $in: missingIds } }).select('name email');
+        for (const u of mongoUsers) {
+          profilesMap[u._id.toString()] = {
+            id: u._id.toString(),
+            name: u.name,
+            email: u.email,
+            department: null
+          };
+        }
+      }
     }
 
     // Map organizers
@@ -2044,7 +2118,7 @@ const getProposalTeam = async (req, res) => {
       .eq('event_id', id);
     if (error) throw error;
     
-    // Fetch names and emails manually from profiles
+    // Fetch names and emails from profiles (fallback to MongoDB)
     const userIds = (members || []).map(m => m.user_id).filter(Boolean);
     let profilesMap = {};
     if (userIds.length > 0) {
@@ -2053,6 +2127,23 @@ const getProposalTeam = async (req, res) => {
         .select('id, name, email, role, department, roll_number')
         .in('id', userIds);
       profilesMap = (profilesData || []).reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+
+      // MongoDB fallback for missing profiles
+      const missingIds = userIds.filter(id => !profilesMap[id]);
+      if (missingIds.length > 0) {
+        const mongoUsers = await User.find({ _id: { $in: missingIds } }).select('name email role');
+        for (const u of mongoUsers) {
+          const uid = u._id.toString();
+          profilesMap[uid] = {
+            id: uid,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            department: null,
+            roll_number: null
+          };
+        }
+      }
     }
     
     const formattedMembers = (members || []).map(m => ({
@@ -2095,9 +2186,22 @@ const addProposalTeamMember = async (req, res) => {
       return res.status(400).json({ message: 'User is already in the organizing team.' });
     }
 
+    // Resolve name and email from MongoDB if not provided
+    let memberName = name;
+    let memberEmail = email;
+    if (!memberName || !memberEmail) {
+      const mu = await User.findById(userId).select('name email');
+      if (mu) {
+        memberName = memberName || mu.name || mu.email?.split('@')[0] || 'Unknown';
+        memberEmail = memberEmail || mu.email || '';
+      }
+    }
+
     const { data: member, error: insErr } = await supabase.from('event_members').insert({
       event_id: id,
       user_id: userId,
+      name: memberName || 'Unknown',
+      email: memberEmail,
       role
     }).select('*').single();
     

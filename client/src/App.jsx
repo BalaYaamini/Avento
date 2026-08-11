@@ -34,6 +34,8 @@ import StudentOrgEvents from './pages/StudentOrgEvents';
 // Workspace view
 import Workspace from './pages/Workspace';
 import ProposalWorkspace from './pages/ProposalWorkspace';
+import ScoringBoard from './pages/ScoringBoard';
+import ScoringDashboard from './pages/ScoringDashboard';
 
 /* Animated page wrapper — fades in content on route change */
 const AnimatedRoutes = () => {
@@ -162,6 +164,26 @@ const AnimatedRoutes = () => {
           element={
             <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
               <ProposalWorkspace />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Scoring Board Path */}
+        <Route
+          path="/events/:eventId/scoring"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
+              <ScoringBoard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Scoring Dashboard Path */}
+        <Route
+          path="/scoring"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
+              <ScoringDashboard />
             </ProtectedRoute>
           }
         />

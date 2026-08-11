@@ -5,6 +5,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null);
 
   const fetchRegistrations = async () => {
     try {
@@ -25,6 +26,33 @@ const OrganizerRegistrations = ({ eventId, event }) => {
       fetchRegistrations();
     }
   }, [eventId]);
+
+  const handleApproveTeam = async (teamId) => {
+    if (!window.confirm('Are you sure you want to approve this team?')) return;
+    try {
+      setActionLoading(teamId);
+      await axios.post(`/api/registrations/team/${teamId}/admin-approve`);
+      await fetchRegistrations();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to approve team.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRejectTeam = async (teamId) => {
+    const reason = window.prompt('Reason for rejection (optional):');
+    if (reason === null) return;
+    try {
+      setActionLoading(teamId);
+      await axios.post(`/api/registrations/team/${teamId}/admin-reject`, { reason });
+      await fetchRegistrations();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to reject team.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -93,25 +121,35 @@ const OrganizerRegistrations = ({ eventId, event }) => {
                         Registered on {new Date(team.registrationDate).toLocaleDateString()}
                       </p>
                     </div>
-                    {team.status === 'registered' ? (
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
-                        Confirmed
-                      </span>
-                    ) : isFinalized ? (
-                      meetsMinRequirement ? (
+                    <div className="flex items-center gap-2">
+                      {team.status === 'registered' ? (
                         <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
                           Confirmed
                         </span>
-                      ) : (
-                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 uppercase tracking-wider">
-                          Disqualified
+                      ) : team.status === 'pending_approval' ? (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-blue-100 text-blue-600 border border-blue-200 uppercase tracking-wider">
+                          Pending Approval
                         </span>
-                      )
-                    ) : (
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-600 border border-amber-200 uppercase tracking-wider">
-                        In Progress
-                      </span>
-                    )}
+                      ) : team.status === 'rejected' ? (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 uppercase tracking-wider">
+                          Rejected
+                        </span>
+                      ) : isFinalized ? (
+                        meetsMinRequirement ? (
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
+                            Confirmed
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 uppercase tracking-wider">
+                            Disqualified
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-600 border border-amber-200 uppercase tracking-wider">
+                          In Progress
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex gap-2 mb-4 flex-wrap">
@@ -153,6 +191,25 @@ const OrganizerRegistrations = ({ eventId, event }) => {
                       ))}
                     </ul>
                   </div>
+
+                  {team.status === 'pending_approval' && (
+                    <div className="mt-4 pt-4 border-t border-slate-200 flex gap-2">
+                      <button
+                        onClick={() => handleApproveTeam(team.id)}
+                        disabled={actionLoading === team.id}
+                        className="flex-1 px-4 py-2 bg-emerald-500 text-white text-sm font-bold rounded-lg hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+                      >
+                        {actionLoading === team.id ? 'Processing...' : 'Approve Team'}
+                      </button>
+                      <button
+                        onClick={() => handleRejectTeam(team.id)}
+                        disabled={actionLoading === team.id}
+                        className="flex-1 px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
+                      >
+                        {actionLoading === team.id ? 'Processing...' : 'Reject Team'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

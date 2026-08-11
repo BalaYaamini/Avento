@@ -90,12 +90,31 @@ exports.getEventAttendance = async (req, res) => {
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
     const { data: attendance, error } = await supabase
       .from('event_registrations')
-      .select('*, userId:profiles(*), eventId:events(*)')
+      .select('*, eventId:events(*)')
       .eq('event_id', eventId)
       .eq('attendance_status', 'Present');
 
     if (error) throw error;
-    res.json(attendance);
+
+    // Fetch profiles separately
+    const userIds = [...new Set((attendance || []).map(r => r.user_id).filter(Boolean))];
+    let profiles = [];
+    if (userIds.length > 0) {
+      const { data: profData } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', userIds);
+      profiles = profData || [];
+    }
+    const profileMap = {};
+    profiles.forEach(p => { profileMap[p.id] = p; });
+
+    const result = (attendance || []).map(r => ({
+      ...r,
+      userId: profileMap[r.user_id] || null
+    }));
+
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error.', error: err.message });

@@ -58,6 +58,7 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/tasks', require('./routes/taskRoutes'));
 app.use('/api/certificates', require('./routes/certificateRoutes'));
 app.use('/api/feedbacks', require('./routes/feedbackRoutes'));
+app.use('/api/scoring', require('./routes/scoringRoutes'));
 
 // Serve client static files in production
 const path = require('path');
@@ -92,6 +93,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 AVENTO Server is running on port ${PORT}`);
+  
+  // Verify SMTP connection on startup
+  const { verifySMTPConnection } = require('./services/notificationService');
+  await verifySMTPConnection();
 });

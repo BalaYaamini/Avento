@@ -1,5 +1,6 @@
 const supabase = require('../config/supabaseClient');
 const { notifyUser } = require('../services/notificationService');
+const User = require('../models/User');
 
 // Register a user for an event
 exports.registerForEvent = async (req, res) => {
@@ -89,6 +90,7 @@ exports.registerForEvent = async (req, res) => {
     await supabase.from('events').update({ registered_count: event.registered_count + 1 }).eq('id', eventId);
 
     // Notify user
+    console.log(`[REGISTRATION DEBUG] Sending notification to user ${userId}`);
     try {
       const dateStr = new Date(event.date).toLocaleDateString();
       await notifyUser({
@@ -109,8 +111,9 @@ exports.registerForEvent = async (req, res) => {
           instructions: "Please keep this email for your records and present your Registration ID at the venue if required."
         }
       });
+      console.log(`[REGISTRATION DEBUG] Notification sent successfully`);
     } catch (notifErr) {
-      console.error('Non-fatal error sending registration notification:', notifErr.message);
+      console.error('[REGISTRATION DEBUG] Error sending notification:', notifErr.message);
     }
 
     res.status(201).json({
@@ -149,11 +152,28 @@ exports.getMyRegistrations = async (req, res) => {
         
         const memberIds = teamRegs ? teamRegs.map(tr => tr.user_id) : [];
 
-        // Fetch profiles of team members
-        const { data: membersProfiles } = await supabase
+        // Fetch profiles of team members (try Supabase first, fallback to MongoDB)
+        let { data: membersProfiles } = await supabase
           .from('profiles')
           .select('id, name, fullName:name, email, roll_number, department')
           .in('id', memberIds);
+          
+        // MongoDB fallback if profiles are empty
+        if (!membersProfiles || membersProfiles.length === 0) {
+          try {
+            const mongoUsers = await User.find({ _id: { $in: memberIds } }).select('name email');
+            membersProfiles = mongoUsers.map(u => ({
+              id: u._id,
+              name: u.name,
+              fullName: u.name,
+              email: u.email,
+              roll_number: null,
+              department: null
+            }));
+          } catch (mongoErr) {
+            console.error('MongoDB fallback for team members failed:', mongoErr.message);
+          }
+        }
           
         const membersWithStatus = (membersProfiles || []).map(member => {
           const regData = teamRegs?.find(tr => tr.user_id === member.id);
@@ -455,13 +475,47 @@ exports.getEventRegistrations = async (req, res) => {
       .from('event_registrations')
       .select(`
         *,
-        userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number),
         teamId:event_teams (*)
       `)
       .eq('event_id', eventId);
 
     if (error) throw error;
-    res.json(registrations);
+
+    // Fetch profiles separately (Supabase first, MongoDB fallback)
+    const userIds = [...new Set((registrations || []).map(r => r.user_id).filter(Boolean))];
+    let profiles = [];
+    if (userIds.length > 0) {
+      const { data: profData } = await supabase
+        .from('profiles')
+        .select('id, name, email, department, roll_number')
+        .in('id', userIds);
+      profiles = profData || [];
+
+      // MongoDB fallback if profiles empty
+      if (profiles.length === 0) {
+        try {
+          const mongoUsers = await User.find({ _id: { $in: userIds } }).select('name email');
+          profiles = mongoUsers.map(u => ({
+            id: u._id,
+            name: u.name,
+            email: u.email,
+            department: null,
+            roll_number: null
+          }));
+        } catch (mongoErr) {
+          console.error('MongoDB fallback for event registrations failed:', mongoErr.message);
+        }
+      }
+    }
+    const profileMap = {};
+    profiles.forEach(p => { profileMap[p.id] = p; });
+
+    const result = (registrations || []).map(r => ({
+      ...r,
+      userId: profileMap[r.user_id] || null
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching event registrations.', error: err.message });
   }
@@ -474,12 +528,47 @@ exports.getAllRegistrations = async (req, res) => {
       .select(`
         *,
         eventId:events (*),
-        userId:profiles (*),
         teamId:event_teams (*)
       `);
 
     if (error) throw error;
-    res.json(registrations);
+
+    // Fetch profiles separately (Supabase first, MongoDB fallback)
+    const userIds = [...new Set((registrations || []).map(r => r.user_id).filter(Boolean))];
+    let profiles = [];
+    if (userIds.length > 0) {
+      const { data: profData } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', userIds);
+      profiles = profData || [];
+
+      // MongoDB fallback if profiles empty
+      if (profiles.length === 0) {
+        try {
+          const mongoUsers = await User.find({ _id: { $in: userIds } }).select('name email');
+          profiles = mongoUsers.map(u => ({
+            id: u._id,
+            name: u.name,
+            email: u.email,
+            department: null,
+            roll_number: null
+          }));
+        } catch (mongoErr) {
+          console.error('MongoDB fallback for all registrations failed:', mongoErr.message);
+        }
+      }
+    }
+
+    const profileMap = {};
+    profiles.forEach(p => { profileMap[p.id] = p; });
+
+    const result = (registrations || []).map(r => ({
+      ...r,
+      userId: profileMap[r.user_id] || null
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching all registrations.', error: err.message });
   }
@@ -1047,23 +1136,248 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: contactErr.message || 'Failed to save team leader contact number.' });
     }
 
-    // Note: We do NOT update event_teams status to 'registered' here.
-    // The RPC `confirm_team_registration` handles locking, limit checks,
-    // setting team status, and incrementing the event's registered_count.
+    // Check if team meets min size - auto-approve if yes, otherwise pending_approval
+    const { data: eventDetails } = await supabase
+      .from('events')
+      .select('min_team_size, max_teams, title, faculty_id, student_organizer_id, proposed_by')
+      .eq('id', teamData.event_id)
+      .single();
 
-    // We must call the RPC to do the rest of the checks and increment the event count
-    const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
-      p_team_id: teamId,
-      p_leader_id: leaderId
-    });
+    const { count: acceptedCount } = await supabase
+      .from('event_registrations')
+      .select('*', { count: 'exact', head: true })
+      .eq('team_id', teamId)
+      .eq('status', 'registered');
 
-    if (rpcErr) {
-      return res.status(400).json({ message: rpcErr.message || 'Failed to confirm team registration.' });
+    const meetsMinSize = acceptedCount >= (eventDetails?.min_team_size || 1);
+    const newStatus = meetsMinSize ? 'registered' : 'pending_approval';
+
+    const { error: teamStatusErr } = await supabase
+      .from('event_teams')
+      .update({ status: newStatus })
+      .eq('id', teamId)
+      .eq('status', 'pending');
+
+    if (teamStatusErr) {
+      return res.status(400).json({ message: teamStatusErr.message || 'Failed to update team status.' });
     }
 
-    res.json({ message: 'Team registration confirmed successfully!' });
+    // If auto-approved (meets min size), increment registered_count
+    if (meetsMinSize) {
+      await supabase
+        .from('events')
+        .update({ registered_count: (eventDetails.registered_count || 0) + 1 })
+        .eq('id', teamData.event_id);
+    }
+
+    // Notify admin/faculty only if pending approval
+    if (!meetsMinSize) {
+      try {
+        const { data: team } = await supabase.from('event_teams').select('name').eq('id', teamId).single();
+
+        const notifyIds = [];
+        if (eventDetails?.faculty_id) notifyIds.push(eventDetails.faculty_id);
+        if (eventDetails?.student_organizer_id) notifyIds.push(eventDetails.student_organizer_id);
+        if (eventDetails?.proposed_by) notifyIds.push(eventDetails.proposed_by);
+
+        for (const uid of [...new Set(notifyIds)]) {
+          await notifyUser({
+            recipientId: uid,
+            title: 'Team Approval Required',
+            message: `Team "${team?.name}" has confirmed and is awaiting your approval for "${eventDetails?.title}".`,
+            type: 'info',
+            eventId: teamData.event_id,
+            emailSubject: `Team Pending Approval – ${eventDetails?.title}`,
+            emailData: {
+              eventName: eventDetails?.title,
+              teamName: team?.name,
+              status: 'Pending Approval'
+            }
+          });
+        }
+      } catch (notifErr) {
+        console.error('Non-fatal error sending approval notification:', notifErr.message);
+      }
+    }
+
+    const responseMsg = meetsMinSize 
+      ? 'Team registration confirmed successfully!' 
+      : 'Team registration submitted! Waiting for admin approval.';
+    res.json({ message: responseMsg });
   } catch (err) {
     console.error('Error confirming team registration:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+/** POST /registrations/team/:teamId/admin-approve */
+exports.adminApproveTeam = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const approverId = req.user.id;
+
+    if (!req.user.roles.includes('admin') && !req.user.roles.includes('faculty')) {
+      return res.status(403).json({ message: 'Only admin or faculty can approve teams.' });
+    }
+
+    // Get team details
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*, events!inner(id, title, faculty_id, student_organizer_id, proposed_by, min_team_size, max_teams)')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (team.status !== 'pending_approval') {
+      return res.status(400).json({ message: `Team is not pending approval. Current status: ${team.status}` });
+    }
+
+    // Verify approver is authorized for this event
+    const event = team.events;
+    const isEventFaculty = event.faculty_id === approverId;
+    const isOrganizer = event.student_organizer_id === approverId || event.proposed_by === approverId;
+    if (!isEventFaculty && !isOrganizer && !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'You are not authorized to approve teams for this event.' });
+    }
+
+    // Count accepted members (status = 'registered')
+    const { count: acceptedCount } = await supabase
+      .from('event_registrations')
+      .select('*', { count: 'exact', head: true })
+      .eq('team_id', teamId)
+      .eq('status', 'registered');
+
+    if (acceptedCount < event.min_team_size) {
+      return res.status(400).json({ 
+        message: `Cannot approve: only ${acceptedCount} of ${event.min_team_size} required members have accepted.` 
+      });
+    }
+
+    // Check max teams limit
+    if (event.max_teams) {
+      const { count: currentTeams } = await supabase
+        .from('event_teams')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', team.events.id)
+        .eq('status', 'registered');
+
+      if (currentTeams >= event.max_teams) {
+        return res.status(400).json({ message: 'Maximum number of teams for this event has been reached.' });
+      }
+    }
+
+    // Approve: set team status to 'registered'
+    const { error: approveErr } = await supabase
+      .from('event_teams')
+      .update({ status: 'registered' })
+      .eq('id', teamId);
+
+    if (approveErr) throw approveErr;
+
+    // Increment event registered_count
+    await supabase
+      .from('events')
+      .update({ registered_count: (event.registered_count || 0) + 1 })
+      .eq('id', team.events.id);
+
+    // Notify team leader
+    try {
+      await notifyUser({
+        recipientId: team.leader_id,
+        title: 'Team Approved',
+        message: `Your team "${team.name}" has been approved for "${event.title}".`,
+        type: 'success',
+        eventId: team.events.id,
+        emailSubject: `Team Approved – ${event.title}`,
+        emailData: {
+          eventName: event.title,
+          teamName: team.name,
+          status: 'Approved'
+        }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending approval notification:', notifErr.message);
+    }
+
+    res.json({ message: 'Team approved successfully!' });
+  } catch (err) {
+    console.error('Error approving team:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+/** POST /registrations/team/:teamId/admin-reject */
+exports.adminRejectTeam = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { reason } = req.body;
+    const approverId = req.user.id;
+
+    if (!req.user.roles.includes('admin') && !req.user.roles.includes('faculty')) {
+      return res.status(403).json({ message: 'Only admin or faculty can reject teams.' });
+    }
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*, events!inner(id, title, faculty_id, student_organizer_id, proposed_by)')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (team.status !== 'pending_approval') {
+      return res.status(400).json({ message: `Team is not pending approval. Current status: ${team.status}` });
+    }
+
+    const event = team.events;
+    const isEventFaculty = event.faculty_id === approverId;
+    const isOrganizer = event.student_organizer_id === approverId || event.proposed_by === approverId;
+    if (!isEventFaculty && !isOrganizer && !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'You are not authorized to reject teams for this event.' });
+    }
+
+    // Reject: set team status to 'rejected'
+    const { error: rejectErr } = await supabase
+      .from('event_teams')
+      .update({ status: 'rejected' })
+      .eq('id', teamId);
+
+    if (rejectErr) throw rejectErr;
+
+    // Also cancel all registrations for this team
+    await supabase
+      .from('event_registrations')
+      .update({ status: 'cancelled' })
+      .eq('team_id', teamId)
+      .in('status', ['registered', 'pending']);
+
+    // Notify team leader
+    try {
+      await notifyUser({
+        recipientId: team.leader_id,
+        title: 'Team Rejected',
+        message: `Your team "${team.name}" has been rejected for "${event.title}".${reason ? ` Reason: ${reason}` : ''}`,
+        type: 'error',
+        eventId: team.events.id,
+        emailSubject: `Team Rejected – ${event.title}`,
+        emailData: {
+          eventName: event.title,
+          teamName: team.name,
+          status: 'Rejected'
+        }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending rejection notification:', notifErr.message);
+    }
+
+    res.json({ message: 'Team rejected successfully.' });
+  } catch (err) {
+    console.error('Error rejecting team:', err);
     res.status(500).json({ message: 'Server error.', error: err.message });
   }
 };

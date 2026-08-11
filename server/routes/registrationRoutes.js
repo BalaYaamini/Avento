@@ -9,6 +9,8 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 router.post('/', authMiddleware, registrationController.registerForEvent);
 router.post('/team', authMiddleware, registrationController.registerTeamForEvent);
 router.post('/team/:teamId/confirm', authMiddleware, registrationController.confirmTeamRegistration);
+router.post('/team/:teamId/admin-approve', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.adminApproveTeam);
+router.post('/team/:teamId/admin-reject', authMiddleware, roleMiddleware(['admin', 'faculty_organizer', 'student']), registrationController.adminRejectTeam);
 router.put('/team/:teamId', authMiddleware, registrationController.updateTeamName);
 router.post('/team/:teamId/members', authMiddleware, registrationController.addTeamMember);
 router.delete('/team/:teamId/members/:userId', authMiddleware, registrationController.removeTeamMember);

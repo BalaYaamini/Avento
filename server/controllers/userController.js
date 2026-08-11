@@ -86,17 +86,35 @@ exports.getUsers = async (req, res) => {
 // Format: { id, fullName, email, employeeId, displayLabel: "Dr. XYZ (EMP001)" }
 exports.getFacultyCoordinators = async (req, res) => {
   try {
-    const { data: faculty, error } = await supabase.from('profiles').select('*').eq('role', 'faculty');
-    if (error) throw error;
-    
-    const result = faculty.map(f => ({
-      id: f.id,
-      fullName: f.name || f.fullName,
-      email: f.email,
-      employeeId: f.employee_id || '',
-      department: f.department || '',
-      displayLabel: f.employee_id ? `${f.name || f.fullName} (${f.employee_id})` : (f.name || f.fullName)
-    }));
+    // Query MongoDB since profiles table is mostly empty (users register via MongoDB auth)
+    const mongoFaculty = await User.find({ role: { $in: ['faculty', 'faculty_organizer'] } }).select('name email role');
+
+    // Also fetch profile data for employee_id and department (if profiles exist)
+    const mongoIds = mongoFaculty.map(f => f._id.toString());
+    let profileMap = {};
+    if (mongoIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, employee_id, department')
+        .in('id', mongoIds);
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+    }
+
+    const result = mongoFaculty.map(f => {
+      const profile = profileMap[f._id.toString()] || {};
+      const name = f.name || f.email?.split('@')[0] || 'Unknown';
+      const employeeId = profile.employee_id || '';
+      const department = profile.department || '';
+      return {
+        id: f._id.toString(),
+        fullName: name,
+        email: f.email,
+        employeeId,
+        department,
+        displayLabel: employeeId ? `${name} (${employeeId})` : name
+      };
+    });
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching faculty coordinators.', error: err.message });
@@ -108,16 +126,39 @@ exports.searchUsers = async (req, res) => {
     const { query } = req.query;
     if (!query) return res.json([]);
 
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('id, name, email, department, role, roll_number, employee_id, status')
-      .or(`name.ilike.%${query}%,email.ilike.%${query}%,department.ilike.%${query}%`)
-      .limit(20);
-    
-    if (error) throw error;
-    // Exclude inactive users as requested
-    const activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
-    res.json(activeProfiles);
+    // Search MongoDB first
+    const regex = new RegExp(query, 'i');
+    const mongoUsers = await User.find({
+      $or: [{ name: regex }, { email: regex }]
+    }).select('name email role').limit(20);
+
+    const mongoIds = mongoUsers.map(u => u._id.toString());
+    let profileMap = {};
+    if (mongoIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, email, department, role, roll_number, employee_id, status')
+        .in('id', mongoIds);
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+    }
+
+    const result = mongoUsers
+      .map(u => {
+        const profile = profileMap[u._id.toString()];
+        return {
+          id: u._id.toString(),
+          name: profile?.name || u.name,
+          email: profile?.email || u.email,
+          department: profile?.department || '',
+          role: profile?.role || u.role,
+          roll_number: profile?.roll_number || '',
+          employee_id: profile?.employee_id || '',
+          status: profile?.status || 'active'
+        };
+      })
+      .filter(u => u.status !== 'inactive');
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error searching users.', error: err.message });
   }
@@ -127,18 +168,34 @@ exports.searchUsers = async (req, res) => {
 // Format: { id, fullName, email, rollNumber, displayLabel: "Bala Yaamini (2203A51001)" }
 exports.getStudents = async (req, res) => {
   try {
-    // Fetch students
-    const { data: students, error } = await supabase.from('profiles').select('*').eq('role', 'student');
-    if (error) throw error;
-    
-    const result = students.map(s => ({
-      id: s.id,
-      fullName: s.name || s.fullName,
-      email: s.email,
-      rollNumber: s.roll_number || '',
-      department: s.department || '',
-      displayLabel: s.roll_number ? `${s.name || s.fullName} (${s.roll_number})` : (s.name || s.fullName)
-    }));
+    // Query MongoDB since profiles table is mostly empty
+    const mongoStudents = await User.find({ role: { $in: ['student', 'organizer'] } }).select('name email role');
+
+    const mongoIds = mongoStudents.map(s => s._id.toString());
+    let profileMap = {};
+    if (mongoIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, roll_number, department')
+        .in('id', mongoIds);
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+    }
+
+    const result = mongoStudents.map(s => {
+      const profile = profileMap[s._id.toString()] || {};
+      const name = s.name || s.email?.split('@')[0] || 'Unknown';
+      const rollNumber = profile.roll_number || '';
+      const department = profile.department || '';
+      return {
+        id: s._id.toString(),
+        fullName: name,
+        email: s.email,
+        rollNumber,
+        department,
+        displayLabel: rollNumber ? `${name} (${rollNumber})` : name
+      };
+    });
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching students.', error: err.message });

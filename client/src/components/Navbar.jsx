@@ -210,6 +210,13 @@ const Navbar = () => {
                       >
                         Certificates
                       </NavLink>
+                      <NavLink
+                        to="/scoring"
+                        onClick={() => setIsWorkspaceOpen(false)}
+                        className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
+                      >
+                        Scoring
+                      </NavLink>
                     </div>
                   </div>
                 </div>
@@ -223,6 +230,7 @@ const Navbar = () => {
                <>
                  <NavLink to="/faculty-organizer" end className={navLinkClass}>Dashboard</NavLink>
                  <NavLink to="/faculty-organizer/events" className={navLinkClass}>Proposals</NavLink>
+                 <NavLink to="/scoring" className={navLinkClass}>Scoring</NavLink>
                </>
              )}
 
@@ -232,6 +240,7 @@ const Navbar = () => {
                  <NavLink to="/admin" end className={navLinkClass}>Dashboard</NavLink>
                  <NavLink to="/admin/events" className={navLinkClass}>Events</NavLink>
                  <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
+                 <NavLink to="/scoring" className={navLinkClass}>Scoring</NavLink>
                </>
              )}
            </div>
@@ -417,6 +426,7 @@ const Navbar = () => {
                    <NavLink to="/student-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>My Events</NavLink>
                    <NavLink to="/my-registrations" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Registrations</NavLink>
                    <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
+                   <NavLink to="/scoring" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Scoring</NavLink>
                  </div>
                </div>
                
@@ -424,18 +434,20 @@ const Navbar = () => {
              </>
            )}
 
-           {user && (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) && (
-             <>
-               <NavLink to="/faculty-organizer" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
-               <NavLink to="/faculty-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Proposals</NavLink>
-             </>
-           )}
+            {user && (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) && (
+              <>
+                <NavLink to="/faculty-organizer" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
+                <NavLink to="/faculty-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Proposals</NavLink>
+                <NavLink to="/scoring" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Scoring</NavLink>
+              </>
+            )}
 
           {user && user.roles?.includes('admin') && (
             <>
               <NavLink to="/admin" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
               <NavLink to="/admin/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Events</NavLink>
               <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
+              <NavLink to="/scoring" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Scoring</NavLink>
             </>
           )}
 

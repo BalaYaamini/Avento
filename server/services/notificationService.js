@@ -3,7 +3,8 @@ const supabase = require('../config/supabaseClient');
 const path = require('path');
 
 /**
- * Configure Nodemailer Transporter
+ * Configure Nodemailer Transporter for Gmail SMTP
+ * Supports both personal Gmail and Google Workspace (college) accounts
  */
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -11,34 +12,84 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  // Increase timeout for bulk sends
+  connectionTimeout: 10000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
 });
 
 /**
- * Sends an email notification. If SMTP isn't configured, logs it.
+ * Verify SMTP connection on startup
+ */
+const verifySMTPConnection = async () => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('[EMAIL] SMTP not configured - emails will be logged only');
+    return false;
+  }
+  
+  try {
+    await transporter.verify();
+    console.log(`[EMAIL] SMTP connected successfully via ${process.env.EMAIL_USER}`);
+    return true;
+  } catch (err) {
+    console.error('[EMAIL] SMTP connection failed:', err.message);
+    console.warn('[EMAIL] Emails will be logged only. Check EMAIL_USER and EMAIL_PASS in .env');
+    return false;
+  }
+};
+
+/**
+ * Sends an email notification via Gmail SMTP.
+ * Falls back to mock logging if SMTP isn't configured.
  */
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}`);
-    // console.log(`Body: ${htmlBody}`);
     return;
   }
 
   try {
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: `"Avento" <${process.env.EMAIL_USER}>`,
       to: recipientEmail,
       subject: subject,
       html: htmlBody,
+      // Prevent emails from going to spam
+      headers: {
+        'X-Mailer': 'Avento-EventManagement',
+        'List-Unsubscribe': `<mailto:${process.env.EMAIL_USER}?subject=unsubscribe>`,
+      },
     };
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
-    );
-    await Promise.race([sendMailPromise, timeoutPromise]);
-    console.log(`Email sent to ${recipientEmail} with subject: ${subject}`);
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | ID: ${info.messageId}`);
+    return info;
   } catch (err) {
-    console.error('Error sending email:', err.message);
+    console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${err.message}`);
+    // Don't throw - email failure shouldn't break the app
   }
+};
+
+/**
+ * Sends bulk emails with rate limiting (2,000/day Gmail limit)
+ * Returns summary of sent/failed emails
+ */
+const sendBulkEmails = async (emails) => {
+  const results = { sent: 0, failed: 0, errors: [] };
+  
+  for (const email of emails) {
+    try {
+      await sendEmailNotification(email);
+      results.sent++;
+      // Small delay to avoid hitting rate limits
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (err) {
+      results.failed++;
+      results.errors.push({ email: email.recipientEmail, error: err.message });
+    }
+  }
+  
+  return results;
 };
 
 /**
@@ -228,36 +279,56 @@ const generateEmailHtml = (title, message, data = {}) => {
 
 /**
  * Unified function to notify a user via both In-App and Email.
- * Fetches user email from profiles if not provided.
+ * Fetches user email from MongoDB (primary) or Supabase profiles (fallback).
  */
 const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 'info', eventId = null, emailSubject, emailBody, emailData = {} }) => {
   try {
     // 1. Send In-App Notification (awaits to ensure it completes before HTTP response if needed)
     await sendInAppNotification({ recipientId, title, message, type, eventId });
 
-    // 2. Resolve Email Address asynchronously if needed
+    // 2. Resolve Email Address if not provided
     let targetEmail = recipientEmail;
     let targetName = null;
+    
     if (!targetEmail && recipientId) {
+      // Try MongoDB first (primary source)
       try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('email, name')
-          .eq('id', recipientId)
-          .single();
-        
-        if (profile && profile.email) {
-          targetEmail = profile.email;
-          targetName = profile.name;
+        const User = require('../models/User');
+        const mongoUser = await User.findById(recipientId).select('name email');
+        if (mongoUser && mongoUser.email) {
+          targetEmail = mongoUser.email;
+          targetName = mongoUser.name;
+          console.log(`[EMAIL DEBUG] Found email in MongoDB: ${targetEmail}`);
         }
       } catch (err) {
-        console.error('Error fetching user email for notification:', err.message);
+        console.log(`[EMAIL DEBUG] MongoDB lookup failed: ${err.message}`);
+      }
+
+      // Fallback to Supabase profiles
+      if (!targetEmail) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('email, name')
+            .eq('id', recipientId)
+            .single();
+          
+          if (profile && profile.email) {
+            targetEmail = profile.email;
+            targetName = profile.name;
+            console.log(`[EMAIL DEBUG] Found email in profiles: ${targetEmail}`);
+          }
+        } catch (err) {
+          console.log(`[EMAIL DEBUG] Profiles lookup failed: ${err.message}`);
+        }
       }
     }
 
     // 3. Send Email Notification Asynchronously (fire and forget)
-    // Disabled via EMAIL_NOTIFICATIONS_ENABLED flag if set to false
-    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false';
+    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && 
+                         process.env.EMAIL_USER && process.env.EMAIL_PASS;
+
+    console.log(`[EMAIL DEBUG] emailEnabled=${emailEnabled}, targetEmail=${targetEmail}, EMAIL_NOTIFICATIONS_ENABLED=${process.env.EMAIL_NOTIFICATIONS_ENABLED}`);
 
     if (targetEmail && emailEnabled) {
       const finalSubject = emailSubject || title;
@@ -268,19 +339,26 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
         ...emailData
       });
       
+      console.log(`[EMAIL DEBUG] Sending email to ${targetEmail} with subject: ${finalSubject}`);
+      
+      // Fire and forget - don't await
       sendEmailNotification({
         recipientEmail: targetEmail,
         subject: finalSubject,
         htmlBody: finalBody
-      }).catch(err => console.error('Background email delivery failed:', err));
+      }).catch(err => console.error('[EMAIL] Background delivery failed:', err.message));
+    } else {
+      console.log(`[EMAIL DEBUG] Email not sent - targetEmail: ${targetEmail}, emailEnabled: ${emailEnabled}`);
     }
   } catch (err) {
-    console.error('Non-fatal error in notifyUser:', err.message);
+    console.error('[NOTIFY] Non-fatal error in notifyUser:', err.message);
   }
 };
 
 module.exports = {
   sendInAppNotification,
   sendEmailNotification,
+  sendBulkEmails,
+  verifySMTPConnection,
   notifyUser
 };
