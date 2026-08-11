@@ -8,7 +8,7 @@
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS employee_id TEXT,
   ADD COLUMN IF NOT EXISTS roll_number TEXT,
-  ADD COLUMN IF NOT EXISTS department TEXT;
+  ADD COLUMN IF NOT EXISTS department TEXT; 
 
 -- ─── FIX ROLE CHECK CONSTRAINT ───────────────────────────────
 -- Drop the old restrictive role check and add one that includes student_organizer

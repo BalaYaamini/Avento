@@ -145,10 +145,52 @@ const AdminUsers = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
-        <div className="mb-10 animate-fade-in-up">
+        <div className="mb-6 animate-fade-in-up">
           <h1 className="font-display text-3xl font-black text-text-primary">User <span className="heading-gradient">Management</span></h1>
           <p className="font-body text-slate-600 text-sm mt-1.5">Audit, import, and manage registered students and faculty</p>
         </div>
+
+        {/* Stats Row */}
+        {users.length > 0 && (
+          <div className="mb-8 grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in-up delay-75">
+            <div className="glass-panel rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-violet-500/10 text-violet-500 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              </div>
+              <div>
+                <div className="text-lg font-display font-black text-slate-800">{users.length}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Users</div>
+              </div>
+            </div>
+            <div className="glass-panel rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-sky-500/10 text-sky-500 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+              </div>
+              <div>
+                <div className="text-lg font-display font-black text-slate-800">{users.filter(u => u.roles?.some(r => r.includes('student'))).length}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Students</div>
+              </div>
+            </div>
+            <div className="glass-panel rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+              </div>
+              <div>
+                <div className="text-lg font-display font-black text-slate-800">{users.filter(u => u.roles?.some(r => r.includes('faculty'))).length}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Faculty</div>
+              </div>
+            </div>
+            <div className="glass-panel rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              </div>
+              <div>
+                <div className="text-lg font-display font-black text-slate-800">{users.filter(u => u.first_login === true).length}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Pending Login</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Filters Panel */}
         <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-5 sm:p-6 mb-10 flex flex-col lg:flex-row items-center gap-4 justify-between">
