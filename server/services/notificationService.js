@@ -1,28 +1,14 @@
-const dns = require('dns');
-dns.setDefaultResultOrder('ipv4first');
-
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  family: 4,
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 30000,
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
-  rateDelta: 1000,
-  rateLimit: 10,
-});
+let resend = null;
+if (process.env.RESEND_API_KEY) {
+  resend = new Resend(process.env.RESEND_API_KEY);
+  console.log('[EMAIL] Resend API configured');
+} else {
+  console.warn('[EMAIL] RESEND_API_KEY not set - emails will be logged only');
+}
 
 let emailCountToday = 0;
 let lastResetDate = new Date().toDateString();
@@ -36,24 +22,16 @@ const resetDailyCount = () => {
 };
 
 const verifySMTPConnection = async () => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('[EMAIL] SMTP not configured - emails will be logged only');
+  if (!resend) {
+    console.warn('[EMAIL] Resend not configured - emails will be logged only');
     return false;
   }
-  try {
-    await transporter.verify();
-    console.log(`[EMAIL] SMTP connected successfully via ${process.env.EMAIL_USER}`);
-    console.log(`[EMAIL] Daily limit: 2,000 emails/day (Gmail)`);
-    return true;
-  } catch (err) {
-    console.error('[EMAIL] SMTP connection failed:', err.message);
-    console.warn('[EMAIL] Emails will be logged only.');
-    return false;
-  }
+  console.log('[EMAIL] Resend API ready');
+  return true;
 };
 
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+  if (!resend) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}`);
     return;
   }
@@ -65,17 +43,21 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
   }
 
   try {
-    const mailOptions = {
-      from: `"Avento" <${process.env.EMAIL_USER}>`,
+    const { data, error } = await resend.emails.send({
+      from: 'Avento <onboarding@resend.dev>',
       to: recipientEmail,
       subject,
       html: htmlBody,
-      headers: { 'X-Mailer': 'Avento-EventManagement' },
-    };
-    const info = await transporter.sendMail(mailOptions);
+    });
+
+    if (error) {
+      console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${error.message}`);
+      return;
+    }
+
     emailCountToday++;
-    console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | ID: ${info.messageId} | Count: ${emailCountToday}/2000`);
-    return info;
+    console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | ID: ${data?.id} | Count: ${emailCountToday}/2000`);
+    return data;
   } catch (err) {
     console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${err.message}`);
   }
@@ -94,7 +76,7 @@ const sendInAppNotification = async ({ recipientId, title, message, type = 'info
 
     const { error } = await supabase.from('notifications').insert(notifData);
     if (error && error.code === '42P01') {
-      console.warn('Notifications table does not exist. Please run the SQL patch.');
+      console.warn('Notifications table does not exist.');
     } else if (error) {
       throw error;
     }
@@ -113,7 +95,8 @@ const generateEmailHtml = (title, message, data = {}) => {
     ${data.venue ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Venue</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.venue}</td></tr>` : ''}
     ${data.category ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Category</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.category}</td></tr>` : ''}
     ${data.organizer ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Organizer</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.organizer}</td></tr>` : ''}
-    ${data.teamName ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Name</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamName}</td></tr>` : ''}
+    ${data.teamName ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamName}</td></tr>` : ''}
+    ${data.teamLeader ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Leader</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamLeader}</td></tr>` : ''}
     ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#c084fc;">${data.registrationId}</td></tr>` : ''}
     ${data.status ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Status</strong></td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#10b981;">${data.status}</td></tr>` : ''}
   </table>
@@ -186,7 +169,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
           targetName = mongoUser.name;
         }
       } catch (e) {
-        console.log('[NOTIFY] MongoDB lookup failed for', recipientId, e.message);
+        console.log('[NOTIFY] MongoDB lookup failed:', e.message);
       }
 
       if (!targetEmail) {
@@ -198,16 +181,16 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
             targetName = profile.name;
           }
         } catch (e) {
-          console.log('[NOTIFY] Profiles lookup failed for', recipientId, e.message);
+          console.log('[NOTIFY] Profiles lookup failed:', e.message);
         }
       }
     }
 
-    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' &&
-                         process.env.EMAIL_USER && process.env.EMAIL_PASS;
+    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && resend;
 
     if (!targetEmail) {
-      console.log('[NOTIFY] No email found for user', recipientId, '- skipping email');
+      console.log('[NOTIFY] No email found for user', recipientId);
+      return;
     }
 
     if (targetEmail && emailEnabled) {
@@ -222,7 +205,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
       await sendEmailNotification({ recipientEmail: targetEmail, subject: finalSubject, htmlBody });
     }
   } catch (err) {
-    console.error('[NOTIFY] Non-fatal error in notifyUser:', err.message);
+    console.error('[NOTIFY] Error in notifyUser:', err.message);
   }
 };
 
@@ -232,7 +215,7 @@ const getEmailStats = () => {
     sentToday: emailCountToday,
     dailyLimit: 2000,
     remaining: 2000 - emailCountToday,
-    configured: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS)
+    configured: !!resend
   };
 };
 

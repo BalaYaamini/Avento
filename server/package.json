@@ -21,7 +21,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.1",
     "pdf-lib": "^1.17.1",
-    "resend": "^6.17.1",
+    "resend": "^6.19.0",
     "ws": "^8.21.0"
   },
   "devDependencies": {
