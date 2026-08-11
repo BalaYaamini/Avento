@@ -180,12 +180,14 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
 
     if (!targetEmail && recipientId) {
       try {
-        const mongoUser = await User.findById(recipientId).select('name email');
+        const mongoUser = await User.findById(recipientId).select('name email').maxTimeMS(3000);
         if (mongoUser && mongoUser.email) {
           targetEmail = mongoUser.email;
           targetName = mongoUser.name;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.log('[NOTIFY] MongoDB lookup failed for', recipientId, e.message);
+      }
 
       if (!targetEmail) {
         try {
@@ -195,12 +197,18 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
             targetEmail = profile.email;
             targetName = profile.name;
           }
-        } catch (e) {}
+        } catch (e) {
+          console.log('[NOTIFY] Profiles lookup failed for', recipientId, e.message);
+        }
       }
     }
 
     const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' &&
                          process.env.EMAIL_USER && process.env.EMAIL_PASS;
+
+    if (!targetEmail) {
+      console.log('[NOTIFY] No email found for user', recipientId, '- skipping email');
+    }
 
     if (targetEmail && emailEnabled) {
       const finalSubject = emailSubject || title;
@@ -211,8 +219,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
         ...emailData
       });
 
-      sendEmailNotification({ recipientEmail: targetEmail, subject: finalSubject, htmlBody })
-        .catch(err => console.error('[EMAIL] Background delivery failed:', err.message));
+      await sendEmailNotification({ recipientEmail: targetEmail, subject: finalSubject, htmlBody });
     }
   } catch (err) {
     console.error('[NOTIFY] Non-fatal error in notifyUser:', err.message);
