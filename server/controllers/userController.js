@@ -4,8 +4,17 @@ const nodemailer = require('nodemailer');
 
 exports.getUsers = async (req, res) => {
   try {
-    const { data: users, error: usersErr } = await supabase.from('profiles').select('*');
-    if (usersErr) throw usersErr;
+    // Paginate to fetch ALL profiles (Supabase default limit is 1000)
+    let users = [];
+    let page = 0;
+    const PAGE_SIZE = 1000;
+    while (true) {
+      const { data, error } = await supabase.from('profiles').select('*').range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      if (error) throw error;
+      users.push(...(data || []));
+      if (!data || data.length < PAGE_SIZE) break;
+      page++;
+    }
     
     // Fetch all registrations to compute registration count per user
     const { data: registrations, error: regErr } = await supabase.from('event_registrations').select('user_id');
@@ -86,8 +95,16 @@ exports.getUsers = async (req, res) => {
 // Format: { id, fullName, email, employeeId, displayLabel: "Dr. XYZ (EMP001)" }
 exports.getFacultyCoordinators = async (req, res) => {
   try {
-    const { data: faculty, error } = await supabase.from('profiles').select('*').eq('role', 'faculty');
-    if (error) throw error;
+    let faculty = [];
+    let page = 0;
+    const PAGE_SIZE = 1000;
+    while (true) {
+      const { data, error } = await supabase.from('profiles').select('*').eq('role', 'faculty').range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      if (error) throw error;
+      faculty.push(...(data || []));
+      if (!data || data.length < PAGE_SIZE) break;
+      page++;
+    }
     
     const result = faculty.map(f => ({
       id: f.id,
@@ -127,9 +144,16 @@ exports.searchUsers = async (req, res) => {
 // Format: { id, fullName, email, rollNumber, displayLabel: "Bala Yaamini (2203A51001)" }
 exports.getStudents = async (req, res) => {
   try {
-    // Fetch students
-    const { data: students, error } = await supabase.from('profiles').select('*').eq('role', 'student');
-    if (error) throw error;
+    let students = [];
+    let page = 0;
+    const PAGE_SIZE = 1000;
+    while (true) {
+      const { data, error } = await supabase.from('profiles').select('*').eq('role', 'student').range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      if (error) throw error;
+      students.push(...(data || []));
+      if (!data || data.length < PAGE_SIZE) break;
+      page++;
+    }
     
     const result = students.map(s => ({
       id: s.id,
