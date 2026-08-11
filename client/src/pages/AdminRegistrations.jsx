@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
 
 const AdminRegistrations = () => {
   const [registrations, setRegistrations] = useState([]);
@@ -7,10 +8,12 @@ const AdminRegistrations = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filters
+  // Filters & Modal states
   const [selectedEventId, setSelectedEventId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [cancellingId, setCancellingId] = useState(null);
+  const [processingId, setProcessingId] = useState(null);
+  const [isCreateTeamOpen, setIsCreateTeamOpen] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -44,7 +47,6 @@ const AdminRegistrations = () => {
     setCancellingId(regId);
     try {
       await axios.delete(`/api/registrations/${regId}`);
-      // Remove local copy from screen
       setRegistrations(prev => prev.filter(reg => (reg.id || reg._id) !== regId));
       alert('Registration successfully revoked.');
     } catch (err) {
@@ -55,11 +57,47 @@ const AdminRegistrations = () => {
     }
   };
 
+  const handleCancelTeamRegistration = async (teamId, teamName) => {
+    if (!window.confirm(`Are you sure you want to cancel/revoke the entire team registration for "${teamName}"?`)) {
+      return;
+    }
+
+    setProcessingId(teamId);
+    try {
+      await axios.delete(`/api/registrations/admin/team/${teamId}`);
+      setRegistrations(prev => prev.filter(reg => reg.teamId?.id !== teamId && reg.team_id !== teamId));
+      alert(`Team "${teamName}" registration successfully cancelled by Admin.`);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to cancel team registration.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleApproveRequest = async (regId, studentName) => {
+    if (!window.confirm(`Approve team request for student "${studentName}"?`)) {
+      return;
+    }
+
+    setProcessingId(regId);
+    try {
+      await axios.post(`/api/registrations/admin/approve-request/${regId}`);
+      setRegistrations(prev => prev.map(reg => (reg.id || reg._id) === regId ? { ...reg, status: 'registered' } : reg));
+      alert('Student team request approved successfully.');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to approve student team request.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   // Filter registrations list dynamically
   const filteredRegistrations = registrations.filter(reg => {
     const evt = reg.eventId;
     const usr = reg.userId;
-    if (!evt || !usr) return false; // filter out orphaned registrations
+    if (!evt || !usr) return false;
 
     const regEventId = evt.id || evt._id;
     const matchesEvent = selectedEventId ? String(regEventId) === String(selectedEventId) : true;
@@ -78,9 +116,18 @@ const AdminRegistrations = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
-        <div className="mb-10 animate-fade-in-up">
-          <h1 className="font-display text-3xl font-black text-text-primary">Event <span className="heading-gradient">Registrations</span></h1>
-          <p className="font-body text-slate-600 text-sm mt-1.5">Review student roster bookings and revoke seats</p>
+        <div className="mb-10 animate-fade-in-up flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-black text-text-primary">Event <span className="heading-gradient">Registrations</span></h1>
+            <p className="font-body text-slate-600 text-sm mt-1.5">Review student roster bookings, approve team requests, or create teams manually</p>
+          </div>
+          <button
+            onClick={() => setIsCreateTeamOpen(true)}
+            className="btn-primary px-5 py-2.5 text-xs font-bold rounded-xl text-white flex items-center gap-2 shadow-lg shadow-violet-500/15"
+          >
+            <span>+</span>
+            <span>Create Team Manually</span>
+          </button>
         </div>
 
         {/* Filters Panel */}
@@ -152,6 +199,7 @@ const AdminRegistrations = () => {
                     <th className="px-6 py-4">Student Name</th>
                     <th className="px-6 py-4">Student Email</th>
                     <th className="px-6 py-4">Team</th>
+                    <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Registered Event</th>
                     <th className="px-6 py-4">Booking Date</th>
                     <th className="px-6 py-4 text-right">Actions</th>
@@ -184,17 +232,44 @@ const AdminRegistrations = () => {
                           <span className="text-slate-400 italic text-xs">Individual</span>
                         )}
                       </td>
+                      <td className="px-6 py-4 font-medium text-xs">
+                        <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-lg border ${
+                          reg.status === 'registered' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' :
+                          reg.status === 'pending' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                          'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {reg.status || 'registered'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 font-semibold text-slate-700 line-clamp-1 text-xs">
                         {reg.eventId.title}
                       </td>
                       <td className="px-6 py-4 text-slate-600 text-xs">
                         {new Date(reg.registrationDate || reg.createdAt || reg.created_at).toLocaleString()}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
+                        {reg.status === 'pending' && (
+                          <button
+                            onClick={() => handleApproveRequest(reg.id || reg._id, reg.userId.name || reg.userId.fullName)}
+                            disabled={processingId === (reg.id || reg._id)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300 disabled:opacity-50"
+                          >
+                            {processingId === (reg.id || reg._id) ? 'Approving...' : 'Approve Request'}
+                          </button>
+                        )}
+                        {reg.teamId && (
+                          <button
+                            onClick={() => handleCancelTeamRegistration(reg.teamId.id || reg.teamId._id || reg.team_id, reg.teamId.name)}
+                            disabled={processingId === (reg.teamId.id || reg.teamId._id || reg.team_id)}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/20 hover:bg-amber-500/20 transition-all duration-300 disabled:opacity-50"
+                          >
+                            Cancel Team
+                          </button>
+                        )}
                         <button
                           onClick={() => handleCancelRegistration(reg.id || reg._id, reg.userId.name || reg.userId.fullName, reg.eventId.title)}
                           disabled={cancellingId === (reg.id || reg._id)}
-                          className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300 disabled:opacity-50"
+                          className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300 disabled:opacity-50"
                         >
                           {cancellingId === (reg.id || reg._id) ? 'Revoking...' : 'Revoke Booking'}
                         </button>
@@ -206,6 +281,14 @@ const AdminRegistrations = () => {
             </div>
           </div>
         )}
+
+        <AdminCreateTeamModal
+          isOpen={isCreateTeamOpen}
+          onClose={() => setIsCreateTeamOpen(false)}
+          events={events}
+          selectedEventId={selectedEventId}
+          onSuccess={fetchData}
+        />
 
       </div>
     </div>

@@ -27,6 +27,25 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
     }
   }, [eventId, user]);
 
+  const formatAttendanceTimestamp = (ts) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+
+    return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
+  };
+
   const handleExportExcel = () => {
     if (!teams || teams.length === 0) return;
 
@@ -38,6 +57,8 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
       const leaderName = leader ? leader.name : 'Unknown';
 
       team.members.forEach((member) => {
+        const isPresent = member.attendanceStatus === 'Present';
+
         exportData.push({
           'Team Name': team.name,
           'Team Leader': leaderName,
@@ -46,7 +67,8 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
           'Roll Number': member.rollNumber,
           'Email ID': member.email,
           'Department': member.department,
-          'Attendance Status': member.attendanceStatus === 'Present' ? 'Attendance Marked' : 'Not Marked'
+          'Attendance Status': isPresent ? 'Present' : 'Not Present',
+          'Attendance Marked At': isPresent ? formatAttendanceTimestamp(member.attendanceTimestamp) : '—'
         });
       });
     });
@@ -66,6 +88,7 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
       { wch: 30 }, // Email ID
       { wch: 30 }, // Department
       { wch: 20 }, // Attendance Status
+      { wch: 25 }, // Attendance Marked At
     ];
     worksheet['!cols'] = colWidths;
 

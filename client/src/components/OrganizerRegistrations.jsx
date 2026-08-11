@@ -42,6 +42,34 @@ const OrganizerRegistrations = ({ eventId, event }) => {
     );
   }
 
+  const userStr = localStorage.getItem('user');
+  const currentUser = userStr ? JSON.parse(userStr) : null;
+  const isAdmin = currentUser?.roles?.includes('admin') || currentUser?.role === 'admin';
+
+  const handleApproveRequest = async (regId) => {
+    if (!window.confirm('Approve this student team request?')) return;
+    try {
+      await axios.post(`/api/registrations/admin/approve-request/${regId}`);
+      alert('Student team request approved successfully.');
+      fetchRegistrations();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to approve request.');
+    }
+  };
+
+  const handleCancelTeamRegistration = async (teamId, teamName) => {
+    if (!window.confirm(`Cancel registration for team "${teamName}"?`)) return;
+    try {
+      await axios.delete(`/api/registrations/admin/team/${teamId}`);
+      alert(`Team "${teamName}" registration cancelled.`);
+      fetchRegistrations();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to cancel team registration.');
+    }
+  };
+
   // If team event, group by teamId
   if (event?.registration_type === 'team') {
     const teams = {};
@@ -101,25 +129,35 @@ const OrganizerRegistrations = ({ eventId, event }) => {
                         Registered on {new Date(team.registrationDate).toLocaleDateString()}
                       </p>
                     </div>
-                    {team.status === 'registered' ? (
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
-                        Confirmed
-                      </span>
-                    ) : isFinalized ? (
-                      meetsMinRequirement ? (
+                    <div className="flex items-center gap-2">
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleCancelTeamRegistration(team.id, team.name)}
+                          className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-all"
+                        >
+                          Cancel Team
+                        </button>
+                      )}
+                      {team.status === 'registered' ? (
                         <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
                           Confirmed
                         </span>
+                      ) : isFinalized ? (
+                        meetsMinRequirement ? (
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-600 border border-emerald-200 uppercase tracking-wider">
+                            Confirmed
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 uppercase tracking-wider">
+                            Disqualified
+                          </span>
+                        )
                       ) : (
-                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-red-100 text-red-600 border border-red-200 uppercase tracking-wider">
-                          Disqualified
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-600 border border-amber-200 uppercase tracking-wider">
+                          In Progress
                         </span>
-                      )
-                    ) : (
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-600 border border-amber-200 uppercase tracking-wider">
-                        In Progress
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex gap-2 mb-4 flex-wrap">
@@ -151,9 +189,21 @@ const OrganizerRegistrations = ({ eventId, event }) => {
                             </p>
                             <p className="text-[10px] text-slate-500">{member.userId?.department}</p>
                           </div>
-                          <div>
+                          <div className="flex items-center gap-2">
                             {member.status === 'registered' && <span className="text-[10px] px-2 py-0.5 rounded text-emerald-600 bg-emerald-100 font-bold uppercase">Accepted</span>}
-                            {member.status === 'pending' && <span className="text-[10px] px-2 py-0.5 rounded text-amber-600 bg-amber-100 font-bold uppercase">Pending</span>}
+                            {member.status === 'pending' && (
+                              <>
+                                <span className="text-[10px] px-2 py-0.5 rounded text-amber-600 bg-amber-100 font-bold uppercase">Pending</span>
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => handleApproveRequest(member.id)}
+                                    className="text-[10px] px-2 py-0.5 rounded bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition"
+                                  >
+                                    Approve
+                                  </button>
+                                )}
+                              </>
+                            )}
                             {member.status === 'rejected' && <span className="text-[10px] px-2 py-0.5 rounded text-red-600 bg-red-100 font-bold uppercase">Rejected</span>}
                             {member.status === 'expired' && <span className="text-[10px] px-2 py-0.5 rounded text-slate-600 bg-slate-200 font-bold uppercase">Expired</span>}
                           </div>

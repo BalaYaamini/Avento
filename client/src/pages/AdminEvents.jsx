@@ -58,6 +58,19 @@ const AdminEvents = () => {
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [joinTeamEnabled, setJoinTeamEnabled] = useState(false);
 
+  // Actions Dropdown State
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.event-actions-dropdown')) {
+        setOpenDropdownId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const categories = ['Technical', 'Cultural', 'Sports', 'Workshop', 'Seminar'];
 
   const getTomorrowISO = () => {
@@ -75,6 +88,34 @@ const AdminEvents = () => {
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
   
+  const handleCloseRegistrations = async (eventId, eventTitle) => {
+    if (!window.confirm(`Manually close registrations for "${eventTitle}"?`)) {
+      return;
+    }
+    try {
+      await axios.post(`/api/events/admin/${eventId}/close-registrations`);
+      alert(`Registrations for "${eventTitle}" have been manually closed.`);
+      fetchEvents();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to close registrations.');
+    }
+  };
+
+  const handleOpenRegistrations = async (eventId, eventTitle) => {
+    if (!window.confirm(`Manually open registrations for "${eventTitle}"?`)) {
+      return;
+    }
+    try {
+      await axios.post(`/api/events/admin/${eventId}/open-registrations`);
+      alert(`Registrations for "${eventTitle}" have been manually opened.`);
+      fetchEvents();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to open registrations.');
+    }
+  };
+
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -564,96 +605,151 @@ const AdminEvents = () => {
                           {(evt.status || 'draft').replace(/_/g, ' ')}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
-
-                        {/* Draft actions: Organizers, Edit, Publish, Delete */}
-                        {evt.status === 'draft' && (
-                          <>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Organizers button stays visible inline */}
+                          {(evt.status === 'draft' || evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && (
                             <button
                               onClick={() => openOrgModal(evt)}
-                              className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                              className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
                             >
                               Organizers ({evt.organizersCount || 0})
                             </button>
-                            <button
-                              onClick={() => openEditModal(evt)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg btn-secondary"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handlePublishEvent(evt._id || evt.id)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300"
-                            >
-                              Publish
-                            </button>
-                            <button
-                              onClick={() => handleDelete(evt._id || evt.id, evt.title)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
+                          )}
 
-                        {/* Active / Published / Completed actions */}
-                        {(evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && (
-                          <>
+                          {/* Actions Dropdown */}
+                          <div className="relative inline-block text-left event-actions-dropdown">
                             <button
-                              onClick={() => openOrgModal(evt)}
-                              className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                              type="button"
+                              onClick={() => setOpenDropdownId(openDropdownId === (evt._id || evt.id) ? null : (evt._id || evt.id))}
+                              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/60 text-slate-700 border border-slate-300/50 hover:bg-white hover:border-slate-300 transition-all duration-300 flex items-center gap-1.5 cursor-pointer shadow-sm"
                             >
-                              Organizers ({evt.organizersCount || 0})
+                              <span>Actions</span>
+                              <svg className={`h-3.5 w-3.5 transition-transform duration-200 ${openDropdownId === (evt._id || evt.id) ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                              </svg>
                             </button>
-                            {new Date(evt.date) >= new Date() && (
-                              <button
-                                onClick={() => {
-                                  setScanFeedback(null);
-                                  setScannerModalEvent(evt);
-                                }}
-                                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-teal-500/10 text-teal-500 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300 inline-block align-middle"
-                              >
-                                Scan QR
-                              </button>
+
+                            {openDropdownId === (evt._id || evt.id) && (
+                              <div className="origin-top-right absolute right-0 mt-1.5 w-52 rounded-xl shadow-xl bg-white border border-slate-200 z-50 p-1.5 space-y-1 animate-fade-in-scale text-left">
+                                {/* Workspace */}
+                                {(evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && (
+                                  <Link
+                                    to={`/workspace/${evt._id || evt.id}`}
+                                    onClick={() => setOpenDropdownId(null)}
+                                    className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg flex items-center gap-2 transition-colors block"
+                                  >
+                                    <svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                    </svg>
+                                    <span>Workspace</span>
+                                  </Link>
+                                )}
+
+                                {/* Scan QR */}
+                                {(evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && new Date(evt.date) >= new Date() && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenDropdownId(null);
+                                      setScanFeedback(null);
+                                      setScannerModalEvent(evt);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-600 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                                  >
+                                    <svg className="h-4 w-4 text-teal-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                                      <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                                      <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                                      <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                                    </svg>
+                                    <span>Scan QR</span>
+                                  </button>
+                                )}
+
+                                {/* Close / Open Registrations */}
+                                {(evt.status === 'active' || evt.status === 'published') && (
+                                  evt.registration_deadline && new Date(evt.registration_deadline) <= new Date() ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOpenDropdownId(null);
+                                        handleOpenRegistrations(evt._id || evt.id, evt.title);
+                                      }}
+                                      className="w-full text-left px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                                    >
+                                      <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                                      </svg>
+                                      <span>Open Registrations</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOpenDropdownId(null);
+                                        handleCloseRegistrations(evt._id || evt.id, evt.title);
+                                      }}
+                                      className="w-full text-left px-3 py-2 text-xs font-bold text-amber-600 hover:bg-amber-50 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                                    >
+                                      <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                      </svg>
+                                      <span>Close Registrations</span>
+                                    </button>
+                                  )
+                                )}
+
+                                {/* Edit */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenDropdownId(null);
+                                    openEditModal(evt);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                                >
+                                  <svg className="h-4 w-4 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  <span>Edit</span>
+                                </button>
+
+                                {/* Publish (if Draft) */}
+                                {evt.status === 'draft' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenDropdownId(null);
+                                      handlePublishEvent(evt._id || evt.id);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 rounded-lg flex items-center gap-2 transition-colors cursor-pointer"
+                                  >
+                                    <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span>Publish</span>
+                                  </button>
+                                )}
+
+                                {/* Delete (Destructive) */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenDropdownId(null);
+                                    handleDelete(evt._id || evt.id, evt.title);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg flex items-center gap-2 transition-colors border-t border-slate-100 mt-1 cursor-pointer"
+                                >
+                                  <svg className="h-4 w-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  <span>Delete</span>
+                                </button>
+                              </div>
                             )}
-                            <Link
-                              to={`/workspace/${evt._id || evt.id}`}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all duration-300 inline-block align-middle"
-                            >
-                              Workspace
-                            </Link>
-                            <button
-                              onClick={() => openEditModal(evt)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg btn-secondary"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(evt._id || evt.id, evt.title)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-
-                        {/* Cancelled events */}
-                        {evt.status === 'cancelled' && (
-                          <>
-                            <button
-                              onClick={() => openEditModal(evt)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg btn-secondary"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(evt._id || evt.id, evt.title)}
-                              className="px-4 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 hover:border-red-500/30 transition-all duration-300"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   ))}

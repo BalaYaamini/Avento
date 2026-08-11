@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
 const authMiddleware = require('../middleware/authMiddleware');
+const adminMiddleware = require('../middleware/adminMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
 const multer = require('multer');
 const path = require('path');
@@ -266,6 +267,21 @@ router.put(
   authMiddleware,
   roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
   eventController.updateProposalDescription
+);
+
+// Admin-only close & open registrations
+router.post(
+  '/admin/:id/close-registrations',
+  authMiddleware,
+  adminMiddleware,
+  eventController.adminCloseRegistrations
+);
+
+router.post(
+  '/admin/:id/open-registrations',
+  authMiddleware,
+  adminMiddleware,
+  eventController.adminOpenRegistrations
 );
 
 // getEventById — must come AFTER all static subroutes

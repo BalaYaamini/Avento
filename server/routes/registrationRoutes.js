@@ -22,8 +22,14 @@ router.post('/:registrationId/accept', authMiddleware, registrationController.ac
 router.post('/:registrationId/reject', authMiddleware, registrationController.rejectTeamInvitation);
 router.post('/team/leave', authMiddleware, registrationController.leaveTeam);
 
-// Admin & Organizer features (protected)
+// Admin-only features (protected with adminMiddleware)
 router.get('/all', authMiddleware, adminMiddleware, registrationController.getAllRegistrations);
+router.post('/admin/team', authMiddleware, adminMiddleware, registrationController.adminCreateTeam);
+router.delete('/admin/team/:teamId', authMiddleware, adminMiddleware, registrationController.adminCancelTeamRegistration);
+router.post('/admin/approve-request/:registrationId', authMiddleware, adminMiddleware, registrationController.adminApproveTeamRequest);
+router.get('/admin/event/:eventId/eligible-students', authMiddleware, adminMiddleware, registrationController.getNonOrganizerStudentsForEvent);
+
+// Admin & Organizer features (protected)
 router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);
 router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getConfirmedTeams);
 

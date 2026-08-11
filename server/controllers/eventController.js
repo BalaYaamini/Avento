@@ -2411,6 +2411,84 @@ const removeProposalDocument = async (req, res) => {
   }
 };
 
+/**
+ * ADMIN ONLY: Manually close event registrations.
+ */
+const adminCloseRegistrations = async (req, res) => {
+  try {
+    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
+    }
+
+    const { id } = req.params;
+
+    const { data: event, error: fetchErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    // Set registration_deadline to now (past/current timestamp closes registrations in system)
+    const nowIso = new Date().toISOString();
+
+    const { data: updatedEvent, error: updateErr } = await supabase
+      .from('events')
+      .update({ registration_deadline: nowIso })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({ message: 'Event registrations manually closed by Admin.', event: updatedEvent });
+  } catch (err) {
+    console.error('Error in adminCloseRegistrations:', err);
+    res.status(500).json({ message: 'Server error closing event registrations.', error: err.message });
+  }
+};
+
+/**
+ * ADMIN ONLY: Manually open event registrations.
+ */
+const adminOpenRegistrations = async (req, res) => {
+  try {
+    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
+    }
+
+    const { id } = req.params;
+
+    const { data: event, error: fetchErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    // Setting registration_deadline to null re-opens registrations in the system
+    const { data: updatedEvent, error: updateErr } = await supabase
+      .from('events')
+      .update({ registration_deadline: null })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({ message: 'Event registrations manually opened by Admin.', event: updatedEvent });
+  } catch (err) {
+    console.error('Error in adminOpenRegistrations:', err);
+    res.status(500).json({ message: 'Server error opening event registrations.', error: err.message });
+  }
+};
+
 module.exports = {
   checkCoreOrganizerAccess,
   getEvents,
@@ -2446,4 +2524,6 @@ module.exports = {
   removeProposalTeamMember,
   updateProposalDescription,
   removeProposalDocument,
+  adminCloseRegistrations,
+  adminOpenRegistrations
 };
