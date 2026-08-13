@@ -1,4 +1,5 @@
 // server/controllers/eventController.js
+const path = require('path');
 const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
 const { notifyUser } = require('../services/notificationService');
@@ -2521,6 +2522,116 @@ const adminOpenRegistrations = async (req, res) => {
   }
 };
 
+const saveConfirmationEmailConfig = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subject, body, attachmentUrl, attachmentName } = req.body;
+
+    const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const currentConfig = event.certificate_fields_config || {};
+    const updatedConfig = {
+      ...currentConfig,
+      confirmation_email: {
+        subject: subject !== undefined ? subject : (currentConfig.confirmation_email?.subject || ''),
+        body: body !== undefined ? body : (currentConfig.confirmation_email?.body || ''),
+        attachment_url: attachmentUrl !== undefined ? attachmentUrl : (currentConfig.confirmation_email?.attachment_url || null),
+        attachment_name: attachmentName !== undefined ? attachmentName : (currentConfig.confirmation_email?.attachment_name || null),
+        updated_at: new Date().toISOString(),
+        updated_by: req.user.id
+      }
+    };
+
+    const { data: updatedEvent, error: updateErr } = await supabase
+      .from('events')
+      .update({ certificate_fields_config: updatedConfig })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      message: 'Confirmation email configuration saved successfully.',
+      confirmationEmailConfig: updatedEvent.certificate_fields_config?.confirmation_email
+    });
+  } catch (err) {
+    console.error('Error saving confirmation email config:', err);
+    res.status(500).json({ message: 'Server error saving confirmation email config.', error: err.message });
+  }
+};
+
+const uploadConfirmationAttachment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ message: 'No attachment file provided.' });
+    }
+
+    const file = req.file;
+    const ext = path.extname(file.originalname).toLowerCase();
+    const fileName = `confirmation-attachment-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+    const storagePath = `confirmation-attachments/${id}/${fileName}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from('documents')
+      .upload(storagePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true
+      });
+
+    if (uploadErr) {
+      console.error('[ATTACHMENT UPLOAD ERROR]', uploadErr);
+      return res.status(500).json({ message: 'Failed to upload attachment file to storage.', error: uploadErr.message });
+    }
+
+    const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+    const publicUrl = urlData?.publicUrl;
+
+    res.json({
+      message: 'Attachment uploaded successfully.',
+      attachmentUrl: publicUrl,
+      attachmentName: file.originalname
+    });
+  } catch (err) {
+    console.error('Error uploading confirmation attachment:', err);
+    res.status(500).json({ message: 'Server error uploading attachment.', error: err.message });
+  }
+};
+
+const deleteConfirmationAttachment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const currentConfig = event.certificate_fields_config || {};
+    if (currentConfig.confirmation_email) {
+      delete currentConfig.confirmation_email.attachment_url;
+      delete currentConfig.confirmation_email.attachment_name;
+    }
+
+    const { data: updatedEvent, error: updateErr } = await supabase
+      .from('events')
+      .update({ certificate_fields_config: currentConfig })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({ message: 'Attachment removed successfully.', confirmationEmailConfig: updatedEvent.certificate_fields_config?.confirmation_email });
+  } catch (err) {
+    console.error('Error deleting confirmation attachment:', err);
+    res.status(500).json({ message: 'Server error deleting attachment.', error: err.message });
+  }
+};
+
 module.exports = {
   checkCoreOrganizerAccess,
   getEvents,
@@ -2557,5 +2668,8 @@ module.exports = {
   updateProposalDescription,
   removeProposalDocument,
   adminCloseRegistrations,
-  adminOpenRegistrations
+  adminOpenRegistrations,
+  saveConfirmationEmailConfig,
+  uploadConfirmationAttachment,
+  deleteConfirmationAttachment
 };

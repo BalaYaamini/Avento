@@ -32,9 +32,9 @@ const verifySMTPConnection = async () => {
   return true;
 };
 
-const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
+const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments }) => {
   if (!BREVO_API_KEY) {
-    console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}`);
+    console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
     return;
   }
 
@@ -45,12 +45,18 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
   }
 
   try {
-    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
+    const payload = {
       sender: { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME },
       to: [{ email: recipientEmail }],
       subject,
       htmlContent: htmlBody,
-    }, {
+    };
+
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      payload.attachment = attachments;
+    }
+
+    const response = await axios.post('https://api.brevo.com/v3/smtp/email', payload, {
       headers: {
         'api-key': BREVO_API_KEY,
         'Content-Type': 'application/json',
@@ -171,7 +177,7 @@ const generateEmailHtml = (title, message, data = {}) => {
 </html>`;
 };
 
-const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 'info', eventId = null, emailSubject, emailData = {} }) => {
+const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 'info', eventId = null, emailSubject, emailData = {}, attachments }) => {
   try {
     await sendInAppNotification({ recipientId, title, message, type, eventId });
 
@@ -213,7 +219,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
         timestamp: new Date().toLocaleString(),
         ...emailData
       });
-      await sendEmailNotification({ recipientEmail: targetEmail, subject: emailSubject || title, htmlBody });
+      await sendEmailNotification({ recipientEmail: targetEmail, subject: emailSubject || title, htmlBody, attachments: attachments || emailData?.attachments });
     }
   } catch (err) {
     console.error('[NOTIFY] Error:', err.message);

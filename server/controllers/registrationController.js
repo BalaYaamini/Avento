@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
 const { notifyUser } = require('../services/notificationService');
@@ -43,6 +45,97 @@ const resolveUserProfile = async (userId) => {
     if (data && data.email) return data;
   } catch (e) {}
   return { id: userId, name: 'Unknown', email: null };
+};
+
+const sendEventConfirmationEmail = async (teamId, event, leaderId) => {
+  try {
+    const { data: confirmedRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('team_id', teamId)
+      .eq('status', 'registered');
+
+    const { data: teamData } = await supabase
+      .from('event_teams')
+      .select('name, leader_id')
+      .eq('id', teamId)
+      .single();
+
+    if (!confirmedRegs || confirmedRegs.length === 0) return;
+
+    const leaderProfile = await resolveUserProfile(teamData?.leader_id || leaderId);
+    const eventTitle = event.title || 'the event';
+    const dateStr = event.date ? new Date(event.date).toLocaleDateString() : 'TBA';
+    const venueStr = event.venue || 'TBA';
+    const teamName = teamData?.name || 'your team';
+    const leaderName = leaderProfile?.name || 'Team Leader';
+
+    // Retrieve event confirmation email configuration
+    const emailConfig = event?.certificate_fields_config?.confirmation_email || {};
+    const rawSubject = emailConfig.subject || `Team Confirmed – ${eventTitle}`;
+    const rawBody = emailConfig.body || `Dear {{teamLeaderName}},\n\nYour team "{{teamName}}" has been successfully confirmed for "{{eventName}}". See you there!\n\nRegards,\nAvento Team`;
+
+    // Process dynamic placeholders helper
+    const replacePlaceholders = (text, recipientName) => {
+      if (!text) return '';
+      return text
+        .replace(/\{\{eventName\}\}/g, eventTitle)
+        .replace(/\{\{teamName\}\}/g, teamName)
+        .replace(/\{\{recipientName\}\}/g, recipientName || 'Participant')
+        .replace(/\{\{teamLeaderName\}\}/g, leaderName)
+        .replace(/\{\{date\}\}/g, dateStr)
+        .replace(/\{\{venue\}\}/g, venueStr);
+    };
+
+    // Download/convert attachment if configured
+    let emailAttachments = null;
+    if (emailConfig.attachment_url) {
+      try {
+        const attachmentUrl = emailConfig.attachment_url;
+        const attachmentName = emailConfig.attachment_name || 'Avento_Guide.pdf';
+
+        if (attachmentUrl.startsWith('http')) {
+          const axios = require('axios');
+          const response = await axios.get(attachmentUrl, { responseType: 'arraybuffer' });
+          const fileBase64 = Buffer.from(response.data).toString('base64');
+          emailAttachments = [{ name: attachmentName, content: fileBase64 }];
+        } else if (fs.existsSync(attachmentUrl)) {
+          const fileBase64 = fs.readFileSync(attachmentUrl).toString('base64');
+          emailAttachments = [{ name: attachmentName, content: fileBase64 }];
+        }
+      } catch (attachErr) {
+        console.error('[CONFIRMATION EMAIL ATTACHMENT WARNING] Could not attach configured file:', attachErr.message);
+      }
+    }
+
+    for (const r of confirmedRegs) {
+      const profile = await resolveUserProfile(r.user_id);
+      const recipientName = profile?.name || 'Participant';
+      const formattedSubject = replacePlaceholders(rawSubject, recipientName);
+      const formattedMessage = replacePlaceholders(rawBody, recipientName);
+
+      await notifyUser({
+        recipientId: r.user_id,
+        title: 'Team Registration Confirmed',
+        message: `Your team "${teamName}" has been confirmed for "${eventTitle}". See you there!`,
+        type: 'success',
+        eventId: event.id,
+        emailSubject: formattedSubject,
+        emailData: {
+          eventName: eventTitle,
+          date: dateStr,
+          venue: venueStr,
+          teamName,
+          status: 'Confirmed',
+          recipientName,
+          customNotes: formattedMessage
+        },
+        attachments: emailAttachments
+      });
+    }
+  } catch (err) {
+    console.error('Non-fatal error sending event confirmation emails:', err.message);
+  }
 };
 
 // Register a user for an event
@@ -646,6 +739,7 @@ exports.updatePaymentStatus = async (req, res) => {
       const acceptedUserIds = new Set([String(registration.user_id)]);
       (teamRegs || []).forEach(reg => { if (reg.status === 'registered') acceptedUserIds.add(String(reg.user_id)); });
       await finalizeTeamRegistration(registration.team_id, event, registration.user_id, acceptedUserIds);
+      await sendEventConfirmationEmail(registration.team_id, event, registration.user_id);
     }
     res.json({ message: `Payment ${paymentStatus}.`, registration: updated });
   } catch (err) {
@@ -1315,10 +1409,6 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: 'A valid 10-digit Indian mobile number is required for the Team Leader.' });
     }
 
-    if (utrNumber !== undefined && utrNumber !== null && !validateUtr(utrNumber)) {
-      return res.status(400).json({ message: 'UTR must be 12-22 letters or numbers.' });
-    }
-
     // 1. Fetch team & associated event details
     const { data: teamData, error: teamErr } = await supabase
       .from('event_teams')
@@ -1336,8 +1426,10 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(404).json({ message: 'Associated event not found.' });
     }
 
-    if (event.payment_enabled && !validateUtr(utrNumber)) {
-      return res.status(400).json({ message: 'A valid UTR is required before confirming this team.' });
+    if (event.payment_enabled) {
+      if (!utrNumber || !validateUtr(utrNumber)) {
+        return res.status(400).json({ message: 'A valid UTR is required before confirming this team.' });
+      }
     }
 
     // 2. STRICT CHECK: Event published status
@@ -1442,30 +1534,8 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(finalizeErr.statusCode || 400).json({ message: finalizeErr.message });
     }
 
-    // Notify all confirmed team members
-    try {
-      const { data: confirmedRegs } = await supabase.from('event_registrations').select('user_id').eq('team_id', teamId).eq('status', 'registered');
-      const eventTitle = event.title || 'the event';
-      const dateStr = new Date(event.date).toLocaleDateString();
-      const teamName = teamData.name || 'your team';
-
-      if (confirmedRegs) {
-        for (const r of confirmedRegs) {
-          const profile = await resolveUserProfile(r.user_id);
-          await notifyUser({
-            recipientId: r.user_id,
-            title: 'Team Registration Confirmed',
-            message: `Your team "${teamName}" has been confirmed for "${eventTitle}". See you there!`,
-            type: 'success',
-            eventId: event.id,
-            emailSubject: `Team Confirmed – ${eventTitle}`,
-            emailData: { eventName: eventTitle, date: dateStr, venue: event.venue || 'TBA', teamName, status: 'Confirmed', recipientName: profile.name }
-          });
-        }
-      }
-    } catch (notifErr) {
-      console.error('Non-fatal error sending team confirmation notifications:', notifErr.message);
-    }
+    // Send event confirmation email to leader & confirmed members
+    await sendEventConfirmationEmail(teamId, event, leaderId);
 
     res.json({ message: 'Team registration confirmed successfully!' });
   } catch (err) {
