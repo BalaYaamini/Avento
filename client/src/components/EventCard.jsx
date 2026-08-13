@@ -61,11 +61,11 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
       </div>
 
       {/* Event Banner */}
-      <div className="relative h-48 w-full overflow-hidden rounded-xl border-2 border-pastel-lavender/20 mb-4">
+      <div className="relative h-72 w-full overflow-hidden rounded-xl border-2 border-pastel-lavender/20 bg-slate-50 mb-4 sm:h-96">
         <img
           src={event.imageUrl}
           alt={event.title}
-          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo"
+          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-700 ease-out-expo"
           onError={(e) => {
             e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800';
           }}
@@ -110,7 +110,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
         </h3>
 
         {/* Description */}
-        <p className="text-sm font-body text-text-secondary mb-4 line-clamp-2 flex-grow leading-relaxed">
+        <p className="text-sm font-body text-text-secondary mb-4 flex-grow leading-relaxed whitespace-pre-wrap">
           {event.description}
         </p>
 
