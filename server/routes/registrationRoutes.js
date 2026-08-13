@@ -9,6 +9,7 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 router.post('/', authMiddleware, registrationController.registerForEvent);
 router.post('/team', authMiddleware, registrationController.registerTeamForEvent);
 router.post('/team/:teamId/confirm', authMiddleware, registrationController.confirmTeamRegistration);
+router.put('/:registrationId/payment-status', authMiddleware, registrationController.updatePaymentStatus);
 router.put('/team/:teamId', authMiddleware, registrationController.updateTeamName);
 router.post('/team/:teamId/members', authMiddleware, registrationController.addTeamMember);
 router.delete('/team/:teamId/members/:userId', authMiddleware, registrationController.removeTeamMember);
