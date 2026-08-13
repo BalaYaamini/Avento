@@ -270,6 +270,7 @@ const createEvent = async (req, res) => {
       title, description, category, venue, date, capacity, imageUrl, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
       registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
+      , scoringEnabled, scoreboardVisible
     } = req.body;
 
     if (!title || !description || !category || !venue || !date) {
@@ -390,6 +391,8 @@ const createEvent = async (req, res) => {
       payment_upi_id: isPaymentEnabled ? (paymentUpiId || null) : null,
       payment_qr_url: isPaymentEnabled ? (paymentQrUrl || null) : null,
       payment_instructions: isPaymentEnabled ? (paymentInstructions || null) : null,
+      scoring_enabled: scoringEnabled === true || scoringEnabled === 'true',
+      scoreboard_visible: (scoringEnabled === true || scoringEnabled === 'true') && (scoreboardVisible === true || scoreboardVisible === 'true'),
     };
 
     if (proposedBy) newEvent.proposed_by = proposedBy;
@@ -497,6 +500,7 @@ const editEvent = async (req, res) => {
       title, description, category, venue, date, capacity, imageUrl, status, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
       registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
+      , scoringEnabled, scoreboardVisible
     } = req.body;
 
     const { data: event, error: fetchErr } = await supabase
@@ -555,6 +559,12 @@ const editEvent = async (req, res) => {
         }
       }
       updates.registration_deadline = registrationDeadline || null;
+    }
+    if (scoringEnabled !== undefined) {
+      updates.scoring_enabled = scoringEnabled === true || scoringEnabled === 'true';
+      updates.scoreboard_visible = updates.scoring_enabled && (scoreboardVisible === true || scoreboardVisible === 'true');
+    } else if (scoreboardVisible !== undefined) {
+      updates.scoreboard_visible = !!event.scoring_enabled && (scoreboardVisible === true || scoreboardVisible === 'true');
     }
 
     if (paymentEnabled !== undefined || paymentAmount !== undefined || paymentUpiId !== undefined || paymentQrUrl !== undefined || paymentInstructions !== undefined) {

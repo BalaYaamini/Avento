@@ -10,7 +10,7 @@ import {
   PinDoodle
 } from './Doodles';
 
-const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onCancelRegister }) => {
+const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onViewScores, onCancelRegister }) => {
   const { user } = useAuth();
   
   const formatDate = (dateString) => {
@@ -164,6 +164,9 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
             >
               View Organizers
             </button>
+          )}
+          {isActive && event.scoring_enabled && event.scoreboard_visible && (
+            <button onClick={onViewScores} className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-600 transition-all hover:bg-emerald-500/20">View Scoreboard</button>
           )}
 
           <div className="w-full flex flex-col gap-2">

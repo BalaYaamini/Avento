@@ -569,7 +569,7 @@ exports.getAllRegistrations = async (req, res) => {
       .select(`
         *,
         eventId:events (*),
-        userId:profiles (*),
+         userId:profiles!event_registrations_user_id_fkey (*),
         teamId:event_teams (*)
       `);
 

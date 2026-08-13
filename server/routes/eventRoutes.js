@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const eventController = require('../controllers/eventController');
+const scoringController = require('../controllers/scoringController');
 const authMiddleware = require('../middleware/authMiddleware');
 const adminMiddleware = require('../middleware/adminMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
@@ -28,6 +29,9 @@ const upload = multer({
 
 // Public routes
 router.get('/', eventController.getEvents);
+router.get('/:eventId/scoring', authMiddleware, scoringController.getScoring);
+router.put('/:eventId/scoring', authMiddleware, scoringController.updateConfig);
+router.put('/:eventId/scoring/score', authMiddleware, scoringController.updateScore);
 
 // IMPORTANT: /organizer/my-events MUST come before /:id to avoid being matched as an id
 router.get(
