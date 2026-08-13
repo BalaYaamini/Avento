@@ -18,6 +18,7 @@ import ChangePassword from './pages/ChangePassword';
 import Profile from './pages/Profile';
 import StudentRegistrations from './pages/StudentRegistrations';
 import StudentCertificates from './pages/StudentCertificates';
+import StudentScoringEvents from './pages/StudentScoringEvents';
 
 // Protected Administrator views
 import AdminDashboard from './pages/AdminDashboard';
@@ -118,6 +119,14 @@ const AnimatedRoutes = () => {
           element={
             <ProtectedRoute allowedRoles={['student']}>
               <StudentCertificates />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/scoring-events"
+          element={
+            <ProtectedRoute allowedRoles={['student', 'student_organizer', 'faculty', 'faculty_organizer']}>
+              <StudentScoringEvents />
             </ProtectedRoute>
           }
         />

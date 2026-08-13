@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .dark .scoring-board input {
+    background-color: rgb(30 41 59 / 0.9);
+    border-color: rgb(71 85 105);
+    color: rgb(241 245 249);
+  }
+
+  .dark .scoring-board table thead tr,
+  .dark .scoring-board table thead th,
+  .dark .scoring-board table tbody td {
+    background-color: rgb(15 23 42 / 0.9);
+    border-color: rgb(51 65 85);
+    color: rgb(203 213 225);
+  }
+}
+
 /* ============================================
    🌸 AVENTO SCRAPBOOK THEME 🌸
    ============================================ */

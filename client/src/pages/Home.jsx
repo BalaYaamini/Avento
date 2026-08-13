@@ -14,6 +14,7 @@ import {
   GeometricBlobDoodle
 } from '../components/Doodles';
 import RegistrationCountdown from '../components/RegistrationCountdown';
+import ScoringBoard from '../components/ScoringBoard';
 
 const Home = () => {
   const { user } = useAuth();
@@ -31,6 +32,7 @@ const Home = () => {
 
   // Organizers Modal state
   const [isOrgModalOpen, setIsOrgModalOpen] = useState(false);
+  const [scoreEvent, setScoreEvent] = useState(null);
   const [orgModalEvent, setOrgModalEvent] = useState(null);
   const [eventOrganizers, setEventOrganizers] = useState([]);
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
@@ -630,11 +632,16 @@ const Home = () => {
                 onJoinTeam={() => openJoinModal(evt)}
                 isSubmitting={registeringIds[evt._id || evt.id]}
                 onViewOrganizers={() => handleViewOrganizers(evt)}
+                onViewScores={() => setScoreEvent(evt)}
                 onCancelRegister={() => openConfirmCancel(evt)}
               />
             ))}
           </div>
         )}
+
+        <Modal isOpen={!!scoreEvent} onClose={() => setScoreEvent(null)} title={`Scoreboard - ${scoreEvent?.title || ''}`}>
+          {scoreEvent && <ScoringBoard eventId={scoreEvent.id || scoreEvent._id} canEdit={false} />}
+        </Modal>
 
         {/* View Organizers Modal */}
         <Modal
