@@ -112,6 +112,7 @@ const AdminRegistrations = () => {
       Event: reg.eventId?.title || '',
       Team: reg.teamId?.name || 'Individual',
       'Team Leader': reg.teamId?.leader_id === reg.user_id ? 'Yes' : 'No',
+      'Contact Number': reg.teamId?.leader_contact_number || 'N/A',
       'Student Name': reg.userId?.name || reg.userId?.fullName || '',
       Email: reg.userId?.email || '',
       Department: reg.userId?.department || '',
@@ -130,7 +131,7 @@ const AdminRegistrations = () => {
       if (!reg.teamId) return result;
       const id = reg.team_id;
       const leader = reg.teamId.leader_id === reg.user_id;
-      if (!result[id]) result[id] = { Event: reg.eventId?.title || '', Team: reg.teamId.name, 'Team Status': reg.teamId.status, UTR: leader ? (reg.utr_number || '') : '', 'Payment Status': leader ? (reg.payment_status || '') : '', 'Rejection Reason': leader ? (reg.payment_rejection_reason || '') : '' };
+      if (!result[id]) result[id] = { Event: reg.eventId?.title || '', Team: reg.teamId.name, 'Team Status': reg.teamId.status, 'Contact Number': reg.teamId.leader_contact_number || 'N/A', UTR: leader ? (reg.utr_number || '') : '', 'Payment Status': leader ? (reg.payment_status || '') : '', 'Rejection Reason': leader ? (reg.payment_rejection_reason || '') : '' };
       return result;
     }, {}));
     const pending = rows.filter(row => ['submitted', 'rejected'].includes(row['Payment Status']));
