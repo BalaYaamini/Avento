@@ -68,6 +68,28 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
   }
 };
 
+const sendPasswordResetEmail = async ({ recipientEmail, resetUrl }) => {
+  const htmlBody = `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:40px 20px;background:#fdfbf7;font-family:Arial,sans-serif;color:#1e293b;">
+  <div style="max-width:560px;margin:auto;background:#fff;border-radius:20px;padding:40px;box-shadow:0 4px 20px rgba(0,0,0,.06);">
+    <h1 style="margin:0;color:#1e293b;">AVENTO</h1>
+    <h2 style="margin:28px 0 12px;">Reset your password</h2>
+    <p style="font-size:16px;line-height:1.6;color:#475569;">Use the button below to create a new password. This link expires according to your Supabase Auth settings.</p>
+    <p style="text-align:center;margin:32px 0;"><a href="${resetUrl}" style="display:inline-block;padding:14px 28px;border-radius:12px;background:#8b5cf6;color:#fff;text-decoration:none;font-weight:700;">Reset Password</a></p>
+    <p style="font-size:12px;line-height:1.5;color:#94a3b8;">If you did not request this, you can safely ignore this email.</p>
+  </div>
+</body>
+</html>`;
+
+  return sendEmailNotification({
+    recipientEmail,
+    subject: 'Reset your Avento password',
+    htmlBody,
+  });
+};
+
 const sendInAppNotification = async ({ recipientId, title, message, type = 'info', eventId = null }) => {
   try {
     const notifData = {
@@ -206,6 +228,7 @@ const getEmailStats = () => {
 module.exports = {
   sendInAppNotification,
   sendEmailNotification,
+  sendPasswordResetEmail,
   verifySMTPConnection,
   notifyUser,
   getEmailStats

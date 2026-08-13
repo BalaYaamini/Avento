@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const { validatePasswordStrength } = require('../utils/passwordValidator');
+const { sendPasswordResetEmail } = require('../services/notificationService');
 
 // Allowed registration domains (gmail is blocked for public registration)
 const ALLOWED_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
@@ -241,6 +242,42 @@ exports.login = async (req, res) => {
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ message: 'Server error during login.', error: err.message });
+  }
+};
+
+// Generate the recovery token with Supabase, but deliver the email through Brevo.
+exports.sendPasswordReset = async (req, res) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase().trim();
+    const redirectTo = String(req.body.redirectTo || '').trim();
+
+    if (!email || !redirectTo) {
+      return res.status(400).json({ message: 'Email and redirect URL are required.' });
+    }
+
+    const role = getRoleFromEmail(email) || (email === 'admin.avento@gmail.com' ? 'admin' : null);
+    if (!role) {
+      return res.status(400).json({ message: 'Only registered users can reset passwords.' });
+    }
+
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo },
+    });
+    if (error || !data?.properties?.action_link) {
+      throw error || new Error('Could not generate password reset link.');
+    }
+
+    await sendPasswordResetEmail({
+      recipientEmail: email,
+      resetUrl: data.properties.action_link,
+    });
+
+    return res.json({ message: `Password reset link sent to ${email}. Please check your inbox.` });
+  } catch (err) {
+    console.error('Password reset email error:', err.message);
+    return res.status(500).json({ message: 'Failed to send reset link. Please try again.' });
   }
 };
 
