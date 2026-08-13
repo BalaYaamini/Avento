@@ -36,6 +36,12 @@ const StudentOrgEvents = () => {
   const [registrationDeadline, setRegistrationDeadline] = useState('');
   const [capacity, setCapacity] = useState('50');
   const [imageUrl, setImageUrl] = useState('');
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentUpiId, setPaymentUpiId] = useState('');
+  const [paymentQrUrl, setPaymentQrUrl] = useState('');
+  const [paymentInstructions, setPaymentInstructions] = useState('');
+  const [paymentQrFile, setPaymentQrFile] = useState(null);
 
   const getTomorrowISO = () => {
     const d = new Date();
@@ -159,6 +165,7 @@ const StudentOrgEvents = () => {
     setMaxTeamSize('4');
     setAllowCrossDepartment(true);
     setTeamLeaderRegistrationRequired(true);
+    setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setAssignedFaculty('');
     setFacultySearchTerm('');
     setIsFacultyDropdownOpen(false);
@@ -202,6 +209,12 @@ const StudentOrgEvents = () => {
     setMaxTeamSize(String(event.max_team_size || 4));
     setAllowCrossDepartment(event.allow_cross_department !== false);
     setTeamLeaderRegistrationRequired(event.team_leader_registration_required !== false);
+    setPaymentEnabled(!!event.payment_enabled);
+    setPaymentAmount(event.payment_amount ? String(event.payment_amount) : '');
+    setPaymentUpiId(event.payment_upi_id || '');
+    setPaymentQrUrl(event.payment_qr_url || '');
+    setPaymentInstructions(event.payment_instructions || '');
+    setPaymentQrFile(null);
     
     const facId = event.faculty_id || event.assignedFacultyId?._id || event.assignedFacultyId || '';
     setAssignedFaculty(facId);
@@ -241,6 +254,9 @@ const StudentOrgEvents = () => {
         return;
       }
     }
+    if (paymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (!paymentQrUrl && !paymentQrFile))) {
+      setFeedback({ type: 'error', message: 'Paid events require an amount and payment QR code.' }); return;
+    }
 
     const selectedDate = new Date(date);
     const tomorrow = new Date();
@@ -254,6 +270,13 @@ const StudentOrgEvents = () => {
     setSubmitting(true);
 
     let finalImageUrl = imageUrl;
+    let finalPaymentQrUrl = paymentQrUrl;
+    if (paymentEnabled && paymentQrFile) {
+      const filePath = `${Date.now()}-${Math.random().toString(36).slice(2)}.${paymentQrFile.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage.from('payment-qr').upload(filePath, paymentQrFile, { upsert: true });
+      if (uploadError) { setFeedback({ type: 'error', message: 'Failed to upload payment QR code.' }); setSubmitting(false); return; }
+      finalPaymentQrUrl = supabase.storage.from('payment-qr').getPublicUrl(filePath).data.publicUrl;
+    }
     if (posterOption === 'upload' && posterFile) {
       if (posterFile.size > 5 * 1024 * 1024) {
         setFeedback({ type: 'error', message: 'Poster image must be less than 5MB.' });
@@ -299,6 +322,8 @@ const StudentOrgEvents = () => {
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : 1,
         allowCrossDepartment,
         teamLeaderRegistrationRequired
+        , paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
+        paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined
       };
 
       if (modalMode === 'create') {
@@ -1162,6 +1187,10 @@ const StudentOrgEvents = () => {
                   </div>
                 </div>
               )}
+              <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                <div className="flex items-center justify-between"><div><h4 className="text-xs font-bold text-slate-800">Enable Payment</h4><p className="text-[10px] text-slate-600">Require UTR verification at team confirmation.</p></div><input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} /></div>
+                {paymentEnabled && <><input type="number" min="1" step="0.01" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount (Rs.)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input value={paymentUpiId} onChange={(e) => setPaymentUpiId(e.target.value)} placeholder="UPI ID (optional)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input type="file" accept="image/*" required={!paymentQrUrl} onChange={(e) => setPaymentQrFile(e.target.files[0] || null)} className="w-full text-sm" /><textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Payment instructions (optional)" rows={2} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />{paymentQrUrl && <img src={paymentQrUrl} alt="Payment QR preview" className="h-24 w-24 rounded-lg object-contain" />}</>}
+              </div>
             </div>
 
             <div className="relative">

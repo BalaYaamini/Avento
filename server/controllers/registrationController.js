@@ -2,6 +2,35 @@ const supabase = require('../config/supabaseClient');
 const User = require('../models/User');
 const { notifyUser } = require('../services/notificationService');
 
+const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
+
+const validateUtr = (utr) => typeof utr === 'string' && UTR_PATTERN.test(utr.trim());
+
+const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds) => {
+  const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
+    p_team_id: teamId,
+    p_leader_id: leaderId
+  });
+
+  if (rpcErr) {
+    const rpcMsg = rpcErr.message || '';
+    if (rpcMsg.includes('Maximum number of teams') || rpcMsg.includes('max_teams')) {
+      const error = new Error('No more team slots are available. Registration is full.');
+      error.statusCode = 409;
+      throw error;
+    }
+    if (!(rpcMsg.includes('Minimum team size not reached yet') && acceptedUserIds.size >= (event.min_team_size || 1))) {
+      throw new Error(rpcMsg || 'Failed to confirm team registration.');
+    }
+    await supabase.from('event_teams').update({ status: 'registered' }).eq('id', teamId);
+    await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', event.id);
+  }
+
+  const { error: regErr } = await supabase.from('event_registrations')
+    .update({ status: 'registered' }).eq('team_id', teamId).eq('user_id', leaderId);
+  if (regErr) throw regErr;
+};
+
 const resolveUserProfile = async (userId) => {
   try {
     const mongoUser = await User.findById(userId).select('name email');
@@ -522,7 +551,12 @@ exports.getEventRegistrations = async (req, res) => {
       .eq('event_id', eventId);
 
     if (error) throw error;
-    res.json(registrations);
+    const enriched = await Promise.all((registrations || []).map(async registration => {
+      const { data: paymentHistory } = await supabase.from('payment_verification_history')
+        .select('*').eq('registration_id', registration.id).order('acted_at', { ascending: false });
+      return { ...registration, paymentHistory: paymentHistory || [] };
+    }));
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching event registrations.', error: err.message });
   }
@@ -540,9 +574,82 @@ exports.getAllRegistrations = async (req, res) => {
       `);
 
     if (error) throw error;
-    res.json(registrations);
+    const enriched = await Promise.all((registrations || []).map(async registration => {
+      const { data: paymentHistory } = await supabase.from('payment_verification_history')
+        .select('*').eq('registration_id', registration.id).order('acted_at', { ascending: false });
+      return { ...registration, paymentHistory: paymentHistory || [] };
+    }));
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching all registrations.', error: err.message });
+  }
+};
+
+exports.updatePaymentStatus = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { paymentStatus, rejectionReason } = req.body;
+    if (!['verified', 'rejected'].includes(paymentStatus)) {
+      return res.status(400).json({ message: 'Payment status must be verified or rejected.' });
+    }
+    if (paymentStatus === 'rejected' && (!rejectionReason || !rejectionReason.trim())) {
+      return res.status(400).json({ message: 'A rejection reason is required.' });
+    }
+
+    const { data: registration, error: registrationErr } = await supabase
+      .from('event_registrations')
+      .select('id, event_id, team_id, user_id, utr_number, status, events(*)')
+      .eq('id', registrationId)
+      .maybeSingle();
+    if (registrationErr || !registration) return res.status(404).json({ message: 'Registration not found.' });
+    if (!registration.utr_number) return res.status(400).json({ message: 'This registration has no submitted UTR.' });
+
+    const event = registration.events;
+    let allowed = req.user.roles.includes('admin') ||
+      [event?.organizer_id, event?.student_organizer_id, event?.proposed_by, event?.faculty_id, event?.created_by]
+        .some(id => String(id || '') === String(req.user.id));
+
+    if (!allowed) {
+      const { data: organizer } = await supabase.from('event_organizers').select('id')
+        .eq('event_id', registration.event_id).eq('student_id', req.user.id).maybeSingle();
+      const { data: member } = await supabase.from('event_members').select('id')
+        .eq('event_id', registration.event_id).eq('user_id', req.user.id).maybeSingle();
+      allowed = !!organizer || !!member;
+    }
+    if (!allowed) return res.status(403).json({ message: 'Only an admin or event organizer can verify payments.' });
+
+    const updatePayload = {
+      payment_status: paymentStatus,
+      payment_rejection_reason: paymentStatus === 'rejected' ? rejectionReason.trim() : null,
+      payment_verified_by: req.user.id,
+      payment_verified_at: new Date().toISOString()
+    };
+    const { data: updated, error: updateErr } = await supabase
+      .from('event_registrations').update(updatePayload)
+      .eq('id', registrationId).select().single();
+    if (updateErr) throw updateErr;
+
+    const { error: historyErr } = await supabase.from('payment_verification_history').insert({
+      registration_id: registrationId,
+      event_id: registration.event_id,
+      utr_number: registration.utr_number,
+      status: paymentStatus,
+      reason: paymentStatus === 'rejected' ? rejectionReason.trim() : null,
+      acted_by: req.user.id
+    });
+    if (historyErr) throw historyErr;
+
+    if (paymentStatus === 'verified' && registration.team_id) {
+      const { data: teamRegs, error: teamRegsErr } = await supabase.from('event_registrations')
+        .select('user_id, status').eq('team_id', registration.team_id);
+      if (teamRegsErr) throw teamRegsErr;
+      const acceptedUserIds = new Set([String(registration.user_id)]);
+      (teamRegs || []).forEach(reg => { if (reg.status === 'registered') acceptedUserIds.add(String(reg.user_id)); });
+      await finalizeTeamRegistration(registration.team_id, event, registration.user_id, acceptedUserIds);
+    }
+    res.json({ message: `Payment ${paymentStatus}.`, registration: updated });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message || 'Server error updating payment status.' });
   }
 };
 
@@ -1197,7 +1304,7 @@ exports.leaveTeam = async (req, res) => {
 exports.confirmTeamRegistration = async (req, res) => {
   try {
     const { teamId } = req.params;
-    const { leaderContactNumber } = req.body;
+    const { leaderContactNumber, utrNumber } = req.body;
     const leaderId = req.user.id;
 
     if (!teamId) {
@@ -1206,6 +1313,10 @@ exports.confirmTeamRegistration = async (req, res) => {
 
     if (!leaderContactNumber || !/^[6-9]\d{9}$/.test(leaderContactNumber)) {
       return res.status(400).json({ message: 'A valid 10-digit Indian mobile number is required for the Team Leader.' });
+    }
+
+    if (utrNumber !== undefined && utrNumber !== null && !validateUtr(utrNumber)) {
+      return res.status(400).json({ message: 'UTR must be 12-22 letters or numbers.' });
     }
 
     // 1. Fetch team & associated event details
@@ -1223,6 +1334,10 @@ exports.confirmTeamRegistration = async (req, res) => {
     const event = teamData.events;
     if (!event) {
       return res.status(404).json({ message: 'Associated event not found.' });
+    }
+
+    if (event.payment_enabled && !validateUtr(utrNumber)) {
+      return res.status(400).json({ message: 'A valid UTR is required before confirming this team.' });
     }
 
     // 2. STRICT CHECK: Event published status
@@ -1291,34 +1406,40 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: contactErr.message || 'Failed to save team leader contact number.' });
     }
 
-    // 7. Call atomic RPC for DB row locking & final confirmation
-    const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
-      p_team_id: teamId,
-      p_leader_id: leaderId
-    });
-
-    if (rpcErr) {
-      const rpcMsg = rpcErr.message || '';
-      if (rpcMsg.includes('Maximum number of teams') || rpcMsg.includes('max_teams')) {
-        return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
+    // Store payment against the leader registration before final confirmation.
+    if (event.payment_enabled) {
+      const { data: paymentRegistration, error: paymentErr } = await supabase
+        .from('event_registrations')
+        .update({ utr_number: utrNumber.trim().toUpperCase(), payment_status: 'submitted' })
+        .eq('team_id', teamId)
+        .eq('user_id', leaderId)
+        .select('id')
+        .single();
+      if (paymentErr) {
+        if (paymentErr.code === '23505' || /utr/i.test(paymentErr.message || '')) {
+          return res.status(409).json({ message: 'This UTR has already been used for another team.' });
+        }
+        throw paymentErr;
       }
-      if (rpcMsg.includes('Minimum team size not reached yet') && acceptedUserIds.size >= minTeamSize) {
-        await supabase.from('event_teams').update({ status: 'registered' }).eq('id', teamId);
-        await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', event.id);
-      } else {
-        return res.status(400).json({ message: rpcMsg || 'Failed to confirm team registration.' });
-      }
+      const { error: submissionHistoryErr } = await supabase.from('payment_verification_history').insert({
+        registration_id: paymentRegistration.id,
+        event_id: event.id,
+        utr_number: utrNumber.trim().toUpperCase(),
+        status: 'submitted',
+        acted_by: leaderId
+      });
+      if (submissionHistoryErr) throw submissionHistoryErr;
+      return res.status(202).json({
+        message: 'UTR submitted. Your team will be confirmed after admin, organizer, or faculty verification.',
+        paymentStatus: 'submitted'
+      });
     }
 
-    // 8. Update leader's registration status ONLY AFTER confirmation succeeds
-    const { error: regErr } = await supabase
-      .from('event_registrations')
-      .update({ status: 'registered' })
-      .eq('team_id', teamId)
-      .eq('user_id', leaderId);
-
-    if (regErr) {
-      console.error('Error setting leader registration status:', regErr.message);
+    // 7. Call atomic RPC for DB row locking & final confirmation
+    try {
+      await finalizeTeamRegistration(teamId, event, leaderId, acceptedUserIds);
+    } catch (finalizeErr) {
+      return res.status(finalizeErr.statusCode || 400).json({ message: finalizeErr.message });
     }
 
     // Notify all confirmed team members
@@ -1414,7 +1535,7 @@ exports.getConfirmedTeams = async (req, res) => {
       .from('event_registrations')
       .select(`
         id, team_id, user_id, attendance_status, created_at,
-        profiles(id, name, email, department, roll_number)
+         profiles!event_registrations_user_id_fkey(id, name, email, department, roll_number)
       `)
       .in('team_id', teamIds)
       .eq('status', 'registered');
