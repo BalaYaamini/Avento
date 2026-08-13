@@ -435,7 +435,7 @@ const Home = () => {
           <img 
             src="https://suh.edu.in/wp-content/uploads/2025/06/SU-2-scaled-1.webp" 
             alt="University Campus" 
-            className="w-full h-full object-cover object-center animate-hero-bg-zoom opacity-45 scale-105"
+            className="w-full h-full object-cover object-center animate-hero-bg-zoom opacity-60 scale-105"
           />
           {/* Gradient Overlay to ensure text readability */}
           <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-900/60 to-slate-950/80 backdrop-blur-[1px]" />
