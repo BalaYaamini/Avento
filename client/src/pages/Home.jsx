@@ -584,7 +584,7 @@ const Home = () => {
 
         {/* ── Events Grid ── */}
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid w-full grid-cols-1 gap-8">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="polaroid h-[420px] animate-pulse overflow-hidden">
                 <div className="h-48 bg-gray-200 rounded-xl mb-4" />
@@ -617,7 +617,7 @@ const Home = () => {
             <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">There are no events matching your search or filters at the moment.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid w-full grid-cols-1 gap-8">
             {events.map((evt, index) => (
               <EventCard
                 key={evt._id || evt.id}

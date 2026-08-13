@@ -47,7 +47,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
 
   return (
     <div 
-      className={`animate-fade-in-up polaroid scrapbook-panel-hover relative flex flex-col h-full group ${randomRotation}`}
+      className={`animate-fade-in-up polaroid scrapbook-panel-hover relative flex w-full min-w-0 flex-col h-full group ${randomRotation}`}
       style={{ animationDelay: `${staggerDelay}ms` }}
     >
       {/* Decorative Tape/Pin */}
