@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
 
 const Profile = () => {
   const { user, updateProfile, clearError } = useAuth();
@@ -124,6 +125,9 @@ const Profile = () => {
             </button>
           </form>
         </div>
+        <Link to="/scoring-events" className="mt-5 flex items-center justify-between rounded-2xl border border-violet-200 bg-violet-50/60 p-5 transition hover:bg-violet-100">
+          <div><h2 className="font-display text-sm font-bold text-violet-800">Event Scoring</h2><p className="mt-1 text-xs text-violet-600">View scoreboards published for participants.</p></div><span className="text-xl font-bold text-violet-600">→</span>
+        </Link>
 
       </div>
     </div>

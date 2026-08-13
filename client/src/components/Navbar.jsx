@@ -221,6 +221,7 @@ const Navbar = () => {
                       >
                         Certificates
                       </NavLink>
+                      <NavLink to="/scoring-events" onClick={() => setIsWorkspaceOpen(false)} className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}>Scoring</NavLink>
                     </div>
                   </div>
                 </div>
@@ -423,7 +424,8 @@ const Navbar = () => {
                  <div className="px-4 py-2 text-sm font-bold text-text-primary uppercase tracking-wider">My Workspace</div>
                  <div className="pl-4 border-l-2 border-pastel-lavender/30 ml-4 space-y-1">
                    <NavLink to="/my-registrations" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Registrations</NavLink>
-                   <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
+                    <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
+                    <NavLink to="/scoring-events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Scoring</NavLink>
                  </div>
                </div>
                

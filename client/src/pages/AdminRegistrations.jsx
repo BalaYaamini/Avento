@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
+import * as XLSX from 'xlsx';
 
 const AdminRegistrations = () => {
   const [registrations, setRegistrations] = useState([]);
@@ -93,6 +94,53 @@ const AdminRegistrations = () => {
     }
   };
 
+  const handlePaymentStatus = async (registrationId, paymentStatus) => {
+    const rejectionReason = paymentStatus === 'rejected'
+      ? window.prompt('Enter the reason for rejecting this UTR:')
+      : undefined;
+    if (paymentStatus === 'rejected' && !rejectionReason?.trim()) return;
+    try {
+      await axios.put(`/api/registrations/${registrationId}/payment-status`, { paymentStatus, rejectionReason });
+      setRegistrations(prev => prev.map(reg => (reg.id || reg._id) === registrationId ? { ...reg, payment_status: paymentStatus } : reg));
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update payment status.');
+    }
+  };
+
+  const exportRegistrations = () => {
+    const rows = filteredRegistrations.map(reg => ({
+      Event: reg.eventId?.title || '',
+      Team: reg.teamId?.name || 'Individual',
+      'Team Leader': reg.teamId?.leader_id === reg.user_id ? 'Yes' : 'No',
+      'Student Name': reg.userId?.name || reg.userId?.fullName || '',
+      Email: reg.userId?.email || '',
+      Department: reg.userId?.department || '',
+      'Roll Number': reg.userId?.roll_number || '',
+      'Registration Status': reg.status || '',
+      UTR: reg.utr_number || '',
+      'Payment Status': reg.payment_status || 'Not required',
+      'Rejection Reason': reg.payment_rejection_reason || '',
+      'Verified At': reg.payment_verified_at || '',
+      'Registered On': reg.created_at || reg.registrationDate || ''
+    }));
+    if (!rows.length) return alert('There are no registrations to export.');
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = Object.keys(rows[0]).map(key => ({ wch: Math.max(key.length + 2, 18) }));
+    const teams = Object.values(filteredRegistrations.reduce((result, reg) => {
+      if (!reg.teamId) return result;
+      const id = reg.team_id;
+      const leader = reg.teamId.leader_id === reg.user_id;
+      if (!result[id]) result[id] = { Event: reg.eventId?.title || '', Team: reg.teamId.name, 'Team Status': reg.teamId.status, UTR: leader ? (reg.utr_number || '') : '', 'Payment Status': leader ? (reg.payment_status || '') : '', 'Rejection Reason': leader ? (reg.payment_rejection_reason || '') : '' };
+      return result;
+    }, {}));
+    const pending = rows.filter(row => ['submitted', 'rejected'].includes(row['Payment Status']));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Teams and UTR');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(teams), 'Teams');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(pending), 'Payment Review');
+    XLSX.writeFile(workbook, 'avento-teams-utr.xlsx');
+  };
+
   // Filter registrations list dynamically
   const filteredRegistrations = registrations.filter(reg => {
     const evt = reg.eventId;
@@ -128,7 +176,21 @@ const AdminRegistrations = () => {
             <span>+</span>
             <span>Create Team Manually</span>
           </button>
+          {selectedEventId && events.find(evt => String(evt.id || evt._id) === String(selectedEventId))?.payment_enabled && (
+            <button
+              onClick={exportRegistrations}
+              className="btn-secondary px-5 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2"
+            >
+              Export Teams &amp; UTR
+            </button>
+          )}
         </div>
+
+        {selectedEventId && events.find(evt => String(evt.id || evt._id) === String(selectedEventId))?.payment_enabled && (() => {
+          const eventRegs = registrations.filter(reg => String(reg.event_id || reg.eventId?.id) === String(selectedEventId));
+          const counts = eventRegs.reduce((acc, reg) => { const status = reg.payment_status || 'pending'; acc[status] = (acc[status] || 0) + 1; return acc; }, {});
+          return <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl bg-amber-50 p-3 text-center"><b>{counts.pending || 0}</b><div className="text-[10px] uppercase">Pending</div></div><div className="rounded-xl bg-blue-50 p-3 text-center"><b>{counts.submitted || 0}</b><div className="text-[10px] uppercase">Submitted</div></div><div className="rounded-xl bg-emerald-50 p-3 text-center"><b>{counts.verified || 0}</b><div className="text-[10px] uppercase">Verified</div></div><div className="rounded-xl bg-red-50 p-3 text-center"><b>{counts.rejected || 0}</b><div className="text-[10px] uppercase">Rejected</div></div></div>;
+        })()}
 
         {/* Filters Panel */}
         <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-5 sm:p-6 mb-10 flex flex-col md:flex-row items-center gap-5 justify-between">
@@ -202,6 +264,7 @@ const AdminRegistrations = () => {
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Registered Event</th>
                     <th className="px-6 py-4">Booking Date</th>
+                    <th className="px-6 py-4">Payment / UTR</th>
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -246,6 +309,9 @@ const AdminRegistrations = () => {
                       </td>
                       <td className="px-6 py-4 text-slate-600 text-xs">
                         {new Date(reg.registrationDate || reg.createdAt || reg.created_at).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-xs">
+                        {reg.utr_number ? <><div className="font-bold text-slate-700">{reg.utr_number}</div><div className="uppercase text-slate-500">{reg.payment_status}</div>{reg.payment_status === 'submitted' && <div className="mt-1 flex gap-1"><button onClick={() => handlePaymentStatus(reg.id || reg._id, 'verified')} className="rounded bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white">Verify</button><button onClick={() => handlePaymentStatus(reg.id || reg._id, 'rejected')} className="rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white">Reject</button></div>}</> : 'Not required'}
                       </td>
                       <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
                         {reg.status === 'pending' && (

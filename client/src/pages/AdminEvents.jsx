@@ -41,6 +41,13 @@ const AdminEvents = () => {
   const [maxTeamSize, setMaxTeamSize] = useState('4');
   const [allowCrossDepartment, setAllowCrossDepartment] = useState(true);
   const [registrationDeadline, setRegistrationDeadline] = useState('');
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentUpiId, setPaymentUpiId] = useState('');
+  const [paymentQrUrl, setPaymentQrUrl] = useState('');
+  const [paymentInstructions, setPaymentInstructions] = useState('');
+  const [paymentQrFile, setPaymentQrFile] = useState(null);
+  const [scoringEnabled, setScoringEnabled] = useState(false);
 
   // Organizers States
   const [candidatesList, setCandidatesList] = useState([]);
@@ -181,7 +188,10 @@ const AdminEvents = () => {
     setMaxTeamSize('4');
     setAllowCrossDepartment(true);
     setRegistrationDeadline('');
+    setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
+    setScoringEnabled(false);
     setFeedback(null);
+    setScoringEnabled(!!event.scoring_enabled);
     setIsModalOpen(true);
   };
 
@@ -220,10 +230,16 @@ const AdminEvents = () => {
       const d = new Date(event.registration_deadline);
       const tzOffset = d.getTimezoneOffset() * 60000;
       const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-      setRegistrationDeadline(localISOTime);
+    setRegistrationDeadline(localISOTime);
     } else {
       setRegistrationDeadline('');
     }
+    setPaymentEnabled(!!event.payment_enabled);
+    setPaymentAmount(event.payment_amount ? String(event.payment_amount) : '');
+    setPaymentUpiId(event.payment_upi_id || '');
+    setPaymentQrUrl(event.payment_qr_url || '');
+    setPaymentInstructions(event.payment_instructions || '');
+    setPaymentQrFile(null);
 
     setFeedback(null);
     setIsModalOpen(true);
@@ -252,6 +268,9 @@ const AdminEvents = () => {
         return;
       }
     }
+    if (paymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (!paymentQrUrl && !paymentQrFile))) {
+      setFeedback({ type: 'error', message: 'Paid events require an amount and payment QR code.' }); return;
+    }
 
     const selectedDate = new Date(date);
     const tomorrow = new Date();
@@ -265,6 +284,13 @@ const AdminEvents = () => {
     setSubmitting(true);
     
     let finalImageUrl = imageUrl;
+    let finalPaymentQrUrl = paymentQrUrl;
+    if (paymentEnabled && paymentQrFile) {
+      const filePath = `${Date.now()}-${Math.random().toString(36).slice(2)}.${paymentQrFile.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage.from('payment-qr').upload(filePath, paymentQrFile, { upsert: true });
+      if (uploadError) { setFeedback({ type: 'error', message: 'Failed to upload payment QR code.' }); setSubmitting(false); return; }
+      finalPaymentQrUrl = supabase.storage.from('payment-qr').getPublicUrl(filePath).data.publicUrl;
+    }
     if (posterOption === 'upload' && posterFile) {
       if (posterFile.size > 5 * 1024 * 1024) {
         setFeedback({ type: 'error', message: 'Poster image must be less than 5MB.' });
@@ -310,6 +336,9 @@ const AdminEvents = () => {
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : undefined,
         allowCrossDepartment: registrationType === 'team' ? allowCrossDepartment : undefined,
         registrationDeadline: registrationDeadline || undefined,
+        paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
+        paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
+        scoringEnabled,
       };
 
       if (modalMode === 'create') {
@@ -1012,6 +1041,11 @@ const AdminEvents = () => {
                   </div>
                 </div>
               )}
+              <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                <div className="flex items-center justify-between"><div><h4 className="text-xs font-bold text-slate-800">Enable Payment</h4><p className="text-[10px] text-slate-600">Require UTR verification at team confirmation.</p></div><input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} /></div>
+                {paymentEnabled && <><input type="number" min="1" step="0.01" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount (Rs.)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input value={paymentUpiId} onChange={(e) => setPaymentUpiId(e.target.value)} placeholder="UPI ID (optional)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input type="file" accept="image/*" required={!paymentQrUrl} onChange={(e) => setPaymentQrFile(e.target.files[0] || null)} className="w-full text-sm" /><textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Payment instructions (optional)" rows={2} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />{paymentQrUrl && <img src={paymentQrUrl} alt="Payment QR preview" className="h-24 w-24 rounded-lg object-contain" />}</>}
+              </div>
+              <label className="mt-4 flex items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4 text-xs font-bold text-slate-700"><input type="checkbox" checked={scoringEnabled} onChange={e => setScoringEnabled(e.target.checked)} /> Enable scoring module for this event</label>
             </div>
 
             <div>

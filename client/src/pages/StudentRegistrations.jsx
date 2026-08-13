@@ -6,6 +6,7 @@ import FeedbackModal from '../components/FeedbackModal';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase, useAuth } from '../context/AuthContext';
 import RegistrationCountdown from '../components/RegistrationCountdown';
+import PaymentSection, { isValidUtr } from '../components/PaymentSection';
 
 const StudentRegistrations = () => {
   const { user } = useAuth();
@@ -39,6 +40,7 @@ const StudentRegistrations = () => {
   // Leader Contact Number for Team Confirmation
   const [leaderContactNumber, setLeaderContactNumber] = useState('');
   const [contactNumberError, setContactNumberError] = useState('');
+  const [teamUtr, setTeamUtr] = useState('');
   
   // Searchable dropdown states for Add/Replace Member
   const [isEditDropdownOpen, setIsEditDropdownOpen] = useState(false);
@@ -323,6 +325,10 @@ const StudentRegistrations = () => {
       setContactNumberError('Please enter a valid 10-digit Indian mobile number.');
       return;
     }
+    if (confirmTeamReg.eventId?.payment_enabled && !isValidUtr(teamUtr)) {
+      setContactNumberError('Enter a valid 12-22 character UTR before confirming payment.');
+      return;
+    }
 
     const teamId = confirmTeamReg.teamId.id;
     setProcessingId(teamId);
@@ -330,9 +336,13 @@ const StudentRegistrations = () => {
     try {
       await axios.post(`/api/registrations/team/${teamId}/confirm`, {
         leaderContactNumber
+        , utrNumber: teamUtr
       });
-      setFeedback({ type: 'success', message: 'Team registration confirmed successfully!' });
-      setRegistrations(prev => prev.map(r => r.team_id === teamId ? { ...r, status: 'registered' } : r));
+      const isAwaitingVerification = confirmTeamReg.eventId?.payment_enabled;
+      setFeedback({ type: 'success', message: isAwaitingVerification ? 'UTR submitted. Awaiting payment verification.' : 'Team registration confirmed successfully!' });
+      if (!isAwaitingVerification) {
+        setRegistrations(prev => prev.map(r => r.team_id === teamId ? { ...r, status: 'registered' } : r));
+      }
     } catch (err) {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to confirm team.' });
     } finally {
@@ -341,6 +351,7 @@ const StudentRegistrations = () => {
       setConfirmTeamReg(null);
       setLeaderContactNumber('');
       setContactNumberError('');
+      setTeamUtr('');
       setTimeout(() => setFeedback(null), 4000);
       fetchRegistrations();
     }
@@ -590,7 +601,13 @@ const StudentRegistrations = () => {
                                   const acceptedCount = acceptedUserIds.size;
                                   const minRequired = evt.min_team_size || 1;
                                   const isReady = acceptedCount >= minRequired;
-                                  return isReady ? (
+                                   if (evt.payment_enabled && reg.payment_status === 'submitted') {
+                                     return <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-blue-500/8 text-blue-500 border-blue-500/15">Payment Verification Pending</span>;
+                                   }
+                                   if (evt.payment_enabled && reg.payment_status === 'rejected') {
+                                     return <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-red-500/8 text-red-500 border-red-500/15">Payment Rejected: Resubmit UTR</span>;
+                                   }
+                                   return isReady ? (
                                     <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-blue-500/8 text-blue-500 border-blue-500/15 flex items-center gap-1.5">
                                       🟢 Ready for Team Confirmation
                                     </span>
@@ -717,15 +734,23 @@ const StudentRegistrations = () => {
                                            const isReady = acceptedCount >= minRequired;
                                            const deadlinePassed = evt.registration_deadline && new Date() > new Date(evt.registration_deadline);
                                          
-                                           if (deadlinePassed) {
+                                            if (deadlinePassed) {
                                              return (
                                                <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 flex items-center text-center">
                                                  Registration deadline has passed. This team can no longer be confirmed.
                                                </span>
                                              );
-                                           }
+                                            }
 
-                                           if (isReady) {
+                                            if (evt.payment_enabled && reg.payment_status === 'submitted') {
+                                              return (
+                                                <span className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                                                  Payment verification pending
+                                                </span>
+                                              );
+                                            }
+
+                                            if (isReady) {
                                              return (
                                                <button
                                                  onClick={() => handleConfirmTeam(reg)}
@@ -1405,6 +1430,7 @@ const StudentRegistrations = () => {
                   This number will be used as the primary contact for the team regarding this event.
                 </p>
               </div>
+              <PaymentSection event={confirmTeamReg.eventId} utr={teamUtr} onUtrChange={setTeamUtr} rejectionReason={confirmTeamReg.payment_rejection_reason} />
               
               <div className="flex gap-3 justify-end pt-4 mt-2 border-t border-slate-200/20">
                 <button

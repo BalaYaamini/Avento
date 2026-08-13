@@ -13,6 +13,7 @@ import Modal from '../components/Modal';
 import QRScanner from '../components/QRScanner';
 import TeamAllocation from '../components/TeamAllocation';
 import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
+import ScoringBoard from '../components/ScoringBoard';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -492,9 +493,13 @@ const Workspace = () => {
                 activeTab === 'allocation' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
               }`}
             >
-              Team Allocation
+            Team Allocation
             </button>
+            <button onClick={() => setActiveTab('scoring')} className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${activeTab === 'scoring' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>Scoring</button>
           </>
+        )}
+        {event?.scoring_enabled && event?.registration_type !== 'team' && (
+          <button onClick={() => setActiveTab('scoring')} className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${activeTab === 'scoring' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>Scoring</button>
         )}
       </div>
 
@@ -502,6 +507,10 @@ const Workspace = () => {
         <div className="mb-8">
           <OrganizerRegistrations eventId={eventId} event={event} />
         </div>
+      )}
+
+      {activeTab === 'scoring' && event?.scoring_enabled && (
+        <ScoringBoard eventId={eventId} canEdit={hasFullAccess()} />
       )}
 
       {activeTab === 'confirmed_teams' && event?.registration_type === 'team' && (

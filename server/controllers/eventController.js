@@ -269,7 +269,8 @@ const createEvent = async (req, res) => {
     const {
       title, description, category, venue, date, capacity, imageUrl, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
-      registrationDeadline
+      registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
+      , scoringEnabled, scoreboardVisible
     } = req.body;
 
     if (!title || !description || !category || !venue || !date) {
@@ -282,6 +283,11 @@ const createEvent = async (req, res) => {
     
     if (registrationType === 'team' && !maxTeams) {
       return res.status(400).json({ message: 'Number of teams allowed is required for team events.' });
+    }
+
+    const isPaymentEnabled = paymentEnabled === true || paymentEnabled === 'true';
+    if (isPaymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || !paymentQrUrl)) {
+      return res.status(400).json({ message: 'Paid events require a valid amount and payment QR code.' });
     }
 
     if (date) {
@@ -380,6 +386,13 @@ const createEvent = async (req, res) => {
       registration_deadline: registrationDeadline || null,
       join_team_enabled: false,
       faculty_id: facultyId,
+      payment_enabled: isPaymentEnabled,
+      payment_amount: isPaymentEnabled ? Number(paymentAmount) : null,
+      payment_upi_id: isPaymentEnabled ? (paymentUpiId || null) : null,
+      payment_qr_url: isPaymentEnabled ? (paymentQrUrl || null) : null,
+      payment_instructions: isPaymentEnabled ? (paymentInstructions || null) : null,
+      scoring_enabled: scoringEnabled === true || scoringEnabled === 'true',
+      scoreboard_visible: (scoringEnabled === true || scoringEnabled === 'true') && (scoreboardVisible === true || scoreboardVisible === 'true'),
     };
 
     if (proposedBy) newEvent.proposed_by = proposedBy;
@@ -486,7 +499,8 @@ const editEvent = async (req, res) => {
     const { 
       title, description, category, venue, date, capacity, imageUrl, status, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
-      registrationDeadline
+      registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
+      , scoringEnabled, scoreboardVisible
     } = req.body;
 
     const { data: event, error: fetchErr } = await supabase
@@ -545,6 +559,24 @@ const editEvent = async (req, res) => {
         }
       }
       updates.registration_deadline = registrationDeadline || null;
+    }
+    if (scoringEnabled !== undefined) {
+      updates.scoring_enabled = scoringEnabled === true || scoringEnabled === 'true';
+      updates.scoreboard_visible = updates.scoring_enabled && (scoreboardVisible === true || scoreboardVisible === 'true');
+    } else if (scoreboardVisible !== undefined) {
+      updates.scoreboard_visible = !!event.scoring_enabled && (scoreboardVisible === true || scoreboardVisible === 'true');
+    }
+
+    if (paymentEnabled !== undefined || paymentAmount !== undefined || paymentUpiId !== undefined || paymentQrUrl !== undefined || paymentInstructions !== undefined) {
+      const isPaymentEnabled = paymentEnabled !== undefined ? (paymentEnabled === true || paymentEnabled === 'true') : !!event.payment_enabled;
+      if (isPaymentEnabled && (!paymentAmount && !event.payment_amount || Number(paymentAmount ?? event.payment_amount) <= 0 || !(paymentQrUrl || event.payment_qr_url))) {
+        return res.status(400).json({ message: 'Paid events require a valid amount and payment QR code.' });
+      }
+      updates.payment_enabled = isPaymentEnabled;
+      updates.payment_amount = isPaymentEnabled ? Number(paymentAmount ?? event.payment_amount) : null;
+      updates.payment_upi_id = isPaymentEnabled ? (paymentUpiId ?? event.payment_upi_id ?? null) : null;
+      updates.payment_qr_url = isPaymentEnabled ? (paymentQrUrl ?? event.payment_qr_url ?? null) : null;
+      updates.payment_instructions = isPaymentEnabled ? (paymentInstructions ?? event.payment_instructions ?? null) : null;
     }
 
     if (assignedFacultyId !== undefined) {
