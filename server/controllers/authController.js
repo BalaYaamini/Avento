@@ -497,11 +497,19 @@ exports.syncPassword = async (req, res) => {
       return res.status(500).json({ message: 'Failed to update password in authentication provider', error: authError.message });
     }
 
-    // Update password in MongoDB
+    // Update password in MongoDB (upsert if record is missing)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     
-    await User.findByIdAndUpdate(user.id, { password: hashedPassword });
+    const mongoUser = await User.findById(user.id);
+    if (mongoUser) {
+      await User.findByIdAndUpdate(user.id, { password: hashedPassword });
+    } else {
+      const email = user.email || '';
+      const name = user.user_metadata?.full_name || email.split('@')[0];
+      const role = user.user_metadata?.role || 'student';
+      await User.create({ _id: user.id, name, email, password: hashedPassword, role, isVerified: true });
+    }
     
     // Ensure first_login flag is cleared in profiles
     await supabase.from('profiles').update({ first_login: false }).eq('id', user.id);
