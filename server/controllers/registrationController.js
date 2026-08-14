@@ -31,6 +31,12 @@ const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds
   const { error: regErr } = await supabase.from('event_registrations')
     .update({ status: 'registered' }).eq('team_id', teamId).eq('user_id', leaderId);
   if (regErr) throw regErr;
+
+  // Release any unconfirmed/invited members of this team so they can create/join another team
+  await supabase.from('event_registrations')
+    .update({ status: 'cancelled' })
+    .eq('team_id', teamId)
+    .neq('status', 'registered');
 };
 
 const resolveUserProfile = async (userId) => {
@@ -108,6 +114,18 @@ const sendEventConfirmationEmail = async (teamId, event, leaderId) => {
       }
     }
 
+    // Build confirmed team members roster (Team Leader + Confirmed Members)
+    const teamMembers = [];
+    for (const r of confirmedRegs) {
+      const profile = await resolveUserProfile(r.user_id);
+      const isLeader = r.user_id === (teamData?.leader_id || leaderId);
+      teamMembers.push({
+        name: profile?.name || 'Participant',
+        role: isLeader ? 'Team Leader' : 'Member'
+      });
+    }
+    teamMembers.sort((a, b) => (a.role === 'Team Leader' ? -1 : b.role === 'Team Leader' ? 1 : 0));
+
     for (const r of confirmedRegs) {
       const profile = await resolveUserProfile(r.user_id);
       const recipientName = profile?.name || 'Participant';
@@ -126,9 +144,12 @@ const sendEventConfirmationEmail = async (teamId, event, leaderId) => {
           date: dateStr,
           venue: venueStr,
           teamName,
+          teamLeader: leaderName,
+          teamMembers,
           status: 'Confirmed',
           recipientName,
-          customNotes: formattedMessage
+          customNotes: formattedMessage,
+          instructions: formattedMessage
         },
         attachments: emailAttachments
       });
@@ -852,12 +873,18 @@ exports.registerTeamForEvent = async (req, res) => {
     // We block the leader if they have a pending team or a registered team.
     const { data: leaderRegs } = await supabase
       .from('event_registrations')
-      .select('status')
+      .select('status, team_id, event_teams(status)')
       .eq('event_id', eventId)
       .eq('user_id', leaderId)
       .in('status', ['registered', 'pending']);
 
-    if (leaderRegs && leaderRegs.length > 0) {
+    const activeLeaderRegs = (leaderRegs || []).filter(r => {
+      if (r.status === 'registered') return true;
+      if (r.status === 'pending' && r.event_teams?.status === 'registered') return false;
+      return true;
+    });
+
+    if (activeLeaderRegs.length > 0) {
       return res.status(400).json({ message: 'You have pending team invitations for this event, or you are already part of an active team. Please reject all pending invitations or leave your current team first.' });
     }
     
@@ -935,6 +962,14 @@ exports.registerTeamForEvent = async (req, res) => {
       created_at: new Date().toISOString()
     }));
 
+    // Clean up any stale unconfirmed registration records for these team members for this event to avoid unique constraint collisions
+    await supabase
+      .from('event_registrations')
+      .delete()
+      .eq('event_id', eventId)
+      .in('user_id', allTeamUserIds)
+      .neq('status', 'registered');
+
     const { error: regErr } = await supabase
       .from('event_registrations')
       .insert(registrations);
@@ -959,30 +994,36 @@ exports.registerTeamForEvent = async (req, res) => {
       }
       teamMembers.sort((a, b) => (a.role === 'Team Lead' ? -1 : b.role === 'Team Lead' ? 1 : 0));
 
+      const { sendInAppNotification } = require('../services/notificationService');
       for (const uid of allTeamUserIds) {
         const isLeader = uid === leaderId;
-        const statusText = isLeader ? 'Confirmed' : 'Pending Approval';
-        const msg = isLeader 
-          ? `Your team "${teamName}" has been successfully created for "${event.title}". Waiting for members to accept before you can confirm the registration.`
-          : `You have been invited by ${teamLeaderName} to join the team "${teamName}" for "${event.title}". Please accept the invitation before the deadline.`;
-
-        await notifyUser({
-          recipientId: uid,
-          title: isLeader ? 'Team Registration Successful' : 'Team Invitation Received',
-          message: msg,
-          type: isLeader ? 'success' : 'info',
-          eventId: event.id,
-          emailSubject: isLeader ? `Team Registration Confirmed – ${event.title}` : `Team Invitation – ${event.title}`,
-          emailData: {
-            eventName: event.title,
-            date: dateStrTeam,
-            venue: event.venue || 'TBA',
-            status: statusText,
-            teamName: teamName,
-            teamLeader: teamLeaderName,
-            teamMembers: teamMembers
-          }
-        });
+        if (isLeader) {
+          await sendInAppNotification({
+            recipientId: uid,
+            title: 'Team Registration Successful',
+            message: `Your team "${teamName}" has been successfully created for "${event.title}". Waiting for members to accept before you can confirm the registration.`,
+            type: 'success',
+            eventId: event.id
+          });
+        } else {
+          await notifyUser({
+            recipientId: uid,
+            title: 'Team Invitation Received',
+            message: `You have been invited by ${teamLeaderName} to join the team "${teamName}" for "${event.title}". Please accept the invitation before the deadline.`,
+            type: 'info',
+            eventId: event.id,
+            emailSubject: `Team Invitation – ${event.title}`,
+            emailData: {
+              eventName: event.title,
+              date: dateStrTeam,
+              venue: event.venue || 'TBA',
+              status: 'Pending Approval',
+              teamName: teamName,
+              teamLeader: teamLeaderName,
+              teamMembers: teamMembers
+            }
+          });
+        }
       }
     } catch (notifErr) {
       console.error('Non-fatal error sending team registration notification:', notifErr.message);

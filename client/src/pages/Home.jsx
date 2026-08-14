@@ -171,7 +171,13 @@ const Home = () => {
       const joinedId = String(reg.eventId && typeof reg.eventId === 'object' ? (reg.eventId.id || reg.eventId._id) : reg.eventId);
       const matchesEvent = rawId === eventIdStr || joinedId === eventIdStr;
       
-      return matchesEvent && (reg.status === 'pending' || reg.status === 'registered');
+      const teamStatus = reg.teamDetails?.teamStatus || reg.teamId?.status;
+      const isPendingOnConfirmedTeam = reg.status === 'pending' && teamStatus === 'registered';
+
+      return matchesEvent && (
+        reg.status === 'registered' || 
+        (reg.status === 'pending' && !isPendingOnConfirmedTeam)
+      );
     });
 
     if (existingReg) {

@@ -119,6 +119,15 @@ const sendInAppNotification = async ({ recipientId, title, message, type = 'info
 };
 
 const generateEmailHtml = (title, message, data = {}) => {
+  const membersHtml = (data.teamMembers && Array.isArray(data.teamMembers) && data.teamMembers.length > 0)
+    ? `<tr><td colspan="2" style="padding-top:16px;padding-bottom:6px;"><strong style="font-size:14px;color:#475569;">Team Members:</strong></td></tr>
+       <tr><td colspan="2">
+         <ul style="margin:0;padding-left:20px;list-style-type:disc;">
+           ${data.teamMembers.map(m => `<li style="padding:3px 0;font-size:14px;color:#1e293b;"><strong>${m.name}</strong> <span style="font-size:12px;color:#64748b;">— ${m.role || 'Member'}</span></li>`).join('')}
+         </ul>
+       </td></tr>`
+    : '';
+
   const eventHtml = data.eventName ? `
 <div style="background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-top:25px;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0">
@@ -130,12 +139,14 @@ const generateEmailHtml = (title, message, data = {}) => {
     ${data.teamLeader ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Leader</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamLeader}</td></tr>` : ''}
     ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#c084fc;">${data.registrationId}</td></tr>` : ''}
     ${data.status ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Status</strong></td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#10b981;">${data.status}</td></tr>` : ''}
+    ${membersHtml}
   </table>
 </div>` : '';
 
-  const notesHtml = data.instructions ? `
+  const notesContent = data.instructions || data.customNotes;
+  const notesHtml = (notesContent && notesContent !== message) ? `
 <div style="background-color:#f8fafc;border-radius:12px;padding:16px;margin-top:20px;border-left:4px solid #c084fc;">
-  <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;"><strong>Note:</strong><br>${data.instructions}</p>
+  <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;white-space:pre-line;"><strong>Note / Guidelines:</strong><br>${notesContent}</p>
 </div>` : '';
 
   const btnHtml = data.eventId ? `
@@ -161,7 +172,7 @@ const generateEmailHtml = (title, message, data = {}) => {
           <p style="margin:0 0 25px;font-size:16px;color:#64748b;line-height:1.6;">
             ${data.recipientName ? `Hello ${data.recipientName},<br>` : ''}
           </p>
-          <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #c084fc;">${message}</p>
+          <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #c084fc;white-space:pre-line;">${message}</p>
           ${eventHtml}${notesHtml}${btnHtml}
         </td></tr>
         <tr><td style="padding:0 40px 30px;">
