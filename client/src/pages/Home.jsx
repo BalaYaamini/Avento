@@ -891,7 +891,8 @@ const Home = () => {
                                 const term = studentSearchTerm.toLowerCase();
                                 return (
                                   (s.fullName || s.name || '').toLowerCase().includes(term) ||
-                                  (s.email || '').toLowerCase().includes(term)
+                                  (s.email || '').toLowerCase().includes(term) ||
+                                  (s.rollNumber || '').toLowerCase().includes(term)
                                 );
                               })
                               .map(std => {
