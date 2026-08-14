@@ -1092,16 +1092,25 @@ exports.getEligibleStudents = async (req, res) => {
     // 4. Combine IDs to exclude
     const excludedIds = [...new Set([...organizerIds, ...registeredIds, userId])];
 
-    // 5. Fetch all students
-    const { data: students, error: studentsErr } = await supabase
-      .from('profiles')
-      .select('*')
-      .in('role', ['student', 'student_organizer']);
-
-    if (studentsErr) throw studentsErr;
+    // 5. Fetch all students (paginate to avoid 1000-row limit)
+    let students = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data: page, error: studentsErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role', ['student', 'student_organizer'])
+        .range(from, from + pageSize - 1);
+      if (studentsErr) throw studentsErr;
+      if (!page || page.length === 0) break;
+      students = students.concat(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
 
     // Filter out excluded IDs
-    const eligible = (students || []).filter(s => !excludedIds.includes(s.id));
+    const eligible = students.filter(s => !excludedIds.includes(s.id));
 
     // Map to expected format for the frontend
     const result = eligible.map(s => ({
@@ -2257,14 +2266,23 @@ exports.getNonOrganizerStudentsForEvent = async (req, res) => {
     if (event.created_by) organizerIds.add(String(event.created_by));
     (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.add(String(m.user_id)); });
 
-    const { data: students, error: studentErr } = await supabase
-      .from('profiles')
-      .select('id, name, fullName:name, email, roll_number, department, role')
-      .eq('role', 'student');
+    let students = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data: page, error: studentErr } = await supabase
+        .from('profiles')
+        .select('id, name, fullName:name, email, roll_number, department, role')
+        .eq('role', 'student')
+        .range(from, from + pageSize - 1);
+      if (studentErr) throw studentErr;
+      if (!page || page.length === 0) break;
+      students = students.concat(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
 
-    if (studentErr) throw studentErr;
-
-    const eligibleStudents = (students || []).filter(s => !organizerIds.has(String(s.id)));
+    const eligibleStudents = students.filter(s => !organizerIds.has(String(s.id)));
 
     res.json(eligibleStudents);
   } catch (err) {
