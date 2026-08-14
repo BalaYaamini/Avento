@@ -51,10 +51,12 @@ module.exports = async (req, res, next) => {
       first_login: profileData ? profileData.first_login : false,
     };
 
-    // Enforce first_login on backend for all protected routes except the profile endpoint itself
+    // Enforce first_login on backend for all protected routes except profile and change-password
     if (profileData && profileData.first_login && !roles.includes('admin')) {
-      if (req.originalUrl !== '/api/auth/profile') {
-        return res.status(403).json({ 
+      const allowedWhileFirstLogin = ['/api/auth/profile', '/api/auth/change-password'];
+      const isAllowed = allowedWhileFirstLogin.some((route) => req.originalUrl.startsWith(route));
+      if (!isAllowed) {
+        return res.status(403).json({
           message: 'Please change your default password before accessing Avento features.',
           code: 'FIRST_LOGIN_REQUIRED'
         });
