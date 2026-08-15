@@ -104,6 +104,19 @@ const Workspace = () => {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editFeedback, setEditFeedback] = useState(null);
 
+  const formatToDatetimeLocal = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   const openEditModal = () => {
     if (!event) return;
     setEditFeedback(null);
@@ -112,8 +125,8 @@ const Workspace = () => {
       description: event.description || '',
       category: event.category || 'General',
       venue: event.venue || '',
-      date: event.date ? new Date(event.date).toISOString().slice(0, 16) : '',
-      registrationDeadline: event.registration_deadline ? new Date(event.registration_deadline).toISOString().slice(0, 16) : '',
+      date: formatToDatetimeLocal(event.date),
+      registrationDeadline: formatToDatetimeLocal(event.registration_deadline),
       capacity: event.capacity || '',
       maxTeams: event.max_teams || '',
       minTeamSize: event.min_team_size || 1,
@@ -129,7 +142,12 @@ const Workspace = () => {
     setEditFeedback(null);
     setEditSubmitting(true);
     try {
-      const res = await axios.put(`/api/events/${eventId}`, editFormData);
+      const payload = {
+        ...editFormData,
+        date: editFormData.date ? (editFormData.date.includes('Z') || editFormData.date.includes('+') ? editFormData.date : new Date(editFormData.date).toISOString()) : undefined,
+        registrationDeadline: editFormData.registrationDeadline ? (editFormData.registrationDeadline.includes('Z') || editFormData.registrationDeadline.includes('+') ? editFormData.registrationDeadline : new Date(editFormData.registrationDeadline).toISOString()) : undefined,
+      };
+      const res = await axios.put(`/api/events/${eventId}`, payload);
       setEditFeedback({ type: 'success', message: 'Event details updated successfully!' });
       setEvent(prev => ({ ...prev, ...res.data }));
       setTimeout(() => {
@@ -683,7 +701,7 @@ const Workspace = () => {
       {isScannerOpen && (
         <Modal
           isOpen={isScannerOpen}
-          onClose={() => setIsScannerOpen(false)}
+          onClose={() => { setIsScannerOpen(false); window.location.reload(); }}
           title="Scan Participant QR Code"
         >
           <div className="flex flex-col items-center gap-4 py-4">
@@ -705,7 +723,7 @@ const Workspace = () => {
 
             <div className="mt-2 flex justify-end w-full">
               <button
-                onClick={() => setIsScannerOpen(false)}
+                onClick={() => { setIsScannerOpen(false); window.location.reload(); }}
                 className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
               >
                 Close

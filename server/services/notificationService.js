@@ -32,7 +32,15 @@ const verifySMTPConnection = async () => {
   return true;
 };
 
+// TEMPORARY TESTING TOGGLE: Set to false to re-enable outgoing Brevo email notifications
+const DISABLE_TEAM_EMAIL_NOTIFICATIONS = true;
+
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments }) => {
+  if (DISABLE_TEAM_EMAIL_NOTIFICATIONS) {
+    console.log(`[EMAIL TEMPORARILY DISABLED FOR TESTING] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
+    return;
+  }
+
   if (!BREVO_API_KEY) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
     return;

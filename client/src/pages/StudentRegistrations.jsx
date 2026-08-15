@@ -86,11 +86,36 @@ const StudentRegistrations = () => {
     }
   }, [registrations, isEditTeamOpen]);
 
-  // Feedback states
+  // Feedback & Allocation states
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [feedbackEvent, setFeedbackEvent] = useState(null);
   const [teamAllocations, setTeamAllocations] = useState({});
+
+  // Problem statement selection states
+  const [selectedPsToConfirm, setSelectedPsToConfirm] = useState(null);
+  const [isSubmittingPs, setIsSubmittingPs] = useState(false);
+  const [psError, setPsError] = useState(null);
+
+  const handleConfirmPsSelection = async () => {
+    if (!selectedPsToConfirm) return;
+    const { eventId, ps } = selectedPsToConfirm;
+
+    setIsSubmittingPs(true);
+    setPsError(null);
+    try {
+      await axios.post(`/api/allocations/event/${eventId}/select-problem-statement`, {
+        problemStatementId: ps.id
+      });
+      setSelectedPsToConfirm(null);
+      fetchRegistrations();
+    } catch (err) {
+      console.error('Select problem statement error:', err);
+      setPsError(err.response?.data?.message || 'Failed to select problem statement.');
+    } finally {
+      setIsSubmittingPs(false);
+    }
+  };
 
   // Organizer Requests state
   const [activeSubTab, setActiveSubTab] = useState('registrations');
@@ -789,12 +814,44 @@ const StudentRegistrations = () => {
                         const allocData = teamAllocations[eventId];
                         if (!allocData) return null;
 
-                        const { allocation, teamConfirmed, checkedIn, message } = allocData;
+                        const { allocation, teamConfirmed, checkedIn, isLeader, availableProblemStatements, message } = allocData;
 
                         // Only show for confirmed teams
                         if (!teamConfirmed) return null;
 
-                        // If team is confirmed but student hasn't scanned QR / checked in yet
+                        // 1. If team ALREADY has an assigned allocation (by Admin or Leader), render it immediately for ALL team members!
+                        if (allocation) {
+                          return (
+                            <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>🎯</span>
+                                  <span>Your Event Allocation ({allocation.teamName})</span>
+                                </div>
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
+                                  Allocation Assigned
+                                </span>
+                              </div>
+
+                              <div className="space-y-2 text-xs">
+                                <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 space-y-1">
+                                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-text-secondary">Problem Statement</div>
+                                  <div className="font-bold text-sm text-text-primary">{allocation.problemStatement}</div>
+                                  {allocation.description && (
+                                    <p className="text-xs text-text-secondary mt-1 leading-relaxed">{allocation.description}</p>
+                                  )}
+                                </div>
+
+                                <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 flex items-center justify-between">
+                                  <span className="text-text-secondary font-semibold text-xs">📍 Allocated Venue / Room</span>
+                                  <span className="font-extrabold text-violet-600 dark:text-violet-400 text-xs">{allocation.venueRoom}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // 2. If team is confirmed but unallocated and student hasn't scanned QR / checked in yet
                         if (!checkedIn) {
                           return (
                             <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in">
@@ -809,43 +866,156 @@ const StudentRegistrations = () => {
                           );
                         }
 
-                        // If checked in, but allocation not assigned by organizers yet
-                        if (!allocation) {
+                        // 3. If checked in, but problem statement not selected yet
+                        if (!isLeader) {
                           return (
                             <div className="mt-4 p-4 bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/20 rounded-2xl animate-fade-in">
                               <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
                                 <span>📍</span>
-                                <span>Event Allocation</span>
+                                <span>Problem Statement Selection</span>
                               </div>
                               <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mt-1">
-                                {message || 'Allocation pending from organizers.'}
+                                {message || 'Waiting for your team leader to make a selection.'}
                               </p>
                             </div>
                           );
                         }
 
-                        // Team confirmed + QR checked in + Allocation assigned!
+                        // 4. TEAM LEADER SELECTION INTERFACE
                         return (
-                          <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span>🎯</span>
-                                <span>Your Event Allocation ({allocation.teamName})</span>
+                          <div className="mt-4 p-5 bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-slate-900/10 dark:from-violet-950/40 dark:via-purple-950/20 dark:to-slate-900/40 border border-violet-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-violet-500/15 pb-3.5">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="w-8 h-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/30 flex items-center justify-center text-sm font-bold">
+                                    🎯
+                                  </span>
+                                  <h4 className="font-heading font-extrabold text-base text-text-primary tracking-tight">
+                                    Choose Your Problem Statement
+                                  </h4>
+                                </div>
+                                <p className="text-xs text-text-secondary font-medium mt-1 leading-relaxed">
+                                  Select one problem statement for your entire team. Your selection will be final after confirmation.
+                                </p>
                               </div>
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
-                                Allocation Assigned
+                              <span className="self-start sm:self-auto text-[10px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-violet-600 text-white shadow-xs">
+                                Leader Selection Only
                               </span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              <div className="bg-white/60 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/10">
-                                <span className="text-text-secondary font-semibold">📍 Venue / Room: </span>
-                                <span className="font-bold text-text-primary">{allocation.venueRoom}</span>
+
+                            {psError && (
+                              <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs font-bold flex items-center gap-2">
+                                <span>⚠️</span> <span>{psError}</span>
                               </div>
-                              <div className="bg-white/60 dark:bg-slate-900/60 p-2.5 rounded-xl border border-emerald-500/10">
-                                <span className="text-text-secondary font-semibold">💡 Problem Statement: </span>
-                                <span className="font-bold text-text-primary">{allocation.problemStatement}</span>
+                            )}
+
+                            {/* Available Selection Cards Grid */}
+                            {(!availableProblemStatements || availableProblemStatements.length === 0) ? (
+                              <div className="p-8 bg-white/60 dark:bg-slate-900/60 rounded-xl text-xs text-text-secondary text-center font-medium">
+                                No problem statements configured for this event yet.
                               </div>
-                            </div>
+                            ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                                {availableProblemStatements.map((ps, idx) => {
+                                  const { remainingSlots, maxCapacity, isFull, availabilityState } = ps;
+                                  const isSelected = selectedPsToConfirm?.ps?.id === ps.id;
+                                  
+                                  let badgeBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+                                  let progressBg = 'bg-emerald-500';
+                                  let dotColor = 'bg-emerald-500';
+                                  let statusText = `${remainingSlots} slots remaining`;
+
+                                  if (availabilityState === 'full') {
+                                    badgeBg = 'bg-slate-500/10 text-slate-500 dark:text-slate-400 border-slate-500/20';
+                                    progressBg = 'bg-slate-400';
+                                    dotColor = 'bg-slate-400';
+                                    statusText = `0 slots remaining`;
+                                  } else if (availabilityState === 'critical') {
+                                    badgeBg = 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
+                                    progressBg = 'bg-red-500';
+                                    dotColor = 'bg-red-500';
+                                    statusText = `1 slot remaining`;
+                                  } else if (availabilityState === 'moderate') {
+                                    badgeBg = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+                                    progressBg = 'bg-amber-500';
+                                    dotColor = 'bg-amber-500';
+                                    statusText = `${remainingSlots} slots remaining`;
+                                  }
+
+                                  const pct = Math.min(100, Math.round(((maxCapacity - remainingSlots) / maxCapacity) * 100));
+
+                                  return (
+                                    <div 
+                                      key={ps.id || idx}
+                                      className={`group rounded-2xl p-5 border-2 transition-all flex flex-col justify-between shadow-sm relative ${
+                                        isFull 
+                                          ? 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-300/30 opacity-60' 
+                                          : isSelected
+                                          ? 'bg-violet-500/10 dark:bg-violet-950/40 border-violet-500 shadow-md ring-2 ring-violet-500/20'
+                                          : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-violet-500/40 hover:shadow-soft'
+                                      }`}
+                                    >
+                                      {/* Card Top Info */}
+                                      <div className="space-y-3">
+                                        <div className="flex justify-between items-center pb-2.5 border-b border-pastel-lavender/10">
+                                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                                            Problem Statement {String(idx + 1).padStart(2, '0')}
+                                          </span>
+                                          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${badgeBg}`}>
+                                            <span className={`w-2 h-2 rounded-full ${dotColor} animate-pulse`} />
+                                            <span>{statusText}</span>
+                                          </span>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                          <h5 className="font-heading font-extrabold text-sm text-text-primary group-hover:text-violet-600 transition-colors leading-snug">
+                                            {ps.title}
+                                          </h5>
+                                          {ps.description ? (
+                                            <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">
+                                              {ps.description}
+                                            </p>
+                                          ) : (
+                                            <p className="text-xs text-text-secondary italic opacity-60">
+                                              No description provided.
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Card Bottom Actions & Progress */}
+                                      <div className="space-y-3.5 pt-4 mt-4 border-t border-pastel-lavender/10">
+                                        <div className="space-y-1">
+                                          <div className="flex justify-between text-[10px] font-semibold text-text-secondary">
+                                            <span>Slot Capacity</span>
+                                            <span>{maxCapacity - remainingSlots} / {maxCapacity} Allocated</span>
+                                          </div>
+                                          <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div className={`h-full transition-all duration-500 ${progressBg}`} style={{ width: `${pct}%` }} />
+                                          </div>
+                                        </div>
+
+                                        <div className="flex justify-end">
+                                          <button
+                                            disabled={isFull}
+                                            onClick={() => setSelectedPsToConfirm({ eventId, ps })}
+                                            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                                              isFull 
+                                                ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed'
+                                                : isSelected
+                                                ? 'bg-violet-600 text-white ring-2 ring-violet-500/40'
+                                                : 'btn-primary text-white hover:shadow-md'
+                                            }`}
+                                          >
+                                            {isFull ? 'Completely Full' : isSelected ? '✓ Selected' : 'Select'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -881,10 +1051,15 @@ const StudentRegistrations = () => {
             ) : (
               <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
                 {invitationsList.map((reg, i) => {
-                  const evt = reg.eventId;
+                  const evt = reg.eventId || {
+                    id: reg.event_id,
+                    title: 'Registered Event',
+                    category: 'Event',
+                    date: reg.created_at || new Date().toISOString()
+                  };
                   const teamName = reg.teamId?.name || 'A team';
                   
-                  if (!evt) return null;
+                  if (!evt && !reg.event_id) return null;
 
                   const hasActiveTeamForEvent = registrations.some(r => 
                     r.eventId?.id === evt.id && 
@@ -1829,6 +2004,59 @@ const StudentRegistrations = () => {
             setTimeout(() => setFeedback(null), 4000);
           }}
         />
+
+        {/* Problem Statement Selection Confirmation Modal */}
+        {selectedPsToConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-pastel-lavender/30 p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
+              <div className="flex justify-between items-center pb-3 border-b border-pastel-lavender/20">
+                <h4 className="font-heading font-bold text-base text-text-primary flex items-center gap-2">
+                  <span>🎯 Confirm Problem Statement</span>
+                </h4>
+                <button 
+                  onClick={() => setSelectedPsToConfirm(null)}
+                  className="text-xs font-bold text-text-secondary hover:text-text-primary"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-2 text-xs text-text-secondary">
+                <p>You are about to select the following problem statement for your entire team:</p>
+                <div className="p-3.5 bg-violet-500/10 border border-violet-500/20 rounded-xl space-y-1.5">
+                  <p className="font-bold text-sm text-violet-600 dark:text-violet-400">
+                    {selectedPsToConfirm.ps.title}
+                  </p>
+                  {selectedPsToConfirm.ps.venueRoom && (
+                    <p className="text-[11px] font-semibold text-text-primary">
+                      📍 Assigned Venue / Room: {selectedPsToConfirm.ps.venueRoom}
+                    </p>
+                  )}
+                </div>
+                <p className="text-amber-600 dark:text-amber-400 font-semibold pt-1">
+                  ⚠️ Note: This selection will be assigned to your team and locked.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setSelectedPsToConfirm(null)}
+                  disabled={isSubmittingPs}
+                  className="px-4 py-2 text-xs font-bold btn-secondary rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmPsSelection}
+                  disabled={isSubmittingPs}
+                  className="btn-primary px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md disabled:opacity-50"
+                >
+                  {isSubmittingPs ? 'Confirming...' : 'Confirm Selection'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

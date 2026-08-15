@@ -80,11 +80,24 @@ const AdminEvents = () => {
 
   const categories = ['Technical', 'Cultural', 'Sports', 'Workshop', 'Seminar'];
 
+  const formatToDatetimeLocal = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   const getTomorrowISO = () => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(0, 0, 0, 0); // start of tomorrow
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    return formatToDatetimeLocal(d);
   };
 
   const getMaxDeadlineISO = () => {
@@ -92,9 +105,9 @@ const AdminEvents = () => {
     const d = new Date(date);
     d.setDate(d.getDate() - 1);
     d.setHours(23, 59, 59, 999);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    return formatToDatetimeLocal(d);
   };
-  
+
   const handleCloseRegistrations = async (eventId, eventTitle) => {
     if (!window.confirm(`Manually close registrations for "${eventTitle}"?`)) {
       return;
@@ -191,7 +204,6 @@ const AdminEvents = () => {
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
     setFeedback(null);
-    setScoringEnabled(!!event.scoring_enabled);
     setIsModalOpen(true);
   };
 
@@ -203,16 +215,7 @@ const AdminEvents = () => {
     setDescription(event.description || '');
     setCategory(event.category || 'Technical');
     setVenue(event.venue || '');
-    
-    if (event.date) {
-      const d = new Date(event.date);
-      const tzOffset = d.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-      setDate(localISOTime);
-    } else {
-      setDate('');
-    }
-    
+    setDate(formatToDatetimeLocal(event.date));
     setCapacity(String(event.capacity || 50));
     setPosterOption(event.image_url || event.imageUrl ? 'url' : 'upload');
     setPosterFile(null);
@@ -225,21 +228,16 @@ const AdminEvents = () => {
     setMinTeamSize(event.min_team_size ? String(event.min_team_size) : '1');
     setMaxTeamSize(event.max_team_size ? String(event.max_team_size) : '4');
     setAllowCrossDepartment(event.allow_cross_department ?? true);
-    
-    if (event.registration_deadline) {
-      const d = new Date(event.registration_deadline);
-      const tzOffset = d.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-    setRegistrationDeadline(localISOTime);
-    } else {
-      setRegistrationDeadline('');
-    }
+    setRegistrationDeadline(formatToDatetimeLocal(event.registration_deadline));
+
     setPaymentEnabled(!!event.payment_enabled);
     setPaymentAmount(event.payment_amount ? String(event.payment_amount) : '');
     setPaymentUpiId(event.payment_upi_id || '');
     setPaymentQrUrl(event.payment_qr_url || '');
     setPaymentInstructions(event.payment_instructions || '');
     setPaymentQrFile(null);
+
+    setScoringEnabled(!!event.scoring_enabled);
 
     setFeedback(null);
     setIsModalOpen(true);
@@ -325,7 +323,7 @@ const AdminEvents = () => {
         description,
         category,
         venue,
-        date,
+        date: date ? (date.includes('Z') || date.includes('+') ? date : new Date(date).toISOString()) : undefined,
         capacity: registrationType === 'team' ? undefined : Number(capacity),
         imageUrl: finalImageUrl || undefined,
         // On create: always Draft. On edit: use current status value.
@@ -335,7 +333,7 @@ const AdminEvents = () => {
         minTeamSize: registrationType === 'team' ? Number(minTeamSize) : undefined,
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : undefined,
         allowCrossDepartment: registrationType === 'team' ? allowCrossDepartment : undefined,
-        registrationDeadline: registrationDeadline || undefined,
+        registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : undefined,
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
         scoringEnabled,
@@ -374,19 +372,22 @@ const AdminEvents = () => {
     }
   };
 
-  // ── Delete Handler ────────────────────────────────────────────────────────────
-  const handleDelete = async (eventId, title) => {
-    if (!window.confirm(`Are you sure you want to delete the event: "${title}"?\nThis will permanently delete all associated registrations.`)) {
-      return;
-    }
+  // Delete Confirmation Modal state
+  const [deleteConfirmEvent, setDeleteConfirmEvent] = useState(null);
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
 
+  // ── Delete Handler ────────────────────────────────────────────────────────────
+  const confirmDeleteEvent = async (eventId) => {
     try {
+      setIsDeletingEvent(true);
       await axios.delete(`/api/events/${eventId}`);
       setEvents(prev => prev.filter(e => (e._id || e.id) !== eventId));
-      alert('Event deleted successfully.');
+      setDeleteConfirmEvent(null);
     } catch (err) {
       console.error(err);
-      alert('Failed to delete event.');
+      alert(err.response?.data?.message || 'Failed to delete event.');
+    } finally {
+      setIsDeletingEvent(false);
     }
   };
 
@@ -766,7 +767,7 @@ const AdminEvents = () => {
                                   type="button"
                                   onClick={() => {
                                     setOpenDropdownId(null);
-                                    handleDelete(evt._id || evt.id, evt.title);
+                                    setDeleteConfirmEvent({ id: evt._id || evt.id, title: evt.title });
                                   }}
                                   className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg flex items-center gap-2 transition-colors border-t border-slate-100 mt-1 cursor-pointer"
                                 >
@@ -1305,7 +1306,7 @@ const AdminEvents = () => {
         {scannerModalEvent && (
           <Modal
             isOpen={!!scannerModalEvent}
-            onClose={() => setScannerModalEvent(null)}
+            onClose={() => { setScannerModalEvent(null); window.location.reload(); }}
             title="Scan Attendance"
           >
             <div className="flex flex-col items-center justify-center space-y-4">
@@ -1331,10 +1332,52 @@ const AdminEvents = () => {
 
               <div className="mt-2 flex justify-end w-full">
                 <button
-                  onClick={() => setScannerModalEvent(null)}
+                  onClick={() => { setScannerModalEvent(null); window.location.reload(); }}
                   className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteConfirmEvent && (
+          <Modal
+            isOpen={!!deleteConfirmEvent}
+            onClose={() => setDeleteConfirmEvent(null)}
+            title="Are you sure you want to delete this event?"
+          >
+            <div className="space-y-5">
+              <div className="flex items-start gap-3.5 p-4 bg-red-500/10 dark:bg-red-950/40 border border-red-500/20 rounded-2xl">
+                <span className="text-xl shrink-0">⚠️</span>
+                <div className="space-y-1">
+                  <h4 className="font-heading font-extrabold text-sm text-red-600 dark:text-red-400">
+                    Delete "{deleteConfirmEvent.title}"?
+                  </h4>
+                  <p className="text-xs text-text-secondary leading-relaxed font-medium">
+                    This event may already have registered participants, teams, allocations, attendance records, and other associated data. Deleting it may affect existing event data. This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeletingEvent}
+                  onClick={() => setDeleteConfirmEvent(null)}
+                  className="px-5 py-2.5 text-xs font-bold rounded-xl btn-secondary cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingEvent}
+                  onClick={() => confirmDeleteEvent(deleteConfirmEvent.id)}
+                  className="px-5 py-2.5 text-xs font-bold rounded-xl bg-red-600 text-white hover:bg-red-700 transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isDeletingEvent ? 'Deleting...' : 'Delete Event'}
                 </button>
               </div>
             </div>

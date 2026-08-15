@@ -224,7 +224,7 @@ exports.login = async (req, res) => {
     const token = jwt.sign(
       { id: user._id, email: user.email, role: userRole },
       process.env.JWT_SECRET || 'avento_super_secret_key_12345',
-      { expiresIn: '1d' }
+      { expiresIn: '7d' }
     );
 
     return res.json({

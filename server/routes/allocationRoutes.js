@@ -7,8 +7,11 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.get('/event/:eventId', authMiddleware, allocationController.getEventAllocations);
 router.get('/event/:eventId/template', authMiddleware, allocationController.getAllocationTemplateData);
 router.post('/event/:eventId', authMiddleware, allocationController.saveTeamAllocations);
+router.get('/event/:eventId/problem-statements', authMiddleware, allocationController.getProblemStatements);
+router.post('/event/:eventId/problem-statements', authMiddleware, allocationController.saveProblemStatements);
 
-// Participant route
+// Participant routes
 router.get('/event/:eventId/my-allocation', authMiddleware, allocationController.getMyTeamAllocation);
+router.post('/event/:eventId/select-problem-statement', authMiddleware, allocationController.selectProblemStatement);
 
 module.exports = router;

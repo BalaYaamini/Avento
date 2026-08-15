@@ -4,9 +4,20 @@ import * as XLSX from 'xlsx';
 
 const TeamAllocation = ({ eventId, eventTitle }) => {
   const [allocations, setAllocations] = useState([]);
+  const [problemStatements, setProblemStatements] = useState([]);
+  const [totalTeams, setTotalTeams] = useState(0);
+  const [totalCapacity, setTotalCapacity] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+
+  // Allocation Method State: 'excel' | 'leader'
+  const [allocationMethod, setAllocationMethod] = useState('leader');
+
+  // Config State
+  const [psList, setPsList] = useState([]);
+  const [savingConfig, setSavingConfig] = useState(false);
 
   // Upload & Preview state
   const [previewData, setPreviewData] = useState(null);
@@ -21,15 +32,58 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
   const [editingTeamId, setEditingTeamId] = useState(null);
   const [editForm, setEditForm] = useState({ venueRoom: '', problemStatement: '' });
 
-  const fetchAllocations = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await axios.get(`/api/allocations/event/${eventId}`);
-      setAllocations(res.data);
+
+      // Fetch team allocations and problem statements
+      const [allocRes, psRes] = await Promise.all([
+        axios.get(`/api/allocations/event/${eventId}`),
+        axios.get(`/api/allocations/event/${eventId}/problem-statements`)
+      ]);
+
+      if (allocRes.data) {
+        const teamList = allocRes.data.allocations || (Array.isArray(allocRes.data) ? allocRes.data : []);
+        setAllocations(teamList);
+      }
+
+      if (psRes.data) {
+        const psArr = psRes.data.problemStatements || [];
+        setProblemStatements(psArr);
+        setTotalTeams(psRes.data.totalTeams || 0);
+        setTotalCapacity(psRes.data.totalCapacity || 0);
+
+        // Initialize local config form
+        if (psArr.length > 0) {
+          setPsList(psArr.map(p => ({
+            id: p.id,
+            title: p.title || '',
+            venueRoom: p.venue_room || '',
+            description: p.description || '',
+            maxCapacity: p.max_capacity || 1,
+            allocatedCount: p.allocated_count || 0
+          })));
+        } else {
+          // Default setup if empty
+          const defaultCount = psRes.data.totalTeams || 5;
+          const defaultPerPs = Math.max(1, Math.floor(defaultCount / 5));
+          const rem = defaultCount % 5;
+
+          const defaults = Array.from({ length: 5 }, (_, i) => ({
+            id: `temp_${i}`,
+            title: `Problem Statement ${i + 1}`,
+            venueRoom: `Room ${101 + i}`,
+            description: '',
+            maxCapacity: i === 0 ? defaultPerPs + rem : defaultPerPs,
+            allocatedCount: 0
+          }));
+          setPsList(defaults);
+        }
+      }
     } catch (err) {
-      console.error('Error fetching allocations:', err);
-      setError(err.response?.data?.message || 'Failed to load team allocations.');
+      console.error('Error fetching allocation data:', err);
+      setError(err.response?.data?.message || 'Failed to load team allocation data.');
     } finally {
       setLoading(false);
     }
@@ -37,9 +91,75 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
   useEffect(() => {
     if (eventId) {
-      fetchAllocations();
+      fetchData();
     }
   }, [eventId]);
+
+  // Calculate live sum of local psList capacities
+  const currentConfiguredCapacity = psList.reduce((sum, item) => sum + (parseInt(item.maxCapacity, 10) || 0), 0);
+  const isCapacityMatched = currentConfiguredCapacity === totalTeams && totalTeams > 0;
+  const capacityDiff = Math.abs(totalTeams - currentConfiguredCapacity);
+
+  // Add new Problem Statement Row
+  const handleAddProblemStatement = () => {
+    setPsList(prev => [
+      ...prev,
+      {
+        id: `temp_${Date.now()}`,
+        title: `Problem Statement ${prev.length + 1}`,
+        venueRoom: `Room ${101 + prev.length}`,
+        description: '',
+        maxCapacity: 1,
+        allocatedCount: 0
+      }
+    ]);
+  };
+
+  // Remove Problem Statement Row
+  const handleRemoveProblemStatement = (index) => {
+    if (psList.length <= 1) {
+      setStatusMessage({ type: 'warning', text: 'An event must have at least 1 problem statement.' });
+      return;
+    }
+    setPsList(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Update Problem Statement Row Field
+  const handlePsChange = (index, field, value) => {
+    setPsList(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  // Save Problem Statements Config
+  const handleSaveProblemStatements = async () => {
+    setStatusMessage(null);
+
+    if (currentConfiguredCapacity !== totalTeams) {
+      setStatusMessage({
+        type: 'error',
+        text: `Total capacity (${currentConfiguredCapacity}) does not match total eligible teams (${totalTeams}). Please adjust slot capacities before saving.`
+      });
+      return;
+    }
+
+    setSavingConfig(true);
+    try {
+      const res = await axios.post(`/api/allocations/event/${eventId}/problem-statements`, {
+        problemStatements: psList
+      });
+
+      setStatusMessage({ type: 'success', text: res.data.message || 'Problem statements configured successfully!' });
+      fetchData();
+    } catch (err) {
+      console.error('Save problem statements error:', err);
+      setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save problem statement configuration.' });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
 
   // 1. Download Template
   const handleDownloadTemplate = async () => {
@@ -86,13 +206,11 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
           return;
         }
 
-        // Validate rows against valid teams in current allocations list
         const validTeamMap = new Map(allocations.map(a => [a.teamId, a.teamName]));
         const seenTeams = new Set();
         let allRowsValid = true;
 
         const parsedPreview = jsonRows.map((row, index) => {
-          // Normalize column headers
           const teamId = String(row['Team ID'] || row['teamId'] || row['TeamId'] || row['team_id'] || '').trim();
           const teamName = String(row['Team Name'] || row['teamName'] || row['TeamName'] || row['team_name'] || 'Row ' + (index + 1)).trim();
           const venueRoom = String(row['Venue / Room'] || row['Venue/Room'] || row['Venue'] || row['Room'] || row['venueRoom'] || '').trim();
@@ -140,7 +258,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
     };
 
     reader.readAsArrayBuffer(file);
-    e.target.value = null; // Reset input
+    e.target.value = null;
   };
 
   // 3. Save Previewed Allocations
@@ -160,7 +278,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       const res = await axios.post(`/api/allocations/event/${eventId}`, { allocations: payload });
       setStatusMessage({ type: 'success', text: res.data.message || 'Allocations saved successfully!' });
       setPreviewData(null);
-      fetchAllocations();
+      fetchData();
     } catch (err) {
       console.error('Save allocations error:', err);
       setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save team allocations.' });
@@ -185,8 +303,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         }]
       });
       setEditingTeamId(null);
-      setStatusMessage({ type: 'success', text: 'Allocation updated.' });
-      fetchAllocations();
+      setStatusMessage({ type: 'success', text: 'Allocation updated successfully.' });
+      fetchData();
     } catch (err) {
       setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update allocation.' });
     }
@@ -201,42 +319,23 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
   return (
     <div className="space-y-6">
-      
-      {/* Top Header Card */}
-      <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl p-6 border border-pastel-lavender/20 shadow-soft flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+
+      {/* PAGE HEADER */}
+      <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl p-6 border border-pastel-lavender/20 shadow-soft flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h2 className="font-heading text-xl font-bold text-text-primary">Team <span className="text-violet-500">Allocation</span></h2>
-          <p className="text-text-secondary text-xs mt-1">Assign Venue / Room numbers and Problem Statements to confirmed event teams.</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleDownloadTemplate}
-            className="px-4 py-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-all flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download Template
-          </button>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept=".xlsx, .xls, .csv"
-            className="hidden"
-          />
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="btn-primary px-4 py-2 text-xs font-bold rounded-xl text-white flex items-center gap-2 shadow-md"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            Upload Allocation
-          </button>
+          <div className="flex items-center gap-2">
+            <h2 className="font-heading text-xl font-bold text-text-primary">
+              Team <span className="text-violet-500">Allocation</span>
+            </h2>
+            {eventTitle && (
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold border border-violet-500/20">
+                {eventTitle}
+              </span>
+            )}
+          </div>
+          <p className="text-text-secondary text-xs mt-1">
+            Configure problem statements, assign capacities, and manage team allocations.
+          </p>
         </div>
       </div>
 
@@ -255,7 +354,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         </div>
       )}
 
-      {/* Upload Preview Section */}
+      {/* Upload Preview Modal/Card */}
       {previewData && (
         <div className="bg-white/80 dark:bg-slate-900/80 border-2 border-violet-500/30 rounded-2xl p-6 shadow-xl space-y-4 animate-fade-in-scale">
           <div className="flex justify-between items-center pb-3 border-b border-pastel-lavender/20">
@@ -282,7 +381,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 disabled={!previewValid || saving}
                 className="btn-primary px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md disabled:opacity-40"
               >
-                {saving ? 'Saving Allocations...' : 'Save Allocations'}
+                {saving ? 'Saving...' : 'Save Allocations'}
               </button>
             </div>
           </div>
@@ -320,21 +419,438 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         </div>
       )}
 
-      {/* Main Allocation Table */}
-      <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 shadow-soft overflow-hidden">
+      {/* ================================================== */}
+      {/* 1. ALLOCATION METHOD SELECTOR (EITHER / OR TOGGLE) */}
+      {/* ================================================== */}
+      <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl p-6 border border-pastel-lavender/20 shadow-soft space-y-4">
+        <div>
+          <h3 className="font-heading text-sm font-extrabold uppercase tracking-wider text-text-primary flex items-center gap-2">
+            <span>⚙ Allocation Method</span>
+          </h3>
+          <p className="text-text-secondary text-xs mt-1">
+            Choose how problem statement & venue allocations will be assigned to participating teams.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          {/* METHOD A: BULK EXCEL ALLOCATION */}
+          <div
+            onClick={() => setAllocationMethod('excel')}
+            className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between space-y-4 ${
+              allocationMethod === 'excel'
+                ? 'bg-violet-500/10 border-violet-500 shadow-md ring-2 ring-violet-500/20'
+                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-violet-500/40 opacity-75 hover:opacity-100'
+            }`}
+          >
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-lg font-bold">
+                    📊
+                  </span>
+                  <h4 className="font-heading font-bold text-sm text-text-primary">
+                    Bulk Excel Allocation
+                  </h4>
+                </div>
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                  allocationMethod === 'excel'
+                    ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                    : 'bg-slate-500/10 text-text-secondary border-slate-500/20'
+                }`}>
+                  {allocationMethod === 'excel' ? '✓ Active Method' : 'Select'}
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Download pre-filled team list as Excel, fill in problem statements & venue rooms, and upload to assign allocations in bulk.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition-all ${
+                allocationMethod === 'excel'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'bg-slate-500/10 text-text-secondary hover:bg-violet-500/10 hover:text-violet-600'
+              }`}
+            >
+              {allocationMethod === 'excel' ? 'Active Allocation Mode' : 'Use Bulk Excel Allocation'}
+            </button>
+          </div>
+
+          {/* METHOD B: TEAM LEADER SELECTION */}
+          <div
+            onClick={() => setAllocationMethod('leader')}
+            className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between space-y-4 ${
+              allocationMethod === 'leader'
+                ? 'bg-violet-500/10 border-violet-500 shadow-md ring-2 ring-violet-500/20'
+                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-violet-500/40 opacity-75 hover:opacity-100'
+            }`}
+          >
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 flex items-center justify-center text-lg font-bold">
+                    🎯
+                  </span>
+                  <h4 className="font-heading font-bold text-sm text-text-primary">
+                    Team Leader Selection
+                  </h4>
+                </div>
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                  allocationMethod === 'leader'
+                    ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                    : 'bg-slate-500/10 text-text-secondary border-slate-500/20'
+                }`}>
+                  {allocationMethod === 'leader' ? '✓ Active Method' : 'Select'}
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Configure problem statements & slot capacities. Present Team Leaders select available problem statements after QR check-in.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition-all ${
+                allocationMethod === 'leader'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'bg-slate-500/10 text-text-secondary hover:bg-violet-500/10 hover:text-violet-600'
+              }`}
+            >
+              {allocationMethod === 'leader' ? 'Active Allocation Mode' : 'Use Team Leader Selection'}
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      {/* ================================================== */}
+      {/* 2. MODE A: BULK EXCEL ALLOCATION WORKFLOW          */}
+      {/* ================================================== */}
+      {allocationMethod === 'excel' && (
+        <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 shadow-soft p-6 space-y-4 animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-pastel-lavender/20 pb-3">
+            <div>
+              <h3 className="font-heading font-bold text-sm text-text-primary flex items-center gap-2">
+                <span>📊 Bulk Excel Allocation Mode</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Active</span>
+              </h3>
+              <p className="text-xs text-text-secondary mt-0.5">Download pre-filled team spreadsheet, assign problem statements & venues, and upload to apply allocations.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Step 1: Download Template */}
+            <div className="bg-white/60 dark:bg-slate-900/60 p-5 rounded-xl border border-pastel-lavender/20 space-y-3 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
+                  <span className="w-6 h-6 rounded-full bg-violet-500 text-white flex items-center justify-center text-xs font-extrabold">1</span>
+                  <span>Download Template</span>
+                </div>
+                <p className="text-xs text-text-secondary mt-2 leading-relaxed">
+                  Download the Excel template pre-filled with all confirmed teams for this event.
+                </p>
+              </div>
+              <button
+                onClick={handleDownloadTemplate}
+                className="w-full mt-3 px-4 py-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                📥 Download Excel Template
+              </button>
+            </div>
+
+            {/* Step 2: Upload Template */}
+            <div className="bg-white/60 dark:bg-slate-900/60 p-5 rounded-xl border border-pastel-lavender/20 space-y-3 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
+                  <span className="w-6 h-6 rounded-full bg-violet-500 text-white flex items-center justify-center text-xs font-extrabold">2</span>
+                  <span>Upload Filled Template</span>
+                </div>
+                <p className="text-xs text-text-secondary mt-2 leading-relaxed">
+                  Upload the completed Excel file to apply problem statement & venue allocations to all teams.
+                </p>
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".xlsx, .xls, .csv"
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full mt-3 btn-primary px-4 py-2.5 text-xs font-bold text-white rounded-xl flex items-center justify-center gap-2 shadow-md"
+              >
+                📤 Upload Excel Allocations
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================== */}
+      {/* 3. MODE B: TEAM LEADER SELECTION WORKFLOW         */}
+      {/* ================================================== */}
+      {allocationMethod === 'leader' && (
+        <div className="space-y-6 animate-fade-in">
+
+          {/* CAPACITY SUMMARY CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            {/* Card 1: Eligible Teams */}
+            <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Eligible Teams</span>
+                <div className="text-2xl font-extrabold text-text-primary mt-1">{totalTeams}</div>
+                <span className="text-[11px] text-text-secondary">Confirmed registered teams</span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-500 flex items-center justify-center text-xl font-bold">
+                👥
+              </div>
+            </div>
+
+            {/* Card 2: Configured Slots */}
+            <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Configured Slots</span>
+                <div className="text-2xl font-extrabold text-text-primary mt-1">{currentConfiguredCapacity}</div>
+                <span className="text-[11px] text-text-secondary">Total available problem statement capacity</span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center text-xl font-bold">
+                🎯
+              </div>
+            </div>
+
+            {/* Card 3: Capacity Status */}
+            <div className={`backdrop-blur-md rounded-2xl border p-5 shadow-soft flex items-center justify-between transition-all ${
+              isCapacityMatched
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
+            }`}>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">Capacity Status</span>
+                <div className="text-lg font-bold mt-1 flex items-center gap-1.5">
+                  {isCapacityMatched ? (
+                    <><span>✓</span> <span>Capacity Match</span></>
+                  ) : (
+                    <><span>⚠</span> <span>Capacity Mismatch</span></>
+                  )}
+                </div>
+                <p className="text-[11px] opacity-90 mt-0.5">
+                  {isCapacityMatched
+                    ? 'All team slots correctly configured.'
+                    : totalTeams > currentConfiguredCapacity
+                    ? `${capacityDiff} more slot(s) needed before saving.`
+                    : `${capacityDiff} slot(s) over team count.`}
+                </p>
+              </div>
+              <div className={`w-12 h-12 rounded-xl border flex items-center justify-center text-xl font-bold ${
+                isCapacityMatched
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-amber-500/20 border-amber-500/30 text-amber-600 dark:text-amber-400'
+              }`}>
+                {isCapacityMatched ? '✓' : '⚠'}
+              </div>
+            </div>
+
+          </div>
+
+          {/* PROBLEM STATEMENT CONFIGURATION CARDS & FORM */}
+          <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 shadow-soft p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-pastel-lavender/20">
+              <div>
+                <h3 className="font-heading font-bold text-base text-text-primary">Configure Problem Statements</h3>
+                <p className="text-xs text-text-secondary">Add, edit, or remove problem statements and set maximum team slot capacities.</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleAddProblemStatement}
+                  className="px-3.5 py-2 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-xl text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1.5"
+                >
+                  ➕ Add Problem Statement
+                </button>
+                <button
+                  onClick={handleSaveProblemStatements}
+                  disabled={savingConfig || !isCapacityMatched}
+                  className="btn-primary px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md disabled:opacity-40 transition-all"
+                >
+                  {savingConfig ? 'Saving Configuration...' : 'Save Configuration'}
+                </button>
+              </div>
+            </div>
+
+            {/* Problem Statements Cards List */}
+            <div className="space-y-4">
+              {psList.map((ps, idx) => (
+                <div key={ps.id || idx} className="bg-white/60 dark:bg-slate-900/60 p-4 rounded-xl border border-pastel-lavender/20 space-y-3 relative group transition-all hover:border-violet-500/30 shadow-sm">
+                  <div className="flex justify-between items-center pb-2 border-b border-pastel-lavender/10">
+                    <span className="text-xs font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                      Problem Statement #{idx + 1}
+                    </span>
+                    <button
+                      onClick={() => handleRemoveProblemStatement(idx)}
+                      className="px-2.5 py-1 text-red-500 hover:bg-red-500/10 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                      title="Remove Problem Statement"
+                    >
+                      <span>🗑 Remove</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                    
+                    <div className="md:col-span-4">
+                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                        Title
+                      </label>
+                      <input
+                        type="text"
+                        value={ps.title}
+                        onChange={(e) => handlePsChange(idx, 'title', e.target.value)}
+                        placeholder="e.g. AI-Based Traffic Optimization"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-4">
+                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                        Venue / Room (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={ps.venueRoom}
+                        onChange={(e) => handlePsChange(idx, 'venueRoom', e.target.value)}
+                        placeholder="e.g. Lab 204"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-4">
+                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                        Capacity (Max Team Slots)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={ps.maxCapacity}
+                        onChange={(e) => handlePsChange(idx, 'maxCapacity', Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-extrabold text-center focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-12">
+                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                        Description (Optional)
+                      </label>
+                      <textarea
+                        rows="2"
+                        value={ps.description || ''}
+                        onChange={(e) => handlePsChange(idx, 'description', e.target.value)}
+                        placeholder="Enter problem statement guidelines, description, or instructions..."
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-medium focus:outline-none focus:border-violet-500 resize-none"
+                      />
+                    </div>
+
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
+
+          {/* LIVE SLOT STATUS OVERVIEW */}
+          <div className="space-y-3">
+            <h3 className="font-heading font-bold text-sm text-text-primary">Live Problem Statement Slot Overview</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {problemStatements.map((ps) => {
+                const maxCap = Number(ps.max_capacity || 0);
+                const allocCount = Number(ps.allocated_count || 0);
+                const remaining = Math.max(0, maxCap - allocCount);
+                const pct = maxCap > 0 ? Math.min(100, Math.round((allocCount / maxCap) * 100)) : 0;
+
+                let badgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+                let progressClass = 'bg-emerald-500';
+                let statusLabel = `${remaining} slot${remaining === 1 ? '' : 's'} remaining`;
+
+                if (remaining === 0) {
+                  badgeClass = 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20';
+                  progressClass = 'bg-slate-500';
+                  statusLabel = 'Full';
+                } else if (remaining === 1) {
+                  badgeClass = 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
+                  progressClass = 'bg-red-500';
+                  statusLabel = 'Critical (1 slot left)';
+                } else if (pct >= 50) {
+                  badgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+                  progressClass = 'bg-amber-500';
+                  statusLabel = 'Moderate';
+                }
+
+                return (
+                  <div key={ps.id} className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-pastel-lavender/20 rounded-2xl p-4 shadow-soft space-y-3 flex flex-col justify-between">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <h4 className="font-bold text-xs text-text-primary">{ps.title}</h4>
+                        {ps.description && (
+                          <p className="text-[11px] text-text-secondary mt-0.5 leading-snug">{ps.description}</p>
+                        )}
+                        {ps.venue_room && (
+                          <p className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold mt-1">📍 {ps.venue_room}</p>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${badgeClass}`}>
+                        {statusLabel}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-semibold text-text-secondary">
+                        <span>{allocCount} / {maxCap} teams allocated</span>
+                        <span>{pct}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ${progressClass}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ================================================== */}
+      {/* 5. TEAM ALLOCATION OVERVIEW TABLE (ALWAYS VISIBLE) */}
+      {/* ================================================== */}
+      <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 shadow-soft overflow-hidden space-y-0">
         
-        {/* Search Bar */}
-        <div className="p-4 border-b border-pastel-lavender/20 flex justify-between items-center">
-          <input
-            type="text"
-            placeholder="Search teams, venue rooms, or problem statements..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full sm:w-80 bg-white/60 dark:bg-slate-900/60 text-text-primary placeholder-text-secondary border border-pastel-lavender/20 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-violet-500"
-          />
-          <span className="text-xs text-text-secondary font-semibold pl-3 whitespace-nowrap">
-            Total Teams: {allocations.length}
-          </span>
+        {/* Table Title Bar */}
+        <div className="p-5 border-b border-pastel-lavender/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div>
+            <h3 className="font-heading font-bold text-base text-text-primary flex items-center gap-2">
+              <span>📋 Team Allocation Overview</span>
+            </h3>
+            <p className="text-xs text-text-secondary">Central monitor of all confirmed teams and their assigned allocations.</p>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+            <input
+              type="text"
+              placeholder="Search teams, rooms, or problem statements..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full sm:w-72 bg-white/60 dark:bg-slate-900/60 text-text-primary placeholder-text-secondary border border-pastel-lavender/20 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-violet-500"
+            />
+            <span className="text-xs text-text-secondary font-semibold whitespace-nowrap">
+              Total Teams: {allocations.length}
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -345,13 +861,13 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         ) : error ? (
           <div className="p-8 text-center">
             <p className="text-red-400 text-sm font-bold mb-3">{error}</p>
-            <button onClick={fetchAllocations} className="btn-primary px-4 py-2 text-xs font-bold rounded-xl text-white">Retry</button>
+            <button onClick={fetchData} className="btn-primary px-4 py-2 text-xs font-bold rounded-xl text-white">Retry</button>
           </div>
         ) : filteredAllocations.length === 0 ? (
           <div className="p-12 text-center text-text-secondary space-y-2">
             <div className="text-3xl">📌</div>
             <h4 className="font-bold text-text-primary text-base">No Allocations Found</h4>
-            <p className="text-xs max-w-sm mx-auto">Upload an Excel allocation file or download the template to assign venues and problem statements to confirmed teams.</p>
+            <p className="text-xs max-w-sm mx-auto">Teams will appear here once registered. Problem statements can be selected by team leaders or allocated in bulk.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -372,6 +888,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                       {team.teamName}
                     </td>
 
+                    {/* EDIT ALLOCATION MODE */}
                     {editingTeamId === team.teamId ? (
                       <>
                         <td className="px-6 py-3">
@@ -384,13 +901,34 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                           />
                         </td>
                         <td className="px-6 py-3">
-                          <input
-                            type="text"
-                            value={editForm.problemStatement}
-                            onChange={(e) => setEditForm({ ...editForm, problemStatement: e.target.value })}
-                            className="w-full bg-white dark:bg-slate-900 border border-violet-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
-                            placeholder="e.g. AI System Design"
-                          />
+                          {psList.length > 0 ? (
+                            <select
+                              value={editForm.problemStatement}
+                              onChange={(e) => {
+                                const selectedPsTitle = e.target.value;
+                                const matchedPs = psList.find(p => p.title === selectedPsTitle);
+                                setEditForm({
+                                  ...editForm,
+                                  problemStatement: selectedPsTitle,
+                                  venueRoom: matchedPs?.venueRoom || editForm.venueRoom
+                                });
+                              }}
+                              className="w-full bg-white dark:bg-slate-900 border border-violet-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                            >
+                              <option value="">-- Select Problem Statement --</option>
+                              {psList.map((p, i) => (
+                                <option key={p.id || i} value={p.title}>{p.title}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={editForm.problemStatement}
+                              onChange={(e) => setEditForm({ ...editForm, problemStatement: e.target.value })}
+                              className="w-full bg-white dark:bg-slate-900 border border-violet-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                              placeholder="e.g. AI System Design"
+                            />
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-500">Editing</span>
@@ -425,7 +963,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-amber-500/10 text-amber-500 border-amber-500/20">
-                              Pending Allocation
+                              Pending Selection
                             </span>
                           )}
                         </td>

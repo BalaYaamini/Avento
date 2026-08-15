@@ -296,7 +296,7 @@ const FacultyOrgEvents = () => {
         {scannerModalEvent && (
           <Modal
             isOpen={!!scannerModalEvent}
-            onClose={() => setScannerModalEvent(null)}
+            onClose={() => { setScannerModalEvent(null); window.location.reload(); }}
             title="Scan Attendance"
           >
             <div className="flex flex-col items-center justify-center space-y-4">
@@ -322,7 +322,7 @@ const FacultyOrgEvents = () => {
 
               <div className="mt-2 flex justify-end w-full">
                 <button
-                  onClick={() => setScannerModalEvent(null)}
+                  onClick={() => { setScannerModalEvent(null); window.location.reload(); }}
                   className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
                 >
                   Close

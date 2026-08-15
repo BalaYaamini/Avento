@@ -207,15 +207,15 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               </div>
             ) : isRegistered ? (
               <div className="w-full flex flex-col gap-1.5">
-                <button
-                  disabled
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-mint/20 text-green-600 border border-pastel-mint cursor-not-allowed"
+                <Link
+                  to="/my-registrations"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-mint/20 text-green-600 border border-pastel-mint hover:bg-pastel-mint/30 transition-all text-center"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  {isFull ? 'REGISTERED · SLOTS FULL' : 'Registered!'}
-                </button>
+                  {isFull ? 'REGISTERED · SLOTS FULL' : 'Registered! →'}
+                </Link>
                 {event.registration_type !== 'team' && (!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
                   <button
                     type="button"
@@ -233,16 +233,16 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                     🔴 SLOTS FULL
                   </div>
                 )}
-                <button
-                  disabled
-                  className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border cursor-not-allowed ${
+                <Link
+                  to="/my-registrations"
+                  className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border text-center transition-all ${
                     isPendingRegistration === 'Ready for Team Confirmation'
-                      ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                      : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                      ? 'bg-blue-500/10 text-blue-600 border-blue-500/20 hover:bg-blue-500/20 shadow-sm'
+                      : 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20 shadow-sm'
                   }`}
                 >
-                  {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation' : '🟡 Waiting for Member Approval'}
-                </button>
+                  {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation →' : '🟡 Waiting for Member Approval →'}
+                </Link>
                 {(!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
                   <button
                     type="button"

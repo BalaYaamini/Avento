@@ -328,7 +328,19 @@ exports.getMyRegistrations = async (req, res) => {
 
     // Fetch team members for team registrations
     const enrichedRegistrations = await Promise.all(registrations.map(async (reg) => {
-      if (reg.team_id && reg.teamId) {
+      if (reg.team_id) {
+        let teamObj = reg.teamId;
+        if (!teamObj) {
+          const { data: fetchedTeam } = await supabase
+            .from('event_teams')
+            .select('*')
+            .eq('id', reg.team_id)
+            .maybeSingle();
+          if (fetchedTeam) {
+            teamObj = fetchedTeam;
+          }
+        }
+
         // Fetch all registrations for this team
         const { data: teamRegs } = await supabase
           .from('event_registrations')
@@ -351,12 +363,14 @@ exports.getMyRegistrations = async (req, res) => {
           };
         });
 
-        const leaderReg = teamRegs?.find(tr => tr.user_id === reg.teamId.leader_id);
+        const leaderId = teamObj?.leader_id || reg.user_id;
+        const leaderReg = teamRegs?.find(tr => tr.user_id === leaderId);
 
         return {
           ...reg,
+          teamId: teamObj || reg.teamId || { id: reg.team_id, name: 'Team', leader_id: leaderId },
           teamDetails: {
-            leader_id: reg.teamId.leader_id,
+            leader_id: leaderId,
             teamStatus: leaderReg ? leaderReg.status : 'pending',
             members: membersWithStatus
           }
