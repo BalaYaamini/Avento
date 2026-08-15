@@ -33,7 +33,7 @@ const verifySMTPConnection = async () => {
 };
 
 // TEMPORARY TESTING TOGGLE: Set to false to re-enable outgoing Brevo email notifications
-const DISABLE_TEAM_EMAIL_NOTIFICATIONS = true;
+const DISABLE_TEAM_EMAIL_NOTIFICATIONS = false;
 
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments }) => {
   if (DISABLE_TEAM_EMAIL_NOTIFICATIONS) {
