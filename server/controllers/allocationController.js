@@ -3,14 +3,14 @@ const { checkCoreOrganizerAccess } = require('./eventController');
 const { sendEmailNotification } = require('../services/notificationService');
 const User = require('../models/User');
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUUID = (str) => typeof str === 'string' && UUID_REGEX.test(str.trim());
+
 // Helper to send allocation notification emails to all registered team members
-async function sendAllocationEmailToTeam({ eventId, teamId, problemStatement, description = '', venueRoom }) {
+async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemStatement, description = '', venueRoom }) {
   try {
     const { data: event } = await supabase.from('events').select('title').eq('id', eventId).maybeSingle();
     const eventTitle = event ? event.title : 'Event';
-
-    const { data: team } = await supabase.from('event_teams').select('name').eq('id', teamId).maybeSingle();
-    const teamName = team ? team.name : 'Your Team';
 
     let psDescription = description;
     if (!psDescription) {
@@ -23,16 +23,29 @@ async function sendAllocationEmailToTeam({ eventId, teamId, problemStatement, de
       if (ps) psDescription = ps.description || '';
     }
 
-    const { data: regs } = await supabase
-      .from('event_registrations')
-      .select('user_id')
-      .eq('event_id', eventId)
-      .eq('team_id', teamId)
-      .eq('status', 'registered');
+    let userIds = [];
+    let displayOwnerName = 'Your Team';
 
-    if (!regs || regs.length === 0) return;
+    if (teamId) {
+      const { data: team } = await supabase.from('event_teams').select('name').eq('id', teamId).maybeSingle();
+      if (team) displayOwnerName = team.name;
 
-    const userIds = regs.map(r => r.user_id).filter(Boolean);
+      const { data: regs } = await supabase
+        .from('event_registrations')
+        .select('user_id')
+        .eq('event_id', eventId)
+        .eq('team_id', teamId)
+        .eq('status', 'registered');
+
+      if (regs && regs.length > 0) {
+        userIds = regs.map(r => r.user_id).filter(Boolean);
+      }
+    } else if (userId) {
+      displayOwnerName = 'Individual Allocation';
+      userIds = [userId];
+    }
+
+    if (userIds.length === 0) return;
 
     const { data: profiles } = await supabase
       .from('profiles')
@@ -41,14 +54,14 @@ async function sendAllocationEmailToTeam({ eventId, teamId, problemStatement, de
 
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
-    for (const userId of userIds) {
-      const profile = profileMap.get(userId);
+    for (const uId of userIds) {
+      const profile = profileMap.get(uId);
       let email = profile ? profile.email : null;
       let name = profile ? profile.name : 'Participant';
 
       if (!email) {
         try {
-          const mongoUser = await User.findById(userId).select('email name');
+          const mongoUser = await User.findById(uId).select('email name');
           if (mongoUser) {
             email = mongoUser.email;
             name = mongoUser.name || name;
@@ -74,12 +87,12 @@ async function sendAllocationEmailToTeam({ eventId, teamId, problemStatement, de
     <h2 style="margin:0 0 12px;font-size:18px;color:#0f172a;">Problem Statement & Venue Allocated</h2>
     <p style="font-size:14px;color:#475569;line-height:1.6;margin-bottom:20px;">
       Hello ${name},<br>
-      Your team's problem statement and venue allocation for <strong>${eventTitle}</strong> has been confirmed.
+      Your problem statement and venue allocation for <strong>${eventTitle}</strong> has been confirmed.
     </p>
 
     <div style="background-color:#f1f5f9;border-left:4px solid #7c3aed;padding:18px;border-radius:10px;margin-bottom:24px;">
       <table width="100%" border="0" cellspacing="0" cellpadding="0">
-        <tr><td style="padding:4px 0;font-size:13px;color:#64748b;width:35%;"><strong>Team:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${teamName}</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#64748b;width:35%;"><strong>Allocation:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${displayOwnerName}</td></tr>
         <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Problem Statement:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${problemStatement}</td></tr>
         ${psDescription ? `<tr><td style="padding:4px 0;font-size:13px;color:#64748b;vertical-align:top;"><strong>Description:</strong></td><td style="padding:4px 0;font-size:13px;color:#334155;line-height:1.5;">${psDescription}</td></tr>` : ''}
         <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Venue / Room:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#7c3aed;">${venueRoom}</td></tr>
@@ -147,6 +160,15 @@ async function fetchProblemStatementsForEvent(eventId) {
       const countById = allocCountsByPsId.get(psId) || 0;
       const countByTitle = allocCountsByTitle.get(normTitle) || 0;
       const liveCount = Math.max(countById, countByTitle);
+
+      if (ps.allocated_count !== liveCount) {
+        supabase
+          .from('event_problem_statements')
+          .update({ allocated_count: liveCount, updated_at: new Date().toISOString() })
+          .eq('id', ps.id)
+          .then(() => {})
+          .catch(() => {});
+      }
 
       return {
         ...ps,
@@ -220,7 +242,7 @@ exports.getProblemStatements = async (req, res) => {
       totalTeams,
       totalCapacity,
       totalAllocated,
-      isCapacityValid: totalCapacity === totalTeams
+      isCapacityValid: true
     });
   } catch (err) {
     console.error('getProblemStatements error:', err.message);
@@ -231,7 +253,7 @@ exports.getProblemStatements = async (req, res) => {
 /**
  * POST /api/allocations/event/:eventId/problem-statements
  * Save / Configure Problem Statements for an event (Organizers)
- * Enforces total capacity == total eligible team count.
+ * Decoupled from registered team count. Admin can configure any capacity.
  */
 exports.saveProblemStatements = async (req, res) => {
   try {
@@ -250,7 +272,7 @@ exports.saveProblemStatements = async (req, res) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Fetch total confirmed teams count for slot capacity validation
+    // Fetch total confirmed teams count for informational response
     const { data: teams } = await supabase
       .from('event_teams')
       .select('id')
@@ -258,8 +280,16 @@ exports.saveProblemStatements = async (req, res) => {
       .in('status', ['registered', 'confirmed']);
     const totalTeams = teams ? teams.length : 0;
 
+    // Fetch existing problem statements to validate max_capacity against current allocated_count
+    const { data: existingPSList } = await supabase
+      .from('event_problem_statements')
+      .select('id, title, allocated_count')
+      .eq('event_id', eventId);
+    const existingPSMap = new Map((existingPSList || []).map(p => [String(p.id), p]));
+
     let totalConfiguredCapacity = 0;
-    const recordsToUpsert = [];
+    const existingRecordsToUpdate = [];
+    const newRecordsToInsert = [];
 
     for (let i = 0; i < problemStatements.length; i++) {
       const ps = problemStatements[i];
@@ -276,76 +306,132 @@ exports.saveProblemStatements = async (req, res) => {
         return res.status(400).json({ message: `Max capacity for '${title}' must be a positive number.` });
       }
 
-      totalConfiguredCapacity += maxCapacity;
-
-      const record = {
-        event_id: eventId,
-        title,
-        description,
-        venue_room: venueRoom,
-        max_capacity: maxCapacity,
-        updated_at: new Date().toISOString()
-      };
-
-      if (ps.id && typeof ps.id === 'string' && ps.id.length > 10) {
-        record.id = ps.id;
+      // Check if trying to reduce max_capacity below currently allocated count
+      if (ps.id && isUUID(ps.id) && existingPSMap.has(String(ps.id))) {
+        const existingRecord = existingPSMap.get(String(ps.id));
+        const currentAllocated = Number(existingRecord.allocated_count || 0);
+        if (maxCapacity < currentAllocated) {
+          return res.status(400).json({
+            message: `Cannot reduce maximum capacity for '${title}' to ${maxCapacity} because ${currentAllocated} allocation(s) are already assigned to it.`
+          });
+        }
       }
 
-      recordsToUpsert.push(record);
+      totalConfiguredCapacity += maxCapacity;
+
+      if (ps.id && isUUID(ps.id)) {
+        // Existing record: include id property to update existing row
+        existingRecordsToUpdate.push({
+          id: String(ps.id).trim(),
+          event_id: eventId,
+          title,
+          description,
+          venue_room: venueRoom,
+          max_capacity: maxCapacity,
+          updated_at: new Date().toISOString()
+        });
+      } else {
+        // NEW record: OMIT id property completely so PostgreSQL DEFAULT gen_random_uuid() triggers
+        newRecordsToInsert.push({
+          event_id: eventId,
+          title,
+          description,
+          venue_room: venueRoom,
+          max_capacity: maxCapacity,
+          updated_at: new Date().toISOString()
+        });
+      }
     }
 
-    // TOTAL CAPACITY VALIDATION
-    if (totalConfiguredCapacity !== totalTeams) {
-      return res.status(400).json({
-        message: `Total problem statement capacity (${totalConfiguredCapacity}) must match the total team count (${totalTeams}) for this event. Please adjust slot capacities before saving.`
-      });
+    // Verify that any existing problem statement being removed does NOT have active allocations
+    const existingIdsToKeepSet = new Set(existingRecordsToUpdate.map(r => r.id));
+    for (const existingPS of (existingPSList || [])) {
+      if (!existingIdsToKeepSet.has(String(existingPS.id))) {
+        const currentAllocated = Number(existingPS.allocated_count || 0);
+        if (currentAllocated > 0) {
+          return res.status(400).json({
+            message: `Cannot remove problem statement '${existingPS.title}' because ${currentAllocated} team(s)/participant(s) are currently allocated to it. Please reassign or clear those allocations first.`
+          });
+        }
+      }
     }
 
-    // Delete existing problem statements that are no longer in the list (if updating)
-    const existingIdsToKeep = recordsToUpsert.filter(r => r.id).map(r => r.id);
+    // Delete existing problem statements that are no longer kept in the list
+    const existingIdsToKeep = existingRecordsToUpdate.map(r => r.id);
     if (existingIdsToKeep.length > 0) {
       await supabase
         .from('event_problem_statements')
         .delete()
         .eq('event_id', eventId)
         .not('id', 'in', `(${existingIdsToKeep.join(',')})`);
+    } else if (existingPSList && existingPSList.length > 0) {
+      await supabase
+        .from('event_problem_statements')
+        .delete()
+        .eq('event_id', eventId);
     }
 
-    // Primary: Upsert into event_problem_statements table
-    const { data: savedData, error: upsertErr } = await supabase
-      .from('event_problem_statements')
-      .upsert(recordsToUpsert)
-      .select('*');
+    const savedData = [];
 
-    if (upsertErr) {
-      // Fallback if table missing in Supabase schema cache
-      if (upsertErr.code === 'PGRST205' || upsertErr.message?.includes('schema cache')) {
-        console.warn('event_problem_statements table missing in schema cache, using events table fallback...');
-        const fallbackJSON = JSON.stringify(recordsToUpsert.map((r, i) => ({
-          id: r.id || `ps_${i + 1}`,
-          title: r.title,
-          description: r.description,
-          venueRoom: r.venue_room,
-          maxCapacity: r.max_capacity
-        })));
+    // Helper for schema cache fallback if table missing
+    const handleFallback = async () => {
+      console.warn('event_problem_statements table missing in schema cache, using events table fallback...');
+      const allRecords = [...existingRecordsToUpdate, ...newRecordsToInsert];
+      const fallbackJSON = JSON.stringify(allRecords.map((r, i) => ({
+        id: r.id || `ps_${i + 1}`,
+        title: r.title,
+        description: r.description,
+        venueRoom: r.venue_room,
+        maxCapacity: r.max_capacity
+      })));
 
-        const { error: eventErr } = await supabase
-          .from('events')
-          .update({ certificate_fields_config: fallbackJSON })
-          .eq('id', eventId);
+      const { error: eventErr } = await supabase
+        .from('events')
+        .update({ certificate_fields_config: fallbackJSON })
+        .eq('id', eventId);
 
-        if (eventErr) throw eventErr;
+      if (eventErr) throw eventErr;
 
-        return res.json({
-          message: `Successfully configured ${recordsToUpsert.length} problem statement(s) with total capacity of ${totalConfiguredCapacity} slots.`,
-          problemStatements: recordsToUpsert,
-          totalTeams,
-          totalCapacity: totalConfiguredCapacity
-        });
+      return res.json({
+        message: `Successfully configured ${allRecords.length} problem statement(s) with total capacity of ${totalConfiguredCapacity} slots.`,
+        problemStatements: allRecords,
+        totalTeams,
+        totalCapacity: totalConfiguredCapacity
+      });
+    };
+
+    // 1. Update existing records with real UUIDs
+    if (existingRecordsToUpdate.length > 0) {
+      const { data: updatedData, error: updateErr } = await supabase
+        .from('event_problem_statements')
+        .upsert(existingRecordsToUpdate)
+        .select('*');
+
+      if (updateErr) {
+        if (updateErr.code === 'PGRST205' || updateErr.message?.includes('schema cache')) {
+          return await handleFallback();
+        }
+        console.error('Supabase update event_problem_statements error:', updateErr.message);
+        throw updateErr;
       }
+      if (updatedData) savedData.push(...updatedData);
+    }
 
-      console.error('Supabase upsert event_problem_statements error:', upsertErr.message);
-      throw upsertErr;
+    // 2. Insert NEW records WITHOUT id property (triggers id DEFAULT gen_random_uuid())
+    if (newRecordsToInsert.length > 0) {
+      const { data: insertedData, error: insertErr } = await supabase
+        .from('event_problem_statements')
+        .insert(newRecordsToInsert)
+        .select('*');
+
+      if (insertErr) {
+        if (insertErr.code === 'PGRST205' || insertErr.message?.includes('schema cache')) {
+          return await handleFallback();
+        }
+        console.error('Supabase insert event_problem_statements error:', insertErr.message);
+        throw insertErr;
+      }
+      if (insertedData) savedData.push(...insertedData);
     }
 
     res.json({
@@ -374,7 +460,7 @@ exports.selectProblemStatement = async (req, res) => {
       return res.status(400).json({ message: 'Please select a valid problem statement.' });
     }
 
-    // Step 1: Find student's team registration
+    // Step 1: Find student's registration
     const { data: registration } = await supabase
       .from('event_registrations')
       .select('team_id, status, attendance_status')
@@ -382,8 +468,8 @@ exports.selectProblemStatement = async (req, res) => {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!registration || !registration.team_id || registration.status !== 'registered') {
-      return res.status(403).json({ message: 'No active team registration found for this event.' });
+    if (!registration || registration.status !== 'registered') {
+      return res.status(403).json({ message: 'No active registration found for this event.' });
     }
 
     // Step 2: Attendance check-in validation
@@ -391,39 +477,64 @@ exports.selectProblemStatement = async (req, res) => {
       return res.status(403).json({ message: 'Your attendance/QR check-in must be scanned before selecting a problem statement.' });
     }
 
-    // Step 3: Fetch team and verify Team Leader authorization
-    const { data: team } = await supabase
-      .from('event_teams')
-      .select('id, name, leader_id, status')
-      .eq('id', registration.team_id)
-      .maybeSingle();
+    const isTeamReg = !!registration.team_id;
+    let team = null;
 
-    if (!team) {
-      return res.status(404).json({ message: 'Team not found.' });
-    }
+    if (isTeamReg) {
+      // Step 3: Fetch team and verify Team Leader authorization for team registration
+      const { data: fetchedTeam } = await supabase
+        .from('event_teams')
+        .select('id, name, leader_id, status')
+        .eq('id', registration.team_id)
+        .maybeSingle();
 
-    const isLeader = (String(team.leader_id) === String(userId));
-    if (!isLeader) {
-      return res.status(403).json({ message: 'Only the team leader can perform the problem statement selection.' });
-    }
+      if (!fetchedTeam) {
+        return res.status(404).json({ message: 'Team not found.' });
+      }
 
-    // Step 4: Check if team has ALREADY selected a problem statement
-    const { data: existingAlloc } = await supabase
-      .from('team_allocations')
-      .select('id, problem_statement, venue_room')
-      .eq('event_id', eventId)
-      .eq('team_id', team.id)
-      .maybeSingle();
+      const isLeader = (String(fetchedTeam.leader_id) === String(userId));
+      if (!isLeader) {
+        return res.status(403).json({ message: 'Only the team leader can perform the problem statement selection.' });
+      }
+      team = fetchedTeam;
 
-    if (existingAlloc && existingAlloc.problem_statement) {
-      return res.status(400).json({
-        message: 'Your team has already selected a problem statement. Selection is locked.',
-        allocation: {
-          teamName: team.name,
-          problemStatement: existingAlloc.problem_statement,
-          venueRoom: existingAlloc.venue_room
-        }
-      });
+      // Step 4: Check if team has ALREADY selected a problem statement
+      const { data: existingAlloc } = await supabase
+        .from('team_allocations')
+        .select('id, problem_statement, venue_room')
+        .eq('event_id', eventId)
+        .eq('team_id', team.id)
+        .maybeSingle();
+
+      if (existingAlloc && existingAlloc.problem_statement) {
+        return res.status(400).json({
+          message: 'Your team has already selected a problem statement. Selection is locked.',
+          allocation: {
+            teamName: team.name,
+            problemStatement: existingAlloc.problem_statement,
+            venueRoom: existingAlloc.venue_room
+          }
+        });
+      }
+    } else {
+      // Individual registration check
+      const { data: existingAlloc } = await supabase
+        .from('team_allocations')
+        .select('id, problem_statement, venue_room')
+        .eq('event_id', eventId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existingAlloc && existingAlloc.problem_statement) {
+        return res.status(400).json({
+          message: 'You have already selected a problem statement. Selection is locked.',
+          allocation: {
+            teamName: 'Individual Participant',
+            problemStatement: existingAlloc.problem_statement,
+            venueRoom: existingAlloc.venue_room
+          }
+        });
+      }
     }
 
     // Step 5: ATOMIC ALLOCATION & CAPACITY RESERVATION
@@ -434,16 +545,30 @@ exports.selectProblemStatement = async (req, res) => {
       return res.status(404).json({ message: 'Problem statement not found.' });
     }
 
-    const venue = targetPS.venue_room || 'To be assigned';
+    // Preserve existing team preassigned venue if present; otherwise default to 'To be assigned'
+    let venue = 'To be assigned';
+    let teamVenueQuery = supabase.from('team_allocations').select('venue_room').eq('event_id', eventId);
+    if (isTeamReg) {
+      teamVenueQuery = teamVenueQuery.eq('team_id', team.id);
+    } else {
+      teamVenueQuery = teamVenueQuery.eq('user_id', userId);
+    }
+    const { data: teamVenueRow } = await teamVenueQuery.maybeSingle();
+    if (teamVenueRow && teamVenueRow.venue_room && teamVenueRow.venue_room.trim() !== '') {
+      venue = teamVenueRow.venue_room.trim();
+    }
 
     // Attempt atomic RPC allocation if targetPS.id is valid UUID
-    if (targetPS.id && typeof targetPS.id === 'string' && targetPS.id.length > 20) {
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc('allocate_problem_statement_atomic', {
+    if (targetPS.id && isUUID(targetPS.id)) {
+      const rpcParams = {
         p_event_id: eventId,
-        p_team_id: team.id,
+        p_team_id: isTeamReg ? team.id : null,
+        p_user_id: isTeamReg ? null : userId,
         p_problem_statement_id: targetPS.id,
         p_venue_room: venue
-      });
+      };
+
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('allocate_problem_statement_atomic', rpcParams);
 
       if (!rpcErr && rpcRes) {
         if (!rpcRes.success) {
@@ -453,10 +578,10 @@ exports.selectProblemStatement = async (req, res) => {
         const allocatedTitle = rpcRes.problem_statement || targetPS.title;
         const allocatedVenue = rpcRes.venue_room || venue;
 
-        // Trigger allocation email asynchronously to all team members AFTER successful DB save
         sendAllocationEmailToTeam({
           eventId,
-          teamId: team.id,
+          teamId: isTeamReg ? team.id : null,
+          userId: isTeamReg ? null : userId,
           problemStatement: allocatedTitle,
           description: targetPS.description || '',
           venueRoom: allocatedVenue
@@ -464,16 +589,15 @@ exports.selectProblemStatement = async (req, res) => {
 
         return res.json({
           success: true,
-          message: rpcRes.message || 'Problem statement successfully allocated to your team!',
+          message: rpcRes.message || 'Problem statement successfully allocated!',
           allocation: {
-            teamName: team.name,
+            teamName: isTeamReg ? team.name : 'Individual Participant',
             problemStatement: allocatedTitle,
             venueRoom: allocatedVenue
           }
         });
       }
 
-      // If RPC exists but threw a database error, DO NOT silently fall back to non-atomic path
       const isRpcMissing = rpcErr && (rpcErr.code === 'PGRST202' || rpcErr.code === '42883' || /function/i.test(rpcErr.message || ''));
       if (rpcErr && !isRpcMissing) {
         throw rpcErr;
@@ -485,31 +609,36 @@ exports.selectProblemStatement = async (req, res) => {
       return res.status(400).json({ message: 'This problem statement has reached full capacity. Please select another.' });
     }
 
-    // Insert into team_allocations
+    const upsertObj = {
+      event_id: eventId,
+      problem_statement_id: targetPS.id && isUUID(targetPS.id) ? targetPS.id : null,
+      problem_statement: targetPS.title,
+      venue_room: venue,
+      updated_at: new Date().toISOString()
+    };
+    if (isTeamReg) {
+      upsertObj.team_id = team.id;
+    } else {
+      upsertObj.user_id = userId;
+    }
+
+    const onConflictStr = isTeamReg ? 'event_id,team_id' : 'event_id,user_id';
     const { error: allocErr } = await supabase
       .from('team_allocations')
-      .upsert({
-        event_id: eventId,
-        team_id: team.id,
-        problem_statement_id: targetPS.id && targetPS.id.length > 20 ? targetPS.id : null,
-        problem_statement: targetPS.title,
-        venue_room: venue,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'event_id,team_id' });
+      .upsert(upsertObj, { onConflict: onConflictStr });
 
     if (allocErr) throw allocErr;
 
-    // Update allocated_count in event_problem_statements if table exists
     const newCount = Number(targetPS.allocated_count) + 1;
     await supabase
       .from('event_problem_statements')
       .update({ allocated_count: newCount, updated_at: new Date().toISOString() })
       .eq('id', targetPS.id);
 
-    // Trigger allocation email asynchronously to all team members AFTER successful DB save
     sendAllocationEmailToTeam({
       eventId,
-      teamId: team.id,
+      teamId: isTeamReg ? team.id : null,
+      userId: isTeamReg ? null : userId,
       problemStatement: targetPS.title,
       description: targetPS.description || '',
       venueRoom: venue
@@ -517,9 +646,9 @@ exports.selectProblemStatement = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Problem statement successfully allocated to your team!',
+      message: 'Problem statement successfully allocated!',
       allocation: {
-        teamName: team.name,
+        teamName: isTeamReg ? team.name : 'Individual Participant',
         problemStatement: targetPS.title,
         venueRoom: venue
       }
@@ -532,7 +661,7 @@ exports.selectProblemStatement = async (req, res) => {
 
 /**
  * GET /api/allocations/event/:eventId
- * Fetch all team allocations & problem statements for an event (Organizers)
+ * Fetch all team & individual allocations & problem statements for an event (Organizers)
  */
 exports.getEventAllocations = async (req, res) => {
   try {
@@ -550,7 +679,7 @@ exports.getEventAllocations = async (req, res) => {
 
     const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
     if (!isOrganizer) {
-      return res.status(403).json({ message: 'Access denied. Only event organizers can view team allocations.' });
+      return res.status(403).json({ message: 'Access denied. Only event organizers can view allocations.' });
     }
 
     // Fetch confirmed teams
@@ -561,6 +690,27 @@ exports.getEventAllocations = async (req, res) => {
       .in('status', ['registered', 'confirmed']);
     if (teamErr) throw teamErr;
 
+    // Fetch confirmed individual registrations (where team_id is null)
+    const { data: indivRegs } = await supabase
+      .from('event_registrations')
+      .select('id, user_id, status')
+      .eq('event_id', eventId)
+      .is('team_id', null)
+      .eq('status', 'registered');
+
+    // Fetch profiles for individual registrants
+    const indivUserIds = (indivRegs || []).map(r => r.user_id).filter(Boolean);
+    let indivProfileMap = new Map();
+    if (indivUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, email, roll_number')
+        .in('id', indivUserIds);
+      if (profiles) {
+        indivProfileMap = new Map(profiles.map(p => [p.id, p]));
+      }
+    }
+
     // Fetch existing allocations
     let allocations = [];
     const { data: allocData } = await supabase
@@ -569,16 +719,15 @@ exports.getEventAllocations = async (req, res) => {
       .eq('event_id', eventId);
     if (allocData) allocations = allocData;
 
-    // Fetch configured problem statements
-    const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
-
-    const allocMap = new Map(allocations.map(a => [a.team_id, a]));
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
 
     const teamList = (teams || []).map(t => {
-      const alloc = allocMap.get(t.id);
+      const alloc = teamAllocMap.get(t.id);
       return {
         teamId: t.id,
         teamName: t.name || 'Unnamed Team',
+        isIndividual: false,
         venueRoom: alloc ? alloc.venue_room : '',
         problemStatement: alloc ? alloc.problem_statement : '',
         isAllocated: !!alloc,
@@ -586,8 +735,29 @@ exports.getEventAllocations = async (req, res) => {
       };
     });
 
+    const indivList = (indivRegs || []).map(r => {
+      const alloc = userAllocMap.get(r.user_id);
+      const profile = indivProfileMap.get(r.user_id);
+      const name = profile ? profile.name : 'Individual Participant';
+      return {
+        teamId: `user_${r.user_id}`,
+        userId: r.user_id,
+        teamName: `${name} (Individual)`,
+        isIndividual: true,
+        venueRoom: alloc ? alloc.venue_room : '',
+        problemStatement: alloc ? alloc.problem_statement : '',
+        isAllocated: !!alloc,
+        updatedAt: alloc ? alloc.updated_at : null
+      };
+    });
+
+    const combinedList = [...teamList, ...indivList];
+
+    // Fetch configured problem statements
+    const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
+
     res.json({
-      allocations: teamList,
+      allocations: combinedList,
       problemStatements
     });
   } catch (err) {
@@ -598,7 +768,7 @@ exports.getEventAllocations = async (req, res) => {
 
 /**
  * GET /api/allocations/event/:eventId/template
- * Download allocation template data for confirmed teams (Organizers)
+ * Download allocation template data for confirmed teams & individual participants (Organizers)
  */
 exports.getAllocationTemplateData = async (req, res) => {
   try {
@@ -618,14 +788,34 @@ exports.getAllocationTemplateData = async (req, res) => {
       .eq('event_id', eventId)
       .in('status', ['registered', 'confirmed']);
 
+    const { data: indivRegs } = await supabase
+      .from('event_registrations')
+      .select('id, user_id, status')
+      .eq('event_id', eventId)
+      .is('team_id', null)
+      .eq('status', 'registered');
+
+    const indivUserIds = (indivRegs || []).map(r => r.user_id).filter(Boolean);
+    let indivProfileMap = new Map();
+    if (indivUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', indivUserIds);
+      if (profiles) {
+        indivProfileMap = new Map(profiles.map(p => [p.id, p]));
+      }
+    }
+
     let allocations = [];
     const { data: allocData } = await supabase.from('team_allocations').select('*').eq('event_id', eventId);
     if (allocData) allocations = allocData;
 
-    const allocMap = new Map(allocations.map(a => [a.team_id, a]));
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
 
-    const templateRows = (teams || []).map(t => {
-      const alloc = allocMap.get(t.id);
+    const teamRows = (teams || []).map(t => {
+      const alloc = teamAllocMap.get(t.id);
       return {
         'Team ID': t.id,
         'Team Name': t.name || 'Unnamed Team',
@@ -634,7 +824,19 @@ exports.getAllocationTemplateData = async (req, res) => {
       };
     });
 
-    res.json(templateRows);
+    const indivRows = (indivRegs || []).map(r => {
+      const alloc = userAllocMap.get(r.user_id);
+      const profile = indivProfileMap.get(r.user_id);
+      const name = profile ? profile.name : 'Individual Participant';
+      return {
+        'Team ID': `user_${r.user_id}`,
+        'Team Name': `${name} (Individual)`,
+        'Venue / Room': alloc ? alloc.venue_room : '',
+        'Problem Statement': alloc ? alloc.problem_statement : ''
+      };
+    });
+
+    res.json([...teamRows, ...indivRows]);
   } catch (err) {
     console.error('getAllocationTemplateData error:', err.message);
     res.status(500).json({ message: 'Failed to generate template data.', error: err.message });
@@ -643,7 +845,7 @@ exports.getAllocationTemplateData = async (req, res) => {
 
 /**
  * POST /api/allocations/event/:eventId
- * Save / Upsert Team Allocations (Organizers only - Excel / Manual edit)
+ * Save / Upsert Allocations (Organizers only - Excel / Manual edit)
  */
 exports.saveTeamAllocations = async (req, res) => {
   try {
@@ -669,61 +871,154 @@ exports.saveTeamAllocations = async (req, res) => {
       .in('status', ['registered', 'confirmed']);
     const validTeamMap = new Map((validTeams || []).map(t => [t.id, t.name]));
 
-    // Fetch problem statements for this event to resolve problem_statement_id
-    const { data: psListForEvent } = await supabase
-      .from('event_problem_statements')
-      .select('id, title')
+    const { data: validIndivs } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('event_id', eventId)
+      .is('team_id', null)
+      .eq('status', 'registered');
+    const validIndivSet = new Set((validIndivs || []).map(r => r.user_id));
+
+    // Fetch problem statements for this event with live allocated counts & capacities
+    const { problemStatements: psListForEvent } = await fetchProblemStatementsForEvent(eventId);
+    const psMapByTitle = new Map((psListForEvent || []).map(p => [String(p.title || '').trim().toLowerCase(), p]));
+    const psMapById = new Map((psListForEvent || []).map(p => [String(p.id), p]));
+
+    // Fetch existing team allocations to preserve independent Venue or Problem Statement values
+    const { data: existingAllocs } = await supabase
+      .from('team_allocations')
+      .select('*')
       .eq('event_id', eventId);
 
-    const psMapByTitle = new Map((psListForEvent || []).map(p => [String(p.title || '').trim().toLowerCase(), p.id]));
-    const psMapById = new Map((psListForEvent || []).map(p => [String(p.id), p.id]));
+    const existingTeamAllocMap = new Map((existingAllocs || []).filter(a => a.team_id).map(a => [a.team_id, a]));
+    const existingUserAllocMap = new Map((existingAllocs || []).filter(a => a.user_id).map(a => [a.user_id, a]));
 
-    const seenTeams = new Set();
+    // Track live capacity usage changes per problem statement during batch processing
+    const psSimulatedCounts = new Map((psListForEvent || []).map(p => [String(p.id), Number(p.allocated_count || 0)]));
+
+    const seenEntries = new Set();
     const recordsToUpsert = [];
+    const recordsToNotify = [];
 
     for (let i = 0; i < allocations.length; i++) {
       const item = allocations[i];
-      const teamId = String(item.teamId || item['Team ID'] || '').trim();
+      let rawId = String(item.teamId || item['Team ID'] || '').trim();
       const teamName = String(item.teamName || item['Team Name'] || 'Row ' + (i + 1)).trim();
-      const venueRoom = String(item.venueRoom || item['Venue / Room'] || '').trim();
-      const problemStatement = String(item.problemStatement || item['Problem Statement'] || '').trim();
+      const inputVenueRoom = item.venueRoom !== undefined && item.venueRoom !== null
+        ? String(item.venueRoom || item['Venue / Room'] || '').trim()
+        : String(item['Venue / Room'] || item.venueRoom || '').trim();
+      const inputProblemStatement = item.problemStatement !== undefined && item.problemStatement !== null
+        ? String(item.problemStatement || item['Problem Statement'] || '').trim()
+        : String(item['Problem Statement'] || item.problemStatement || '').trim();
 
-      if (!teamId || !validTeamMap.has(teamId)) {
-        return res.status(400).json({ message: `Team not found or is not a confirmed team for this event: ${teamName} (${teamId || 'No ID'})` });
+      let targetTeamId = null;
+      let targetUserId = null;
+
+      if (rawId.startsWith('user_')) {
+        targetUserId = rawId.replace('user_', '');
+      } else if (item.userId) {
+        targetUserId = item.userId;
+      } else if (validTeamMap.has(rawId)) {
+        targetTeamId = rawId;
+      } else if (validIndivSet.has(rawId)) {
+        targetUserId = rawId;
       }
 
-      if (!venueRoom) {
-        return res.status(400).json({ message: `Venue / Room must not be empty for team: ${teamName}` });
+      if (!targetTeamId && !targetUserId) {
+        return res.status(400).json({ message: `Participant or Team not found: ${teamName} (${rawId || 'No ID'})` });
       }
 
-      if (!problemStatement) {
-        return res.status(400).json({ message: `Problem Statement must not be empty for team: ${teamName}` });
+      const existingRecord = targetTeamId ? existingTeamAllocMap.get(targetTeamId) : existingUserAllocMap.get(targetUserId);
+      const oldProblemStatement = existingRecord ? String(existingRecord.problem_statement || '').trim() : '';
+
+      // VENUE IS MANDATORY FOR BULK ALLOCATION / SAVE
+      const finalVenueRoom = inputVenueRoom || (existingRecord ? (existingRecord.venue_room || '') : '');
+      if (!finalVenueRoom) {
+        return res.status(400).json({ message: `Venue / Room is required for team: ${teamName}` });
       }
 
-      if (seenTeams.has(teamId)) {
-        return res.status(400).json({ message: `Duplicate allocation found for team: ${teamName}` });
+      // PROBLEM STATEMENT IS OPTIONAL
+      let targetPS = null;
+      let finalProblemStatement = '';
+      let matchedPsId = null;
+
+      if (inputProblemStatement) {
+        const normInputPS = inputProblemStatement.toLowerCase();
+        targetPS = psMapByTitle.get(normInputPS) || psMapById.get(inputProblemStatement) || null;
+
+        if (!targetPS) {
+          return res.status(400).json({ message: `Problem statement '${inputProblemStatement}' not found for team: ${teamName}` });
+        }
+
+        finalProblemStatement = targetPS.title;
+        matchedPsId = targetPS.id;
+      } else if (existingRecord && existingRecord.problem_statement) {
+        // Blank input cell means "Do not modify existing Problem Statement"
+        finalProblemStatement = existingRecord.problem_statement;
+        matchedPsId = existingRecord.problem_statement_id || (psMapByTitle.get(finalProblemStatement.toLowerCase())?.id || null);
+        targetPS = matchedPsId ? psMapById.get(String(matchedPsId)) : psMapByTitle.get(finalProblemStatement.toLowerCase());
       }
-      seenTeams.add(teamId);
 
-      const matchedPsId = psMapByTitle.get(problemStatement.toLowerCase()) || psMapById.get(problemStatement) || null;
+      const newProblemStatement = String(finalProblemStatement || '').trim();
+      const isPsNewlyAssignedOrChanged = newProblemStatement !== '' && newProblemStatement.toLowerCase() !== oldProblemStatement.toLowerCase();
 
-      recordsToUpsert.push({
+      // Check capacity if problem statement is being newly assigned or changed
+      const oldPsId = existingRecord && existingRecord.problem_statement_id
+        ? String(existingRecord.problem_statement_id)
+        : (existingRecord && existingRecord.problem_statement ? psMapByTitle.get(existingRecord.problem_statement.toLowerCase())?.id : null);
+
+      const newPsId = matchedPsId ? String(matchedPsId) : null;
+
+      if (newPsId && newPsId !== String(oldPsId)) {
+        const currentCount = psSimulatedCounts.get(newPsId) || 0;
+        const psObj = psMapById.get(newPsId);
+        const maxCap = psObj ? Number(psObj.max_capacity || 0) : 0;
+
+        if (maxCap > 0 && currentCount >= maxCap) {
+          return res.status(400).json({
+            message: `Problem statement '${finalProblemStatement}' for ${teamName} has reached maximum capacity (${maxCap} slots).`
+          });
+        }
+
+        if (oldPsId && psSimulatedCounts.has(String(oldPsId))) {
+          psSimulatedCounts.set(String(oldPsId), Math.max(0, psSimulatedCounts.get(String(oldPsId)) - 1));
+        }
+
+        psSimulatedCounts.set(newPsId, currentCount + 1);
+      }
+
+      const key = targetTeamId ? `team_${targetTeamId}` : `user_${targetUserId}`;
+      if (seenEntries.has(key)) {
+        return res.status(400).json({ message: `Duplicate allocation row found for: ${teamName}` });
+      }
+      seenEntries.add(key);
+
+      const record = {
         event_id: eventId,
-        team_id: teamId,
-        venue_room: venueRoom,
-        problem_statement: problemStatement,
+        venue_room: finalVenueRoom,
+        problem_statement: finalProblemStatement,
         problem_statement_id: matchedPsId,
         updated_at: new Date().toISOString()
-      });
+      };
+      if (targetTeamId) record.team_id = targetTeamId;
+      if (targetUserId) record.user_id = targetUserId;
+
+      recordsToUpsert.push(record);
+      if (isPsNewlyAssignedOrChanged) {
+        recordsToNotify.push(record);
+      }
     }
 
-    const { error: upsertErr } = await supabase
-      .from('team_allocations')
-      .upsert(recordsToUpsert, { onConflict: 'event_id,team_id' });
+    const teamRecords = recordsToUpsert.filter(r => r.team_id);
+    const indivRecords = recordsToUpsert.filter(r => r.user_id);
 
-    if (upsertErr) {
-      console.error('Supabase upsert team_allocations error:', upsertErr.message);
-      throw upsertErr;
+    if (teamRecords.length > 0) {
+      const { error: err1 } = await supabase.from('team_allocations').upsert(teamRecords, { onConflict: 'event_id,team_id' });
+      if (err1) throw err1;
+    }
+    if (indivRecords.length > 0) {
+      const { error: err2 } = await supabase.from('team_allocations').upsert(indivRecords, { onConflict: 'event_id,user_id' });
+      if (err2) throw err2;
     }
 
     // Sync stored allocated_count in event_problem_statements table
@@ -756,17 +1051,18 @@ exports.saveTeamAllocations = async (req, res) => {
       console.warn('Non-fatal error syncing allocated_count after saveTeamAllocations:', syncErr.message);
     }
 
-    // Trigger allocation emails asynchronously to all team members AFTER successful DB save
-    for (const record of recordsToUpsert) {
+    // Trigger allocation emails ONLY for teams with a newly assigned or changed Problem Statement
+    for (const record of recordsToNotify) {
       sendAllocationEmailToTeam({
         eventId,
-        teamId: record.team_id,
+        teamId: record.team_id || null,
+        userId: record.user_id || null,
         problemStatement: record.problem_statement,
         venueRoom: record.venue_room
       }).catch(e => console.error('Failed to trigger allocation email after saveTeamAllocations:', e.message));
     }
 
-    res.json({ message: `Successfully saved allocations for ${recordsToUpsert.length} team(s).` });
+    res.json({ message: `Successfully saved allocations for ${recordsToUpsert.length} entry(ies).` });
   } catch (err) {
     console.error('saveTeamAllocations error:', err.message);
     res.status(500).json({ message: err.message || 'Failed to save team allocations.', error: err.message });
@@ -775,14 +1071,14 @@ exports.saveTeamAllocations = async (req, res) => {
 
 /**
  * GET /api/allocations/event/:eventId/my-allocation
- * Fetch team allocation & available problem statement selection for logged-in student (Participant View)
+ * Fetch team/individual allocation & available problem statement selection for logged-in student (Participant View)
  */
 exports.getMyTeamAllocation = async (req, res) => {
   try {
     const { eventId } = req.params;
     const userId = req.user.id;
 
-    // Check 1: Find student's team registration
+    // Check 1: Find student's registration
     const { data: registration } = await supabase
       .from('event_registrations')
       .select('team_id, status, attendance_status')
@@ -790,44 +1086,65 @@ exports.getMyTeamAllocation = async (req, res) => {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!registration || !registration.team_id || registration.status !== 'registered') {
+    if (!registration || registration.status !== 'registered') {
       return res.json({
         allocation: null,
         teamConfirmed: false,
         checkedIn: false,
         isLeader: false,
-        message: 'No active team registration found.'
+        message: 'No active registration found for this event.'
       });
     }
 
-    // Check 2: Check if student's team is CONFIRMED & verify leader status
-    const { data: team } = await supabase
-      .from('event_teams')
-      .select('id, name, leader_id, status')
-      .eq('id', registration.team_id)
-      .maybeSingle();
+    const isTeamReg = !!registration.team_id;
+    let team = null;
+    let isTeamConfirmed = false;
+    let isLeader = false;
+    let isCheckedIn = (registration.attendance_status === 'Present');
+    let teamName = 'Individual Participant';
 
-    const isTeamConfirmed = team && (team.status === 'registered' || team.status === 'confirmed');
-    const isLeader = team ? (String(team.leader_id) === String(userId)) : false;
-    const isCheckedIn = registration.attendance_status === 'Present';
+    if (isTeamReg) {
+      // Check team & leader status for team registration
+      const { data: fetchedTeam } = await supabase
+        .from('event_teams')
+        .select('id, name, leader_id, status')
+        .eq('id', registration.team_id)
+        .maybeSingle();
 
-    if (!isTeamConfirmed) {
-      return res.json({
-        allocation: null,
-        teamConfirmed: false,
-        checkedIn: isCheckedIn,
-        isLeader,
-        message: 'Team registration is not confirmed yet.'
-      });
+      team = fetchedTeam;
+      isTeamConfirmed = team && (team.status === 'registered' || team.status === 'confirmed');
+      isLeader = team ? (String(team.leader_id) === String(userId)) : false;
+      if (team) teamName = team.name || 'Your Team';
+
+      if (!isTeamConfirmed) {
+        return res.json({
+          allocation: null,
+          teamConfirmed: false,
+          checkedIn: isCheckedIn,
+          isLeader,
+          isIndividual: false,
+          message: 'Team registration is not confirmed yet.'
+        });
+      }
+    } else {
+      // Individual registration: automatically confirmed & registrant is owner/leader
+      isTeamConfirmed = true;
+      isLeader = true;
     }
 
-    // Fetch team allocation if ALREADY selected/assigned by Team Leader
-    const { data: alloc } = await supabase
+    // Fetch allocation if ALREADY selected/assigned
+    let allocQuery = supabase
       .from('team_allocations')
       .select('venue_room, problem_statement, problem_statement_id, updated_at')
-      .eq('event_id', eventId)
-      .eq('team_id', registration.team_id)
-      .maybeSingle();
+      .eq('event_id', eventId);
+
+    if (isTeamReg) {
+      allocQuery = allocQuery.eq('team_id', registration.team_id);
+    } else {
+      allocQuery = allocQuery.eq('user_id', userId);
+    }
+
+    const { data: alloc } = await allocQuery.maybeSingle();
 
     if (alloc && alloc.problem_statement) {
       let problemDescription = '';
@@ -863,7 +1180,7 @@ exports.getMyTeamAllocation = async (req, res) => {
 
       return res.json({
         allocation: {
-          teamName: team ? team.name : 'Your Team',
+          teamName: teamName,
           venueRoom: alloc.venue_room,
           problemStatement: alloc.problem_statement,
           description: problemDescription,
@@ -873,17 +1190,19 @@ exports.getMyTeamAllocation = async (req, res) => {
         teamConfirmed: true,
         checkedIn: isCheckedIn,
         isLeader,
+        isIndividual: !isTeamReg,
         availableProblemStatements: []
       });
     }
 
-    // Check 3: Attendance check-in status (only required when team is unallocated and leader needs selection choices)
+    // Check attendance check-in status if unallocated
     if (!isCheckedIn) {
       return res.json({
         allocation: null,
         teamConfirmed: true,
         checkedIn: false,
         isLeader,
+        isIndividual: !isTeamReg,
         message: 'Problem statement selection and venue allocation will be available after check-in.'
       });
     }
@@ -910,7 +1229,7 @@ exports.getMyTeamAllocation = async (req, res) => {
         id: ps.id,
         title: ps.title,
         description: ps.description || '',
-        venueRoom: '', // CHANGE 1: DO NOT EXPOSE VENUE BEFORE SELECTION AT API LEVEL
+        venueRoom: '', // VENUE HIDDEN BEFORE SELECTION
         maxCapacity: maxCap,
         allocatedCount: allocCount,
         remainingSlots,
@@ -924,13 +1243,63 @@ exports.getMyTeamAllocation = async (req, res) => {
       teamConfirmed: true,
       checkedIn: true,
       isLeader,
+      isIndividual: !isTeamReg,
       availableProblemStatements,
-      message: isLeader 
-        ? 'Please select a problem statement for your team.' 
-        : 'Waiting for your team leader to make a selection.'
+      message: isTeamReg 
+        ? (isLeader ? 'Please select a problem statement for your team.' : 'Waiting for your team leader to make a selection.')
+        : 'Please select a problem statement.'
     });
   } catch (err) {
     console.error('getMyTeamAllocation error:', err.message);
     res.status(500).json({ message: 'Failed to fetch team allocation.', error: err.message });
+  }
+};
+
+/**
+ * DELETE /api/allocations/event/:eventId/target/:targetId
+ * Remove / Clear allocation for a team or individual participant (Organizers)
+ */
+exports.deleteAllocation = async (req, res) => {
+  try {
+    const { eventId, targetId } = req.params;
+
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+    if (!isOrganizer) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    let deleteQuery = supabase
+      .from('team_allocations')
+      .delete()
+      .eq('event_id', eventId);
+
+    if (targetId.startsWith('user_')) {
+      const uId = targetId.replace('user_', '');
+      deleteQuery = deleteQuery.eq('user_id', uId);
+    } else {
+      const { data: team } = await supabase.from('event_teams').select('id').eq('id', targetId).maybeSingle();
+      if (team) {
+        deleteQuery = deleteQuery.eq('team_id', targetId);
+      } else {
+        deleteQuery = deleteQuery.eq('user_id', targetId);
+      }
+    }
+
+    const { error: delErr } = await deleteQuery;
+    if (delErr) throw delErr;
+
+    // Sync live allocated_count in event_problem_statements
+    const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
+
+    res.json({
+      message: 'Allocation successfully removed and slot released.',
+      problemStatements
+    });
+  } catch (err) {
+    console.error('deleteAllocation error:', err.message);
+    res.status(500).json({ message: 'Failed to remove allocation.', error: err.message });
   }
 };

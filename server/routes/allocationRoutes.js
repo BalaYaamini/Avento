@@ -9,6 +9,7 @@ router.get('/event/:eventId/template', authMiddleware, allocationController.getA
 router.post('/event/:eventId', authMiddleware, allocationController.saveTeamAllocations);
 router.get('/event/:eventId/problem-statements', authMiddleware, allocationController.getProblemStatements);
 router.post('/event/:eventId/problem-statements', authMiddleware, allocationController.saveProblemStatements);
+router.delete('/event/:eventId/target/:targetId', authMiddleware, allocationController.deleteAllocation);
 
 // Participant routes
 router.get('/event/:eventId/my-allocation', authMiddleware, allocationController.getMyTeamAllocation);

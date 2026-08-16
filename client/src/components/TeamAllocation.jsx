@@ -97,8 +97,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
   // Calculate live sum of local psList capacities
   const currentConfiguredCapacity = psList.reduce((sum, item) => sum + (parseInt(item.maxCapacity, 10) || 0), 0);
-  const isCapacityMatched = currentConfiguredCapacity === totalTeams && totalTeams > 0;
-  const capacityDiff = Math.abs(totalTeams - currentConfiguredCapacity);
 
   // Add new Problem Statement Row
   const handleAddProblemStatement = () => {
@@ -107,7 +105,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       {
         id: `temp_${Date.now()}`,
         title: `Problem Statement ${prev.length + 1}`,
-        venueRoom: `Room ${101 + prev.length}`,
         description: '',
         maxCapacity: 1,
         allocatedCount: 0
@@ -137,12 +134,29 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
   const handleSaveProblemStatements = async () => {
     setStatusMessage(null);
 
-    if (currentConfiguredCapacity !== totalTeams) {
-      setStatusMessage({
-        type: 'error',
-        text: `Total capacity (${currentConfiguredCapacity}) does not match total eligible teams (${totalTeams}). Please adjust slot capacities before saving.`
-      });
-      return;
+    for (let i = 0; i < psList.length; i++) {
+      const item = psList[i];
+      const title = String(item.title || '').trim();
+      const cap = parseInt(item.maxCapacity, 10);
+      const allocCount = Number(item.allocatedCount || 0);
+
+      if (!title) {
+        setStatusMessage({ type: 'error', text: `Problem statement #${i + 1} title cannot be empty.` });
+        return;
+      }
+
+      if (isNaN(cap) || cap <= 0) {
+        setStatusMessage({ type: 'error', text: `Max capacity for '${title}' must be a positive number.` });
+        return;
+      }
+
+      if (cap < allocCount) {
+        setStatusMessage({
+          type: 'error',
+          text: `Cannot reduce maximum capacity for '${title}' to ${cap} because ${allocCount} allocation(s) are already assigned to it.`
+        });
+        return;
+      }
     }
 
     setSavingConfig(true);
@@ -227,10 +241,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             rowStatus = 'Invalid';
             errorMessage = `Venue / Room is missing for team: ${teamName}`;
             allRowsValid = false;
-          } else if (!problemStatement) {
-            rowStatus = 'Invalid';
-            errorMessage = `Problem Statement is missing for team: ${teamName}`;
-            allRowsValid = false;
           } else if (seenTeams.has(teamId)) {
             rowStatus = 'Invalid';
             errorMessage = `Duplicate allocation found for team: ${teamName}`;
@@ -287,10 +297,10 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
     }
   };
 
-  // 4. Inline Edit Save
+  // 4. Inline Edit Save (Venue or Problem Statement independently)
   const handleSaveInlineEdit = async (teamId) => {
-    if (!editForm.venueRoom.trim() || !editForm.problemStatement.trim()) {
-      setStatusMessage({ type: 'error', text: 'Venue / Room and Problem Statement must not be empty.' });
+    if (!editForm.venueRoom.trim() && !editForm.problemStatement.trim()) {
+      setStatusMessage({ type: 'error', text: 'Please enter a Venue / Room or select a Problem Statement.' });
       return;
     }
 
@@ -307,6 +317,20 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       fetchData();
     } catch (err) {
       setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update allocation.' });
+    }
+  };
+
+  // 5. Clear / Remove Allocation
+  const handleClearAllocation = async (targetId) => {
+    if (!window.confirm('Are you sure you want to remove this allocation? The slot will be released.')) return;
+    try {
+      setStatusMessage(null);
+      const res = await axios.delete(`/api/allocations/event/${eventId}/target/${targetId}`);
+      setStatusMessage({ type: 'success', text: res.data.message || 'Allocation removed successfully.' });
+      fetchData();
+    } catch (err) {
+      console.error('Clear allocation error:', err);
+      setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to remove allocation.' });
     }
   };
 
@@ -622,35 +646,15 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               </div>
             </div>
 
-            {/* Card 3: Capacity Status */}
-            <div className={`backdrop-blur-md rounded-2xl border p-5 shadow-soft flex items-center justify-between transition-all ${
-              isCapacityMatched
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300'
-            }`}>
+            {/* Card 3: Configured Statements Summary */}
+            <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">Capacity Status</span>
-                <div className="text-lg font-bold mt-1 flex items-center gap-1.5">
-                  {isCapacityMatched ? (
-                    <><span>✓</span> <span>Capacity Match</span></>
-                  ) : (
-                    <><span>⚠</span> <span>Capacity Mismatch</span></>
-                  )}
-                </div>
-                <p className="text-[11px] opacity-90 mt-0.5">
-                  {isCapacityMatched
-                    ? 'All team slots correctly configured.'
-                    : totalTeams > currentConfiguredCapacity
-                    ? `${capacityDiff} more slot(s) needed before saving.`
-                    : `${capacityDiff} slot(s) over team count.`}
-                </p>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Configured Statements</span>
+                <div className="text-2xl font-extrabold text-text-primary mt-1">{psList.length}</div>
+                <span className="text-[11px] text-text-secondary">Problem statement options configured</span>
               </div>
-              <div className={`w-12 h-12 rounded-xl border flex items-center justify-center text-xl font-bold ${
-                isCapacityMatched
-                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-amber-500/20 border-amber-500/30 text-amber-600 dark:text-amber-400'
-              }`}>
-                {isCapacityMatched ? '✓' : '⚠'}
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center text-xl font-bold">
+                📌
               </div>
             </div>
 
@@ -673,7 +677,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 </button>
                 <button
                   onClick={handleSaveProblemStatements}
-                  disabled={savingConfig || !isCapacityMatched}
+                  disabled={savingConfig}
                   className="btn-primary px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md disabled:opacity-40 transition-all"
                 >
                   {savingConfig ? 'Saving Configuration...' : 'Save Configuration'}
@@ -700,7 +704,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                     
-                    <div className="md:col-span-4">
+                    <div className="md:col-span-8">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
                         Title
                       </label>
@@ -709,19 +713,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         value={ps.title}
                         onChange={(e) => handlePsChange(idx, 'title', e.target.value)}
                         placeholder="e.g. AI-Based Traffic Optimization"
-                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
-                      />
-                    </div>
-
-                    <div className="md:col-span-4">
-                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                        Venue / Room (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={ps.venueRoom}
-                        onChange={(e) => handlePsChange(idx, 'venueRoom', e.target.value)}
-                        placeholder="e.g. Lab 204"
                         className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
                       />
                     </div>
@@ -967,7 +958,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-6 py-4 text-right space-x-2">
                           <button
                             onClick={() => {
                               setEditingTeamId(team.teamId);
@@ -977,6 +968,15 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                           >
                             Edit
                           </button>
+                          {team.isAllocated && (
+                            <button
+                              onClick={() => handleClearAllocation(team.teamId)}
+                              className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg font-bold hover:bg-red-500/20 transition text-[10px]"
+                              title="Remove allocation and release slot"
+                            >
+                              Clear
+                            </button>
+                          )}
                         </td>
                       </>
                     )}

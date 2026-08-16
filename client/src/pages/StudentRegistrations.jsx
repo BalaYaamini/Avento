@@ -126,11 +126,11 @@ const StudentRegistrations = () => {
 
   const fetchAllocationsForRegistrations = async (regs) => {
     if (!regs || regs.length === 0) return;
-    const teamRegs = regs.filter(r => r.team_id || r.teamId);
+    const activeRegs = regs.filter(r => r.status === 'registered');
     const allocMap = {};
 
     await Promise.all(
-      teamRegs.map(async (r) => {
+      activeRegs.map(async (r) => {
         const eventId = r.event_id || r.eventId?.id || r.eventId?._id;
         if (eventId && !allocMap[eventId]) {
           try {
@@ -808,25 +808,25 @@ const StudentRegistrations = () => {
                         })()}
                       </div>
 
-                      {/* Team Allocation Card (Student View) */}
+                      {/* Allocation Card (Student View) */}
                       {(() => {
                         const eventId = evt.id || evt._id;
                         const allocData = teamAllocations[eventId];
                         if (!allocData) return null;
 
-                        const { allocation, teamConfirmed, checkedIn, isLeader, availableProblemStatements, message } = allocData;
+                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message } = allocData;
 
-                        // Only show for confirmed teams
+                        // Only show for confirmed teams or individual registrations
                         if (!teamConfirmed) return null;
 
-                        // 1. If team ALREADY has an assigned allocation (by Admin or Leader), render it immediately for ALL team members!
+                        // 1. If ALREADY has an assigned allocation (by Admin, Leader, or Individual selection), render it immediately!
                         if (allocation) {
                           return (
                             <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in space-y-3">
                               <div className="flex items-center justify-between">
                                 <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                                   <span>🎯</span>
-                                  <span>Your Event Allocation ({allocation.teamName})</span>
+                                  <span>Your Event Allocation ({allocation.teamName || 'Your Allocation'})</span>
                                 </div>
                                 <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
                                   Allocation Assigned
@@ -851,7 +851,7 @@ const StudentRegistrations = () => {
                           );
                         }
 
-                        // 2. If team is confirmed but unallocated and student hasn't scanned QR / checked in yet
+                        // 2. If unallocated and student hasn't scanned QR / checked in yet
                         if (!checkedIn) {
                           return (
                             <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in">
@@ -866,7 +866,7 @@ const StudentRegistrations = () => {
                           );
                         }
 
-                        // 3. If checked in, but problem statement not selected yet
+                        // 3. If checked in, but problem statement not selected yet and user is not team leader
                         if (!isLeader) {
                           return (
                             <div className="mt-4 p-4 bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/20 rounded-2xl animate-fade-in">
@@ -881,7 +881,7 @@ const StudentRegistrations = () => {
                           );
                         }
 
-                        // 4. TEAM LEADER SELECTION INTERFACE
+                        // 4. PROBLEM STATEMENT SELECTION INTERFACE (Leader or Individual)
                         return (
                           <div className="mt-4 p-5 bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-slate-900/10 dark:from-violet-950/40 dark:via-purple-950/20 dark:to-slate-900/40 border border-violet-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-violet-500/15 pb-3.5">
@@ -895,11 +895,13 @@ const StudentRegistrations = () => {
                                   </h4>
                                 </div>
                                 <p className="text-xs text-text-secondary font-medium mt-1 leading-relaxed">
-                                  Select one problem statement for your entire team. Your selection will be final after confirmation.
+                                  {isIndividual
+                                    ? 'Select one problem statement for your event. Your selection will be final after confirmation.'
+                                    : 'Select one problem statement for your entire team. Your selection will be final after confirmation.'}
                                 </p>
                               </div>
                               <span className="self-start sm:self-auto text-[10px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-violet-600 text-white shadow-xs">
-                                Leader Selection Only
+                                {isIndividual ? 'Participant Selection' : 'Leader Selection Only'}
                               </span>
                             </div>
 
