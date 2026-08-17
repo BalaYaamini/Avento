@@ -94,38 +94,36 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
     }
   };
 
-  const handleDownloadGeneratedPdf = async () => {
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setStatusMessage({ type: 'error', text: 'Please select a valid PDF file.' });
+      return;
+    }
+
     try {
+      setUploadingPdf(true);
       setStatusMessage(null);
-      const res = await axios.get(`/api/allocations/event/${eventId}/problem-statement-pdf`, {
-        responseType: 'blob'
+      const formData = new FormData();
+      formData.append('pdf', file);
+
+      const res = await axios.post(`/api/allocations/event/${eventId}/problem-statement-pdf`, formData);
+
+      setStatusMessage({
+        type: 'success',
+        text: res.data.message || 'Problem Statement PDF uploaded successfully!'
       });
-      const blob = new Blob([res.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Problem_Statements_${eventId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      setStatusMessage({ type: 'success', text: 'Problem Statement PDF generated and downloaded successfully.' });
     } catch (err) {
-      console.error('PDF Download Error:', err);
-      let errorText = 'Failed to generate Problem Statement PDF. Please configure and save problem statements first.';
-      if (err.response?.data instanceof Blob) {
-        try {
-          const text = await err.response.data.text();
-          const parsed = JSON.parse(text);
-          if (parsed.message) errorText = parsed.message;
-        } catch (e) {}
-      } else if (err.response?.data?.message) {
-        errorText = err.response.data.message;
-      }
+      console.error('PDF Upload Error:', err);
       setStatusMessage({
         type: 'error',
-        text: errorText
+        text: err.response?.data?.message || 'Failed to upload Problem Statement PDF.'
       });
+    } finally {
+      setUploadingPdf(false);
+      if (pdfFileInputRef.current) pdfFileInputRef.current.value = '';
     }
   };
 
@@ -722,12 +720,20 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 >
                   {savingConfig ? 'Saving Configuration...' : '💾 Save Configuration'}
                 </button>
+                <input
+                  type="file"
+                  ref={pdfFileInputRef}
+                  onChange={handlePdfUpload}
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                />
                 <button
                   type="button"
-                  onClick={handleDownloadGeneratedPdf}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                  onClick={() => pdfFileInputRef.current?.click()}
+                  disabled={uploadingPdf}
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  📄 Download Problem Statements PDF
+                  {uploadingPdf ? 'Uploading PDF...' : '📤 Upload Problem Statement PDF'}
                 </button>
               </div>
             </div>

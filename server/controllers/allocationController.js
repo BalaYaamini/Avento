@@ -1709,8 +1709,77 @@ exports.deleteAllocation = async (req, res) => {
 };
 
 /**
+ * POST /api/allocations/event/:eventId/problem-statement-pdf
+ * Organizer uploads official Problem Statement PDF document for an event
+ */
+exports.uploadProblemStatementPdf = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const { data: event } = await supabase.from('events').select('id, title').eq('id', eventId).maybeSingle();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+    if (!isOrganizer) {
+      return res.status(403).json({ message: 'Access denied. Only event organizers can upload Problem Statement PDFs.' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Please select a valid PDF file to upload.' });
+    }
+
+    const fileBuffer = req.file.buffer;
+    const fileName = req.file.originalname || `Problem_Statements_${eventId}.pdf`;
+    const storagePath = `problem_statements/${eventId}_${Date.now()}.pdf`;
+
+    // Upload file to Supabase storage bucket 'documents'
+    const { data: uploadData, error: uploadErr } = await supabase.storage
+      .from('documents')
+      .upload(storagePath, fileBuffer, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
+
+    if (uploadErr) {
+      console.error('Supabase storage upload error:', uploadErr);
+      throw uploadErr;
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from('documents')
+      .getPublicUrl(storagePath);
+
+    const pdfUrl = publicUrlData ? publicUrlData.publicUrl : null;
+    if (!pdfUrl) {
+      throw new Error('Failed to retrieve public URL for uploaded PDF.');
+    }
+
+    // Update events table
+    const { error: updateErr } = await supabase
+      .from('events')
+      .update({
+        problem_statement_pdf_url: pdfUrl,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', eventId);
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      message: 'Problem Statement PDF uploaded successfully!',
+      pdfUrl,
+      fileName
+    });
+  } catch (err) {
+    console.error('uploadProblemStatementPdf error:', err.message);
+    res.status(500).json({ message: 'Failed to upload Problem Statement PDF.', error: err.message });
+  }
+};
+
+/**
  * GET /api/allocations/event/:eventId/problem-statement-pdf
- * System-Generated Problem Statement PDF download for an event
+ * Download exact Admin-uploaded Problem Statement PDF document for an event
  * Attendance-gated for participants: requires attendance_status === 'Present'!
  */
 exports.getProblemStatementPdf = async (req, res) => {
@@ -1718,7 +1787,12 @@ exports.getProblemStatementPdf = async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user.id;
 
-    const { data: event } = await supabase.from('events').select('id, title').eq('id', eventId).maybeSingle();
+    const { data: event } = await supabase
+      .from('events')
+      .select('id, title, problem_statement_pdf_url')
+      .eq('id', eventId)
+      .maybeSingle();
+
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
     const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
@@ -1744,22 +1818,24 @@ exports.getProblemStatementPdf = async (req, res) => {
       }
     }
 
-    const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
-
-    if (!problemStatements || problemStatements.length === 0) {
+    if (!event.problem_statement_pdf_url || event.problem_statement_pdf_url.trim() === '') {
       return res.status(404).json({
-        message: 'No problem statements have been configured for this event yet.'
+        message: 'No Problem Statement PDF has been uploaded for this event by the organizer yet.'
       });
     }
 
-    const pdfBuffer = await generateProblemStatementsPdfBuffer(event.title, problemStatements);
+    const pdfUrl = event.problem_statement_pdf_url.trim();
+
+    // Stream uploaded PDF via axios or redirect
+    const axios = require('axios');
+    const pdfResponse = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Problem_Statements_${eventId}.pdf"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    res.send(pdfBuffer);
+    res.setHeader('Content-Length', pdfResponse.data.length);
+    res.send(Buffer.from(pdfResponse.data));
   } catch (err) {
     console.error('getProblemStatementPdf error:', err.message);
-    res.status(500).json({ message: 'Failed to generate Problem Statement PDF.', error: err.message });
+    res.status(500).json({ message: 'Failed to download Problem Statement PDF.', error: err.message });
   }
 };

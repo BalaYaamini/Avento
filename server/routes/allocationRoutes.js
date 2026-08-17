@@ -27,6 +27,7 @@ router.delete('/event/:eventId/target/:targetId', authMiddleware, allocationCont
 
 // Problem Statement PDF routes
 router.get('/event/:eventId/problem-statement-pdf', authMiddleware, allocationController.getProblemStatementPdf);
+router.post('/event/:eventId/problem-statement-pdf', authMiddleware, upload.single('pdf'), allocationController.uploadProblemStatementPdf);
 
 // Participant routes
 router.get('/event/:eventId/my-allocation', authMiddleware, allocationController.getMyTeamAllocation);
