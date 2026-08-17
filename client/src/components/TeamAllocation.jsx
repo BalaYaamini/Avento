@@ -102,6 +102,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
       const res = await axios.post(`/api/allocations/event/${eventId}/problem-statement-pdf`, formData);
 
+      setPdfInfo({ pdfUrl: res.data.pdfUrl || null, fileName: file.name });
       setStatusMessage({
         type: 'success',
         text: res.data.message || 'Problem Statement PDF uploaded successfully!'
@@ -696,6 +697,11 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 >
                   {uploadingPdf ? 'Uploading PDF...' : '📤 Upload Problem Statement PDF'}
                 </button>
+                {pdfInfo.fileName && !uploadingPdf && (
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1">
+                    ✓ {pdfInfo.fileName}
+                  </span>
+                )}
               </div>
             </div>
 
