@@ -171,7 +171,13 @@ const Home = () => {
       const joinedId = String(reg.eventId && typeof reg.eventId === 'object' ? (reg.eventId.id || reg.eventId._id) : reg.eventId);
       const matchesEvent = rawId === eventIdStr || joinedId === eventIdStr;
       
-      return matchesEvent && (reg.status === 'pending' || reg.status === 'registered');
+      const teamStatus = reg.teamDetails?.teamStatus || reg.teamId?.status;
+      const isPendingOnConfirmedTeam = reg.status === 'pending' && teamStatus === 'registered';
+
+      return matchesEvent && (
+        reg.status === 'registered' || 
+        (reg.status === 'pending' && !isPendingOnConfirmedTeam)
+      );
     });
 
     if (existingReg) {
@@ -433,9 +439,9 @@ const Home = () => {
         {/* Animated University Image Background */}
         <div className="absolute inset-0 z-0 overflow-hidden">
           <img 
-            src="/university.jpg" 
+            src="https://suh.edu.in/wp-content/uploads/2025/06/SU-2-scaled-1.webp" 
             alt="University Campus" 
-            className="w-full h-full object-cover object-center animate-hero-bg-zoom opacity-45 scale-105"
+            className="w-full h-full object-cover object-center animate-hero-bg-zoom opacity-60 scale-105"
           />
           {/* Gradient Overlay to ensure text readability */}
           <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-900/60 to-slate-950/80 backdrop-blur-[1px]" />
@@ -584,7 +590,7 @@ const Home = () => {
 
         {/* ── Events Grid ── */}
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid w-full grid-cols-1 gap-8">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="polaroid h-[420px] animate-pulse overflow-hidden">
                 <div className="h-48 bg-gray-200 rounded-xl mb-4" />
@@ -617,7 +623,7 @@ const Home = () => {
             <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">There are no events matching your search or filters at the moment.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid w-full grid-cols-1 gap-8">
             {events.map((evt, index) => (
               <EventCard
                 key={evt._id || evt.id}
@@ -885,7 +891,8 @@ const Home = () => {
                                 const term = studentSearchTerm.toLowerCase();
                                 return (
                                   (s.fullName || s.name || '').toLowerCase().includes(term) ||
-                                  (s.email || '').toLowerCase().includes(term)
+                                  (s.email || '').toLowerCase().includes(term) ||
+                                  (s.rollNumber || '').toLowerCase().includes(term)
                                 );
                               })
                               .map(std => {

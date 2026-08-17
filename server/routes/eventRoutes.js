@@ -288,6 +288,29 @@ router.post(
   eventController.adminOpenRegistrations
 );
 
+// Confirmation Email Config Routes
+router.put(
+  '/:id/confirmation-email',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  eventController.saveConfirmationEmailConfig
+);
+
+router.post(
+  '/:id/confirmation-attachment',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  upload.single('attachment'),
+  eventController.uploadConfirmationAttachment
+);
+
+router.delete(
+  '/:id/confirmation-attachment',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  eventController.deleteConfirmationAttachment
+);
+
 // getEventById — must come AFTER all static subroutes
 router.get('/:id', eventController.getEventById);
 

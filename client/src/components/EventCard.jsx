@@ -47,7 +47,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
 
   return (
     <div 
-      className={`animate-fade-in-up polaroid scrapbook-panel-hover relative flex flex-col h-full group ${randomRotation}`}
+      className={`animate-fade-in-up polaroid scrapbook-panel-hover relative flex w-full min-w-0 flex-col h-full group ${randomRotation}`}
       style={{ animationDelay: `${staggerDelay}ms` }}
     >
       {/* Decorative Tape/Pin */}
@@ -61,11 +61,11 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
       </div>
 
       {/* Event Banner */}
-      <div className="relative h-48 w-full overflow-hidden rounded-xl border-2 border-pastel-lavender/20 mb-4">
+      <div className="relative h-72 w-full overflow-hidden rounded-xl border-2 border-pastel-lavender/20 bg-slate-50 mb-4 sm:h-96">
         <img
           src={event.imageUrl}
           alt={event.title}
-          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out-expo"
+          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-700 ease-out-expo"
           onError={(e) => {
             e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800';
           }}
@@ -110,7 +110,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
         </h3>
 
         {/* Description */}
-        <p className="text-sm font-body text-text-secondary mb-4 line-clamp-2 flex-grow leading-relaxed">
+        <p className="text-sm font-body text-text-secondary mb-4 flex-grow leading-relaxed whitespace-pre-wrap">
           {event.description}
         </p>
 
@@ -207,15 +207,15 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               </div>
             ) : isRegistered ? (
               <div className="w-full flex flex-col gap-1.5">
-                <button
-                  disabled
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-mint/20 text-green-600 border border-pastel-mint cursor-not-allowed"
+                <Link
+                  to="/my-registrations"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold rounded-2xl bg-pastel-mint/20 text-green-600 border border-pastel-mint hover:bg-pastel-mint/30 transition-all text-center"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  {isFull ? 'REGISTERED · SLOTS FULL' : 'Registered!'}
-                </button>
+                  {isFull ? 'REGISTERED · SLOTS FULL' : 'Registered! →'}
+                </Link>
                 {event.registration_type !== 'team' && (!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
                   <button
                     type="button"
@@ -233,16 +233,16 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                     🔴 SLOTS FULL
                   </div>
                 )}
-                <button
-                  disabled
-                  className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border cursor-not-allowed ${
+                <Link
+                  to="/my-registrations"
+                  className={`w-full px-4 py-2.5 text-sm font-bold rounded-2xl border text-center transition-all ${
                     isPendingRegistration === 'Ready for Team Confirmation'
-                      ? 'bg-blue-500/10 text-blue-600 border-blue-500/20'
-                      : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                      ? 'bg-blue-500/10 text-blue-600 border-blue-500/20 hover:bg-blue-500/20 shadow-sm'
+                      : 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20 shadow-sm'
                   }`}
                 >
-                  {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation' : '🟡 Waiting for Member Approval'}
-                </button>
+                  {isPendingRegistration === 'Ready for Team Confirmation' ? '🟢 Ready for Team Confirmation →' : '🟡 Waiting for Member Approval →'}
+                </Link>
                 {(!event.registration_deadline || new Date() <= new Date(event.registration_deadline)) && (
                   <button
                     type="button"

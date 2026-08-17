@@ -1,5 +1,4 @@
 const supabase = require('../config/supabaseClient');
-const User = require('../models/User');
 const { notifyUser } = require('../services/notificationService');
 
 const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
@@ -98,8 +97,6 @@ exports.registerForEvent = async (req, res) => {
     const isOrganizer = (event.organizer_id && String(event.organizer_id) === String(userId)) ||
                         (event.student_organizer_id && String(event.student_organizer_id) === String(userId)) ||
                         (event.proposed_by && String(event.proposed_by) === String(userId)) ||
-                        (event.created_by && String(event.created_by) === String(userId)) ||
-                        (event.faculty_id && String(event.faculty_id) === String(userId)) ||
                         !!recruitedOrg ||
                         !!memberOrg;
     if (isOrganizer) {
@@ -108,17 +105,8 @@ exports.registerForEvent = async (req, res) => {
       });
     }
 
-    // Check capacity (409 Conflict if full)
-    const { count: currentRegsCount } = await supabase
-      .from('event_registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('event_id', eventId)
-      .eq('status', 'registered');
-
-    const effectiveCount = Math.max(event.registered_count || 0, currentRegsCount || 0);
-
-    if (event.capacity && effectiveCount >= event.capacity) {
-      return res.status(409).json({ message: 'Slots Full — Registration Closed' });
+    if (event.registered_count >= event.capacity) {
+      return res.status(400).json({ message: 'Event capacity has been reached.' });
     }
 
     const { data: existingRegistration, error: existErr } = await supabase
@@ -147,20 +135,10 @@ exports.registerForEvent = async (req, res) => {
 
     if (regErr) throw regErr;
 
-    // Atomic race-condition safe count increment
-    const { data: updatedEvt } = await supabase
-      .from('events')
-      .update({ registered_count: (event.registered_count || 0) + 1 })
-      .eq('id', eventId)
-      .lt('registered_count', event.capacity || 999999)
-      .select()
-      .maybeSingle();
-
-    if (!updatedEvt && event.capacity) {
-      // Race condition rollback: undo registration insert
-      await supabase.from('event_registrations').delete().eq('id', registration.id);
-      return res.status(409).json({ message: 'Slots Full — Registration Closed' });
-    }
+    // Update event registered count
+    await supabase.rpc('increment_registered_count', { row_id: eventId });
+    // Alternative if rpc not available:
+    await supabase.from('events').update({ registered_count: event.registered_count + 1 }).eq('id', eventId);
 
     // Notify user
     try {
@@ -517,27 +495,11 @@ exports.getEventRegistrations = async (req, res) => {
 
     if (eventErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
-    const { data: orgRec } = await supabase
-      .from('event_organizers')
-      .select('id')
-      .eq('event_id', eventId)
-      .eq('student_id', req.user.id)
-      .maybeSingle();
-
-    const { data: memberRec } = await supabase
-      .from('event_members')
-      .select('id')
-      .eq('event_id', eventId)
-      .eq('user_id', req.user.id)
-      .maybeSingle();
-
     const isOwner = req.user.roles.includes('admin') || 
-                    String(event.organizer_id) === String(req.user.id) || 
-                    String(event.student_organizer_id) === String(req.user.id) || 
-                    String(event.proposed_by) === String(req.user.id) ||
-                    String(event.faculty_id) === String(req.user.id) ||
-                    !!orgRec ||
-                    !!memberRec;
+                    event.organizer_id === req.user.id || 
+                    event.student_organizer_id === req.user.id || 
+                    event.proposed_by === req.user.id ||
+                    event.faculty_id === req.user.id;
     
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
@@ -569,7 +531,7 @@ exports.getAllRegistrations = async (req, res) => {
       .select(`
         *,
         eventId:events (*),
-         userId:profiles!event_registrations_user_id_fkey (*),
+        userId:profiles!event_registrations_user_id_fkey (*),
         teamId:event_teams (*)
       `);
 
@@ -700,19 +662,6 @@ exports.registerTeamForEvent = async (req, res) => {
       return res.status(400).json({ message: `Team size must be between ${event.min_team_size} and ${event.max_team_size} members.` });
     }
 
-    // Validate overall event capacity (409 Conflict if full)
-    const { count: currentRegsCount } = await supabase
-      .from('event_registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('event_id', eventId)
-      .eq('status', 'registered');
-
-    const effectiveCount = Math.max(event.registered_count || 0, currentRegsCount || 0);
-
-    if (event.capacity && effectiveCount >= event.capacity) {
-      return res.status(409).json({ message: 'Slots Full — Registration Closed' });
-    }
-
     if (event.max_teams) {
       const { count, error: countErr } = await supabase
         .from('event_teams')
@@ -721,7 +670,7 @@ exports.registerTeamForEvent = async (req, res) => {
         .eq('status', 'registered');
       
       if (!countErr && count >= event.max_teams) {
-        return res.status(409).json({ message: 'Slots Full — Registration Closed' });
+        return res.status(400).json({ message: 'The maximum number of teams for this event has been reached.' });
       }
     }
 
@@ -736,21 +685,20 @@ exports.registerTeamForEvent = async (req, res) => {
       .select('user_id')
       .eq('event_id', eventId);
     
-    const organizerIds = (organizers || []).map(o => String(o.student_id));
-    if (event.organizer_id) organizerIds.push(String(event.organizer_id));
-    if (event.student_organizer_id) organizerIds.push(String(event.student_organizer_id));
-    if (event.proposed_by) organizerIds.push(String(event.proposed_by));
-    if (event.faculty_id) organizerIds.push(String(event.faculty_id));
-    if (event.created_by) organizerIds.push(String(event.created_by));
+    const organizerIds = (organizers || []).map(o => o.student_id);
+    if (event.organizer_id) organizerIds.push(event.organizer_id);
+    if (event.student_organizer_id) organizerIds.push(event.student_organizer_id);
+    if (event.proposed_by) organizerIds.push(event.proposed_by);
+    if (event.faculty_id) organizerIds.push(event.faculty_id);
     // Add pre-publication organizers from event_members
-    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(String(m.user_id)); });
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(m.user_id); });
 
-    const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(String(id)));
+    const hasOrganizer = allTeamUserIds.some(id => organizerIds.includes(id));
     if (hasOrganizer) {
       return res.status(403).json({ message: 'One or more selected members are organizing this event and cannot be added as team members.' });
     }
-    if (organizerIds.includes(String(leaderId))) {
-      return res.status(403).json({ message: 'You are an organizer for this event and cannot register as a participant.' });
+    if (organizerIds.includes(leaderId)) {
+      return res.status(403).json({ message: 'You are an organizer for this event and cannot create a team.' });
     }
 
     // Validate existing active registrations for the leader
@@ -854,15 +802,23 @@ exports.registerTeamForEvent = async (req, res) => {
     try {
       const dateStrTeam = new Date(event.date).toLocaleDateString();
       
-      // Fetch profiles (MongoDB-first) to build the team members table
+      // Fetch profiles to build the team members table
+      const { data: memberProfiles } = await supabase.from('profiles').select('id, name, email').in('id', allTeamUserIds);
       const teamMembers = [];
       let teamLeaderName = 'Unknown';
-      for (const uid of allTeamUserIds) {
-        const profile = await resolveUserProfile(uid);
-        const role = uid === leaderId ? 'Team Lead' : 'Member';
-        if (role === 'Team Lead') teamLeaderName = profile.name;
-        teamMembers.push({ name: profile.name, email: profile.email, role });
+      if (memberProfiles) {
+        for (const p of memberProfiles) {
+          const role = p.id === leaderId ? 'Team Lead' : 'Member';
+          if (role === 'Team Lead') teamLeaderName = p.name;
+          teamMembers.push({
+            name: p.name,
+            email: p.email,
+            role: role
+          });
+        }
       }
+      
+      // Sort so Team Lead is always first
       teamMembers.sort((a, b) => (a.role === 'Team Lead' ? -1 : b.role === 'Team Lead' ? 1 : 0));
 
       for (const uid of allTeamUserIds) {
@@ -1060,43 +1016,6 @@ exports.acceptTeamInvitation = async (req, res) => {
       return res.status(400).json({ message: 'You are already a confirmed member of a team for this event.' });
     }
 
-    // Strictly enforce capacity on pending invitation acceptance (No exceptions for pending invites)
-    const { data: fullEventDetails } = await supabase
-      .from('events')
-      .select('capacity, registered_count, max_teams, status')
-      .eq('id', event.id)
-      .single();
-
-    if (fullEventDetails) {
-      const { count: currentRegsCount } = await supabase
-        .from('event_registrations')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', event.id)
-        .eq('status', 'registered');
-
-      const effectiveCount = Math.max(fullEventDetails.registered_count || 0, currentRegsCount || 0);
-
-      if (fullEventDetails.capacity && effectiveCount >= fullEventDetails.capacity) {
-        return res.status(409).json({
-          message: 'No more team slots are available. Registration is full.'
-        });
-      }
-
-      if (fullEventDetails.max_teams) {
-        const { count: confirmedTeamsCount } = await supabase
-          .from('event_teams')
-          .select('*', { count: 'exact', head: true })
-          .eq('event_id', event.id)
-          .eq('status', 'registered');
-
-        if (confirmedTeamsCount >= fullEventDetails.max_teams) {
-          return res.status(409).json({
-            message: 'No more team slots are available. Registration is full.'
-          });
-        }
-      }
-    }
-
     // 1. Update the target registration to registered
     const { error: updateErr } = await supabase
       .from('event_registrations')
@@ -1108,24 +1027,6 @@ exports.acceptTeamInvitation = async (req, res) => {
         return res.status(400).json({ message: 'You are already a member of a team for this event. A student can only have one active team per event.' });
       }
       throw updateErr;
-    }
-
-    // Notify team leader that member accepted
-    try {
-      const { data: teamInfo } = await supabase.from('event_teams').select('name, leader_id, event_id').eq('id', reg.team_id).maybeSingle();
-      const memberProfile = await resolveUserProfile(userId);
-      const eventTitle = event.title || 'the event';
-      await notifyUser({
-        recipientId: teamInfo.leader_id,
-        title: 'Member Joined Team',
-        message: `${memberProfile.name} has accepted the invitation and joined team "${teamInfo.name}" for "${eventTitle}".`,
-        type: 'success',
-        eventId: event.id,
-        emailSubject: `Team Update – ${memberProfile.name} Joined ${teamInfo.name}`,
-        emailData: { eventName: eventTitle, teamName: teamInfo.name, status: 'Member Joined' }
-      });
-    } catch (notifErr) {
-      console.error('Non-fatal error sending accept notification:', notifErr.message);
     }
 
     res.json({ message: 'Team invitation accepted successfully.' });
@@ -1170,24 +1071,6 @@ exports.rejectTeamInvitation = async (req, res) => {
       .eq('id', registrationId);
 
     if (delErr) throw delErr;
-
-    // Notify team leader that member rejected
-    try {
-      const { data: teamInfo } = await supabase.from('event_teams').select('name, leader_id, event_id').eq('id', reg.team_id).maybeSingle();
-      const memberProfile = await resolveUserProfile(userId);
-      const eventTitle = event.title || 'the event';
-      await notifyUser({
-        recipientId: teamInfo.leader_id,
-        title: 'Member Rejected Invitation',
-        message: `${memberProfile.name} has rejected the invitation to join team "${teamInfo.name}" for "${eventTitle}".`,
-        type: 'warning',
-        eventId: event.id,
-        emailSubject: `Team Update – ${memberProfile.name} Rejected Invitation`,
-        emailData: { eventName: eventTitle, teamName: teamInfo.name, status: 'Invitation Rejected' }
-      });
-    } catch (notifErr) {
-      console.error('Non-fatal error sending reject notification:', notifErr.message);
-    }
 
     res.json({ message: 'Team invitation rejected.' });
   } catch (err) {
@@ -1274,22 +1157,6 @@ exports.leaveTeam = async (req, res) => {
     }
     console.log(`[Leave Team] DB Response: Update successful.`);
 
-    // Notify team leader that member left
-    try {
-      const memberProfile = await resolveUserProfile(userId);
-      await notifyUser({
-        recipientId: teamInfo.leader_id,
-        title: 'Member Left Team',
-        message: `${memberProfile.name} has left team "${teamInfo.name}". You can invite a new member.`,
-        type: 'warning',
-        eventId: teamInfo.event_id,
-        emailSubject: `Team Update – ${memberProfile.name} Left ${teamInfo.name}`,
-        emailData: { eventName: teamInfo.name, teamName: teamInfo.name, status: 'Member Left' }
-      });
-    } catch (notifErr) {
-      console.error('Non-fatal error sending leave notification:', notifErr.message);
-    }
-
     console.log('--- LEAVE TEAM REQUEST SUCCESS ---\n');
     res.json({ message: 'Successfully left the team.' });
   } catch (err) {
@@ -1322,7 +1189,7 @@ exports.confirmTeamRegistration = async (req, res) => {
     // 1. Fetch team & associated event details
     const { data: teamData, error: teamErr } = await supabase
       .from('event_teams')
-      .select('*, events(*)')
+      .select('event_id')
       .eq('id', teamId)
       .eq('leader_id', leaderId)
       .single();
@@ -1379,24 +1246,15 @@ exports.confirmTeamRegistration = async (req, res) => {
     const minTeamSize = event.min_team_size || 1;
     const { data: teamRegs } = await supabase
       .from('event_registrations')
-      .select('user_id, status')
-      .eq('team_id', teamId);
+      .update({ status: 'registered' })
+      .eq('team_id', teamId)
+      .eq('user_id', leaderId);
 
-    const acceptedUserIds = new Set();
-    if (leaderId) acceptedUserIds.add(String(leaderId));
-    if (teamRegs && Array.isArray(teamRegs)) {
-      teamRegs.forEach(r => {
-        if (r.status === 'registered') {
-          acceptedUserIds.add(String(r.user_id));
-        }
-      });
+    if (regErr) {
+      return res.status(400).json({ message: regErr.message || 'Failed to update team registration status.' });
     }
 
-    if (acceptedUserIds.size < minTeamSize) {
-      return res.status(400).json({ message: 'Minimum team size not reached yet.' });
-    }
-
-    // 6. Save the leader contact number
+    // Save the leader contact number
     const { error: contactErr } = await supabase
       .from('event_teams')
       .update({ leader_contact_number: leaderContactNumber })
@@ -1500,17 +1358,8 @@ exports.getConfirmedTeams = async (req, res) => {
         .eq('event_id', eventId);
       
       const isOrganizer = (organizers || []).some(org => org.student_id === req.user.id);
-
-      const { data: memberRec } = await supabase
-        .from('event_members')
-        .select('id')
-        .eq('event_id', eventId)
-        .eq('user_id', req.user.id)
-        .maybeSingle();
-
-      const isMember = !!memberRec;
       
-      if (!isFaculty && !isEventHead && !isOrganizer && !isMember) {
+      if (!isFaculty && !isEventHead && !isOrganizer) {
         return res.status(403).json({ message: 'Access denied. Organizer permissions required.' });
       }
     }
@@ -1530,7 +1379,7 @@ exports.getConfirmedTeams = async (req, res) => {
 
     const teamIds = teams.map(t => t.id);
 
-    // Fetch confirmed registrations for these teams with user profiles & attendance status
+    // Fetch confirmed registrations for these teams with user profiles
     const { data: registrations, error: regErr } = await supabase
       .from('event_registrations')
       .select(`
@@ -1550,9 +1399,7 @@ exports.getConfirmedTeams = async (req, res) => {
         name: r.profiles?.name || 'Unknown',
         email: r.profiles?.email || 'N/A',
         department: r.profiles?.department || 'N/A',
-        rollNumber: r.profiles?.roll_number || 'N/A',
-        attendanceStatus: r.attendance_status || 'Absent',
-        attendanceTimestamp: r.created_at || null
+        rollNumber: r.profiles?.roll_number || 'N/A'
       }));
 
       return {
@@ -1662,31 +1509,6 @@ exports.addTeamMember = async (req, res) => {
 
     const event = team.events;
 
-    // Check overall event capacity (409 Conflict if event is full)
-    const { count: currentEventRegsCount } = await supabase
-      .from('event_registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('event_id', event.id)
-      .eq('status', 'registered');
-
-    const effectiveEventCount = Math.max(event.registered_count || 0, currentEventRegsCount || 0);
-
-    if (event.capacity && effectiveEventCount >= event.capacity) {
-      return res.status(409).json({ message: 'Slots Full — No additional participants can be added.' });
-    }
-
-    if (event.max_teams) {
-      const { count: confirmedTeamsCount } = await supabase
-        .from('event_teams')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', event.id)
-        .eq('status', 'registered');
-
-      if (confirmedTeamsCount >= event.max_teams) {
-        return res.status(409).json({ message: 'Slots Full — No additional participants can be added.' });
-      }
-    }
-
     // Check current active member count (accepted + pending)
     const { data: currentRegs, error: regsErr } = await supabase
       .from('event_registrations')
@@ -1772,26 +1594,24 @@ exports.addTeamMember = async (req, res) => {
       throw insertErr;
     }
 
-    // Notify invited member
+    // Notify user
     try {
       const dateStr = new Date(event.date).toLocaleDateString();
-      const leaderProfile = await resolveUserProfile(userId);
       await notifyUser({
         recipientId: memberId,
         title: 'New Team Invitation',
-        message: `You have been invited by ${leaderProfile.name} to join team "${team.name}" for "${event.title}". Please accept or reject this invitation.`,
+        message: `You have been invited to join team "${team.name}" for "${event.title}".`,
         type: 'info',
         eventId: event.id,
         emailSubject: `Team Invitation – ${event.title}`,
-        emailData: {
-          eventName: event.title,
-          date: dateStr,
-          venue: event.venue || 'TBA',
-          teamName: team.name,
-          teamLeader: leaderProfile.name,
-          status: 'Pending Acceptance',
-          instructions: 'Log in to your Avento dashboard to accept or reject this invitation.'
-        }
+        emailHtml: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+            <h2 style="color: #4f46e5;">New Team Invitation</h2>
+            <p>You have been invited to join team <strong>${team.name}</strong> for the event <strong>${event.title}</strong>.</p>
+            <p><strong>Date:</strong> ${dateStr}</p>
+            <p>Please log in to your dashboard to accept or reject this invitation.</p>
+          </div>
+        `
       });
     } catch (notifErr) {
       console.error('Failed to send notification for new member:', notifErr);
@@ -1897,267 +1717,5 @@ exports.checkTeamName = async (req, res) => {
   } catch (err) {
     console.error('Error checking team name:', err);
     res.status(500).json({ message: 'Server error.', error: err.message });
-  }
-};
-
-/**
- * ADMIN ONLY: Manually create a team for an event.
- */
-exports.adminCreateTeam = async (req, res) => {
-  try {
-    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
-    }
-
-    const { eventId, teamName, leaderId, memberIds } = req.body;
-
-    if (!eventId || !teamName || !leaderId) {
-      return res.status(400).json({ message: 'Event ID, Team Name, and Team Leader ID are required.' });
-    }
-
-    const membersList = Array.isArray(memberIds) ? memberIds : [];
-
-    const { data: event, error: eventErr } = await supabase
-      .from('events')
-      .select('*')
-      .eq('id', eventId)
-      .maybeSingle();
-
-    if (eventErr || !event) {
-      return res.status(404).json({ message: 'Event not found.' });
-    }
-
-    if (event.registration_type !== 'team') {
-      return res.status(400).json({ message: 'This event does not support team registration.' });
-    }
-
-    // Fetch organizers for this event
-    const { data: organizers } = await supabase
-      .from('event_organizers')
-      .select('student_id')
-      .eq('event_id', eventId);
-
-    const { data: proposalMembers } = await supabase
-      .from('event_members')
-      .select('user_id')
-      .eq('event_id', eventId);
-
-    const organizerIds = (organizers || []).map(o => String(o.student_id));
-    if (event.organizer_id) organizerIds.push(String(event.organizer_id));
-    if (event.student_organizer_id) organizerIds.push(String(event.student_organizer_id));
-    if (event.proposed_by) organizerIds.push(String(event.proposed_by));
-    if (event.faculty_id) organizerIds.push(String(event.faculty_id));
-    if (event.created_by) organizerIds.push(String(event.created_by));
-    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(String(m.user_id)); });
-
-    const allSelectedIds = [...new Set([leaderId, ...membersList])];
-    const containsOrganizer = allSelectedIds.some(id => organizerIds.includes(String(id)));
-
-    if (containsOrganizer) {
-      return res.status(403).json({ message: 'One or more selected students are organizers for this event and cannot be added as team members.' });
-    }
-
-    const minSize = event.min_team_size || 1;
-    const maxSize = event.max_team_size || 4;
-    if (allSelectedIds.length < minSize || allSelectedIds.length > maxSize) {
-      return res.status(400).json({ message: `Team size must be between ${minSize} and ${maxSize} members.` });
-    }
-
-    const { data: existingTeamByName } = await supabase
-      .from('event_teams')
-      .select('id')
-      .eq('event_id', eventId)
-      .ilike('name', teamName.trim());
-
-    if (existingTeamByName && existingTeamByName.length > 0) {
-      return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
-    }
-
-    const { data: team, error: teamErr } = await supabase
-      .from('event_teams')
-      .insert({
-        event_id: eventId,
-        name: teamName.trim(),
-        leader_id: leaderId,
-        status: 'registered'
-      })
-      .select()
-      .single();
-
-    if (teamErr) throw teamErr;
-
-    const registrations = allSelectedIds.map(uid => ({
-      user_id: uid,
-      event_id: eventId,
-      team_id: team.id,
-      status: 'registered',
-      created_at: new Date().toISOString()
-    }));
-
-    const { error: regErr } = await supabase
-      .from('event_registrations')
-      .insert(registrations);
-
-    if (regErr) throw regErr;
-
-    await supabase.from('events').update({
-      registered_count: (event.registered_count || 0) + 1
-    }).eq('id', eventId);
-
-    res.json({ message: 'Team created successfully by Admin.', team });
-  } catch (err) {
-    console.error('Error in adminCreateTeam:', err);
-    res.status(500).json({ message: 'Server error creating team.', error: err.message });
-  }
-};
-
-/**
- * ADMIN ONLY: Manually cancel a team registration.
- */
-exports.adminCancelTeamRegistration = async (req, res) => {
-  try {
-    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
-    }
-
-    const { teamId } = req.params;
-    if (!teamId) {
-      return res.status(400).json({ message: 'Team ID is required.' });
-    }
-
-    const { data: team, error: teamErr } = await supabase
-      .from('event_teams')
-      .select('*')
-      .eq('id', teamId)
-      .maybeSingle();
-
-    if (teamErr || !team) {
-      return res.status(404).json({ message: 'Team not found.' });
-    }
-
-    const eventId = team.event_id;
-
-    await supabase.from('event_registrations').delete().eq('team_id', teamId);
-    await supabase.from('event_teams').delete().eq('id', teamId);
-
-    if (team.status === 'registered') {
-      const { data: event } = await supabase.from('events').select('registered_count').eq('id', eventId).single();
-      if (event) {
-        await supabase.from('events').update({
-          registered_count: Math.max(0, (event.registered_count || 0) - 1)
-        }).eq('id', eventId);
-      }
-    }
-
-    res.json({ message: 'Team registration cancelled successfully by Admin.' });
-  } catch (err) {
-    console.error('Error in adminCancelTeamRegistration:', err);
-    res.status(500).json({ message: 'Server error cancelling team registration.', error: err.message });
-  }
-};
-
-/**
- * ADMIN ONLY: Approve a student's team request/invitation directly.
- */
-exports.adminApproveTeamRequest = async (req, res) => {
-  try {
-    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
-    }
-
-    const { registrationId } = req.params;
-    if (!registrationId) {
-      return res.status(400).json({ message: 'Registration ID is required.' });
-    }
-
-    const { data: reg, error: regErr } = await supabase
-      .from('event_registrations')
-      .select('*')
-      .eq('id', registrationId)
-      .maybeSingle();
-
-    if (regErr || !reg) {
-      return res.status(404).json({ message: 'Registration record not found.' });
-    }
-
-    if (reg.status === 'registered') {
-      return res.status(400).json({ message: 'Student team request is already approved.' });
-    }
-
-    const { error: updateErr } = await supabase
-      .from('event_registrations')
-      .update({ status: 'registered' })
-      .eq('id', registrationId);
-
-    if (updateErr) throw updateErr;
-
-    // Notify student that their team request was approved
-    try {
-      const eventTitle = 'your event';
-      await notifyUser({
-        recipientId: reg.user_id,
-        title: 'Team Request Approved',
-        message: `Your team request has been approved by the admin.`,
-        type: 'success',
-        eventId: reg.event_id,
-        emailSubject: `Team Approved – ${eventTitle}`,
-        emailData: { eventName: eventTitle, status: 'Approved by Admin' }
-      });
-    } catch (notifErr) {
-      console.error('Non-fatal error sending admin approve notification:', notifErr.message);
-    }
-
-    res.json({ message: 'Student team request approved successfully by Admin.' });
-  } catch (err) {
-    console.error('Error in adminApproveTeamRequest:', err);
-    res.status(500).json({ message: 'Server error approving team request.', error: err.message });
-  }
-};
-
-/**
- * ADMIN ONLY: Fetch eligible non-organizer students for manual team creation.
- */
-exports.getNonOrganizerStudentsForEvent = async (req, res) => {
-  try {
-    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
-    }
-
-    const { eventId } = req.params;
-
-    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
-    if (!event) return res.status(404).json({ message: 'Event not found.' });
-
-    const { data: organizers } = await supabase
-      .from('event_organizers')
-      .select('student_id')
-      .eq('event_id', eventId);
-
-    const { data: proposalMembers } = await supabase
-      .from('event_members')
-      .select('user_id')
-      .eq('event_id', eventId);
-
-    const organizerIds = new Set((organizers || []).map(o => String(o.student_id)));
-    if (event.organizer_id) organizerIds.add(String(event.organizer_id));
-    if (event.student_organizer_id) organizerIds.add(String(event.student_organizer_id));
-    if (event.proposed_by) organizerIds.add(String(event.proposed_by));
-    if (event.faculty_id) organizerIds.add(String(event.faculty_id));
-    if (event.created_by) organizerIds.add(String(event.created_by));
-    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.add(String(m.user_id)); });
-
-    const { data: students, error: studentErr } = await supabase
-      .from('profiles')
-      .select('id, name, fullName:name, email, roll_number, department, role')
-      .eq('role', 'student');
-
-    if (studentErr) throw studentErr;
-
-    const eligibleStudents = (students || []).filter(s => !organizerIds.has(String(s.id)));
-
-    res.json(eligibleStudents);
-  } catch (err) {
-    console.error('Error in getNonOrganizerStudentsForEvent:', err);
-    res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });
   }
 };

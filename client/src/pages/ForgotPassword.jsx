@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase, inferRole } from '../context/AuthContext';
+import { inferRole } from '../context/AuthContext';
+import axios from 'axios';
 import { StarDoodle, SparkleDoodle, BookDoodle } from '../components/Doodles';
 
 const ForgotPassword = () => {
@@ -28,13 +29,10 @@ const ForgotPassword = () => {
     setStatus('loading');
     try {
       const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
-      const { error } = await supabase.auth.resetPasswordForEmail(emailLower, {
+      await axios.post('/api/auth/send-password-reset', {
+        email: emailLower,
         redirectTo: `${appUrl}/change-password`,
       });
-
-      if (error) {
-        throw error;
-      }
 
       setStatus('success');
       setMessage(`Password reset link sent to ${emailLower}. Please check your inbox.`);

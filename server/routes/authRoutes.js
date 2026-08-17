@@ -13,6 +13,9 @@ router.post('/register', authController.register);
 // Email/password login
 router.post('/login', authController.login);
 
+// Generate a Supabase recovery link and deliver it through Brevo.
+router.post('/send-password-reset', authController.sendPasswordReset);
+
 // Get authenticated user profile (requires valid Bearer token)
 router.get('/profile', authMiddleware, authController.getProfile);
 

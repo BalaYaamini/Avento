@@ -32,9 +32,17 @@ const verifySMTPConnection = async () => {
   return true;
 };
 
-const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
+// TEMPORARY TESTING TOGGLE: Set to false to re-enable outgoing Brevo email notifications
+const DISABLE_TEAM_EMAIL_NOTIFICATIONS = false;
+
+const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments }) => {
+  if (DISABLE_TEAM_EMAIL_NOTIFICATIONS) {
+    console.log(`[EMAIL TEMPORARILY DISABLED FOR TESTING] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
+    return;
+  }
+
   if (!BREVO_API_KEY) {
-    console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}`);
+    console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
     return;
   }
 
@@ -45,12 +53,18 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
   }
 
   try {
-    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
+    const payload = {
       sender: { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME },
       to: [{ email: recipientEmail }],
       subject,
       htmlContent: htmlBody,
-    }, {
+    };
+
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      payload.attachment = attachments;
+    }
+
+    const response = await axios.post('https://api.brevo.com/v3/smtp/email', payload, {
       headers: {
         'api-key': BREVO_API_KEY,
         'Content-Type': 'application/json',
@@ -66,6 +80,28 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody }) => {
     const errMsg = err.response?.data?.message || err.message;
     console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${errMsg}`);
   }
+};
+
+const sendPasswordResetEmail = async ({ recipientEmail, resetUrl }) => {
+  const htmlBody = `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:40px 20px;background:#fdfbf7;font-family:Arial,sans-serif;color:#1e293b;">
+  <div style="max-width:560px;margin:auto;background:#fff;border-radius:20px;padding:40px;box-shadow:0 4px 20px rgba(0,0,0,.06);">
+    <h1 style="margin:0;color:#1e293b;">AVENTO</h1>
+    <h2 style="margin:28px 0 12px;">Reset your password</h2>
+    <p style="font-size:16px;line-height:1.6;color:#475569;">Use the button below to create a new password. This link expires according to your Supabase Auth settings.</p>
+    <p style="text-align:center;margin:32px 0;"><a href="${resetUrl}" style="display:inline-block;padding:14px 28px;border-radius:12px;background:#8b5cf6;color:#fff;text-decoration:none;font-weight:700;">Reset Password</a></p>
+    <p style="font-size:12px;line-height:1.5;color:#94a3b8;">If you did not request this, you can safely ignore this email.</p>
+  </div>
+</body>
+</html>`;
+
+  return sendEmailNotification({
+    recipientEmail,
+    subject: 'Reset your Avento password',
+    htmlBody,
+  });
 };
 
 const sendInAppNotification = async ({ recipientId, title, message, type = 'info', eventId = null }) => {
@@ -91,6 +127,15 @@ const sendInAppNotification = async ({ recipientId, title, message, type = 'info
 };
 
 const generateEmailHtml = (title, message, data = {}) => {
+  const membersHtml = (data.teamMembers && Array.isArray(data.teamMembers) && data.teamMembers.length > 0)
+    ? `<tr><td colspan="2" style="padding-top:16px;padding-bottom:6px;"><strong style="font-size:14px;color:#475569;">Team Members:</strong></td></tr>
+       <tr><td colspan="2">
+         <ul style="margin:0;padding-left:20px;list-style-type:disc;">
+           ${data.teamMembers.map(m => `<li style="padding:3px 0;font-size:14px;color:#1e293b;"><strong>${m.name}</strong> <span style="font-size:12px;color:#64748b;">— ${m.role || 'Member'}</span></li>`).join('')}
+         </ul>
+       </td></tr>`
+    : '';
+
   const eventHtml = data.eventName ? `
 <div style="background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;margin-top:25px;">
   <table width="100%" border="0" cellspacing="0" cellpadding="0">
@@ -102,12 +147,14 @@ const generateEmailHtml = (title, message, data = {}) => {
     ${data.teamLeader ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Leader</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamLeader}</td></tr>` : ''}
     ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#c084fc;">${data.registrationId}</td></tr>` : ''}
     ${data.status ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Status</strong></td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#10b981;">${data.status}</td></tr>` : ''}
+    ${membersHtml}
   </table>
 </div>` : '';
 
-  const notesHtml = data.instructions ? `
+  const notesContent = data.instructions || data.customNotes;
+  const notesHtml = (notesContent && notesContent !== message) ? `
 <div style="background-color:#f8fafc;border-radius:12px;padding:16px;margin-top:20px;border-left:4px solid #c084fc;">
-  <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;"><strong>Note:</strong><br>${data.instructions}</p>
+  <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;white-space:pre-line;"><strong>Note / Guidelines:</strong><br>${notesContent}</p>
 </div>` : '';
 
   const btnHtml = data.eventId ? `
@@ -133,7 +180,7 @@ const generateEmailHtml = (title, message, data = {}) => {
           <p style="margin:0 0 25px;font-size:16px;color:#64748b;line-height:1.6;">
             ${data.recipientName ? `Hello ${data.recipientName},<br>` : ''}
           </p>
-          <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #c084fc;">${message}</p>
+          <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #c084fc;white-space:pre-line;">${message}</p>
           ${eventHtml}${notesHtml}${btnHtml}
         </td></tr>
         <tr><td style="padding:0 40px 30px;">
@@ -149,7 +196,7 @@ const generateEmailHtml = (title, message, data = {}) => {
 </html>`;
 };
 
-const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 'info', eventId = null, emailSubject, emailData = {} }) => {
+const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 'info', eventId = null, emailSubject, emailData = {}, attachments }) => {
   try {
     await sendInAppNotification({ recipientId, title, message, type, eventId });
 
@@ -191,7 +238,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
         timestamp: new Date().toLocaleString(),
         ...emailData
       });
-      await sendEmailNotification({ recipientEmail: targetEmail, subject: emailSubject || title, htmlBody });
+      await sendEmailNotification({ recipientEmail: targetEmail, subject: emailSubject || title, htmlBody, attachments: attachments || emailData?.attachments });
     }
   } catch (err) {
     console.error('[NOTIFY] Error:', err.message);
@@ -206,6 +253,7 @@ const getEmailStats = () => {
 module.exports = {
   sendInAppNotification,
   sendEmailNotification,
+  sendPasswordResetEmail,
   verifySMTPConnection,
   notifyUser,
   getEmailStats

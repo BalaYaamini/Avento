@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const { validatePasswordStrength } = require('../utils/passwordValidator');
+const { sendPasswordResetEmail } = require('../services/notificationService');
 
 // Allowed registration domains (gmail is blocked for public registration)
 const ALLOWED_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
@@ -223,7 +224,7 @@ exports.login = async (req, res) => {
     const token = jwt.sign(
       { id: user._id, email: user.email, role: userRole },
       process.env.JWT_SECRET || 'avento_super_secret_key_12345',
-      { expiresIn: '1d' }
+      { expiresIn: '30d' }
     );
 
     return res.json({
@@ -241,6 +242,42 @@ exports.login = async (req, res) => {
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ message: 'Server error during login.', error: err.message });
+  }
+};
+
+// Generate the recovery token with Supabase, but deliver the email through Brevo.
+exports.sendPasswordReset = async (req, res) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase().trim();
+    const redirectTo = String(req.body.redirectTo || '').trim();
+
+    if (!email || !redirectTo) {
+      return res.status(400).json({ message: 'Email and redirect URL are required.' });
+    }
+
+    const role = getRoleFromEmail(email) || (email === 'admin.avento@gmail.com' ? 'admin' : null);
+    if (!role) {
+      return res.status(400).json({ message: 'Only registered users can reset passwords.' });
+    }
+
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo },
+    });
+    if (error || !data?.properties?.action_link) {
+      throw error || new Error('Could not generate password reset link.');
+    }
+
+    await sendPasswordResetEmail({
+      recipientEmail: email,
+      resetUrl: data.properties.action_link,
+    });
+
+    return res.json({ message: `Password reset link sent to ${email}. Please check your inbox.` });
+  } catch (err) {
+    console.error('Password reset email error:', err.message);
+    return res.status(500).json({ message: 'Failed to send reset link. Please try again.' });
   }
 };
 
@@ -460,11 +497,19 @@ exports.syncPassword = async (req, res) => {
       return res.status(500).json({ message: 'Failed to update password in authentication provider', error: authError.message });
     }
 
-    // Update password in MongoDB
+    // Update password in MongoDB (upsert if record is missing)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     
-    await User.findByIdAndUpdate(user.id, { password: hashedPassword });
+    const mongoUser = await User.findById(user.id);
+    if (mongoUser) {
+      await User.findByIdAndUpdate(user.id, { password: hashedPassword });
+    } else {
+      const email = user.email || '';
+      const name = user.user_metadata?.full_name || email.split('@')[0];
+      const role = user.user_metadata?.role || 'student';
+      await User.create({ _id: user.id, name, email, password: hashedPassword, role, isVerified: true });
+    }
     
     // Ensure first_login flag is cleared in profiles
     await supabase.from('profiles').update({ first_login: false }).eq('id', user.id);

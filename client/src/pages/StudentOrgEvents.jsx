@@ -146,6 +146,19 @@ const StudentOrgEvents = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const formatToDatetimeLocal = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   const openCreateModal = () => {
     setModalMode('create');
     setSelectedEventId(null);
@@ -184,22 +197,8 @@ const StudentOrgEvents = () => {
     setCategory(event.category || 'Technical');
     setVenue(event.venue || '');
     
-    if (event.date) {
-      const d = new Date(event.date);
-      const tzOffset = d.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
-      setDate(localISOTime);
-    } else {
-      setDate('');
-    }
-
-    if (event.registration_deadline) {
-      const rd = new Date(event.registration_deadline);
-      const tzOffset = rd.getTimezoneOffset() * 60000;
-      setRegistrationDeadline((new Date(rd.getTime() - tzOffset)).toISOString().slice(0, 16));
-    } else {
-      setRegistrationDeadline('');
-    }
+    setDate(formatToDatetimeLocal(event.date));
+    setRegistrationDeadline(formatToDatetimeLocal(event.registration_deadline));
     
     setCapacity(String(event.capacity || 50));
     setPosterOption(event.image_url || event.imageUrl ? 'url' : 'upload');
@@ -314,8 +313,8 @@ const StudentOrgEvents = () => {
         description,
         category,
         venue,
-        date,
-        registrationDeadline: registrationDeadline || undefined,
+        date: date ? (date.includes('Z') || date.includes('+') ? date : new Date(date).toISOString()) : undefined,
+        registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : undefined,
         capacity: registrationType === 'team' ? undefined : Number(capacity),
         imageUrl: finalImageUrl || undefined,
         assignedFacultyId: assignedFaculty,
@@ -1639,7 +1638,7 @@ const StudentOrgEvents = () => {
         {scannerModalEvent && (
           <Modal
             isOpen={!!scannerModalEvent}
-            onClose={() => setScannerModalEvent(null)}
+            onClose={() => { setScannerModalEvent(null); window.location.reload(); }}
             title="Scan Attendance"
           >
             <div className="flex flex-col items-center justify-center space-y-4">
@@ -1665,7 +1664,7 @@ const StudentOrgEvents = () => {
 
               <div className="mt-2 flex justify-end w-full">
                 <button
-                  onClick={() => setScannerModalEvent(null)}
+                  onClick={() => { setScannerModalEvent(null); window.location.reload(); }}
                   className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
                 >
                   Close
