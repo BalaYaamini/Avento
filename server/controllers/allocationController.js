@@ -361,7 +361,6 @@ async function fetchProblemStatementsForEvent(eventId) {
               event_id: eventId,
               title: p.title || p.name || `Problem Statement ${i + 1}`,
               description: p.description || '',
-              max_capacity: Number(p.maxCapacity || p.max_capacity || 1),
               allocated_count: countByTitle
             };
           });
@@ -404,15 +403,12 @@ exports.getProblemStatements = async (req, res) => {
     // Fetch configured problem statements (with table missing fallback)
     const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
 
-    const totalCapacity = problemStatements.reduce((sum, item) => sum + Number(item.max_capacity || 0), 0);
-    const totalAllocated = problemStatements.reduce((sum, item) => sum + Number(item.allocated_count || 0), 0);
+    const totalCapacity = problemStatements.reduce((sum, item) => sum + Number(item.allocated_count || 0), 0);
 
     res.json({
       problemStatements,
       totalTeams,
-      totalCapacity,
-      totalAllocated,
-      isCapacityValid: true
+      totalAllocated: totalCapacity,
     });
   } catch (err) {
     console.error('getProblemStatements error:', err.message);
@@ -449,14 +445,13 @@ exports.saveProblemStatements = async (req, res) => {
       .in('status', ['registered', 'confirmed']);
     const totalTeams = teams ? teams.length : 0;
 
-    // Fetch existing problem statements to validate max_capacity against current allocated_count
+    // Fetch existing problem statements to check for active allocations on removal
     const { data: existingPSList } = await supabase
       .from('event_problem_statements')
       .select('id, title, allocated_count')
       .eq('event_id', eventId);
     const existingPSMap = new Map((existingPSList || []).map(p => [String(p.id), p]));
 
-    let totalConfiguredCapacity = 0;
     const existingRecordsToUpdate = [];
     const newRecordsToInsert = [];
 
@@ -465,28 +460,10 @@ exports.saveProblemStatements = async (req, res) => {
       const code = (ps.code && String(ps.code).trim()) ? String(ps.code).trim() : `PS${String(i + 1).padStart(2, '0')}`;
       const title = String(ps.title || ps.name || '').trim();
       const description = String(ps.description || '').trim();
-      const maxCapacity = parseInt(ps.maxCapacity || ps.max_capacity, 10);
 
       if (!title) {
         return res.status(400).json({ message: `Problem statement title at position ${i + 1} cannot be empty.` });
       }
-
-      if (isNaN(maxCapacity) || maxCapacity <= 0) {
-        return res.status(400).json({ message: `Max capacity for '${title}' must be a positive number.` });
-      }
-
-      // Check if trying to reduce max_capacity below currently allocated count
-      if (ps.id && isUUID(ps.id) && existingPSMap.has(String(ps.id))) {
-        const existingRecord = existingPSMap.get(String(ps.id));
-        const currentAllocated = Number(existingRecord.allocated_count || 0);
-        if (maxCapacity < currentAllocated) {
-          return res.status(400).json({
-            message: `Cannot reduce maximum capacity for '${title}' to ${maxCapacity} because ${currentAllocated} allocation(s) are already assigned to it.`
-          });
-        }
-      }
-
-      totalConfiguredCapacity += maxCapacity;
 
       if (ps.id && isUUID(ps.id)) {
         // Existing record: include id property to update existing row
@@ -496,7 +473,6 @@ exports.saveProblemStatements = async (req, res) => {
           code,
           title,
           description,
-          max_capacity: maxCapacity,
           updated_at: new Date().toISOString()
         });
       } else {
@@ -506,7 +482,6 @@ exports.saveProblemStatements = async (req, res) => {
           code,
           title,
           description,
-          max_capacity: maxCapacity,
           updated_at: new Date().toISOString()
         });
       }
@@ -549,8 +524,7 @@ exports.saveProblemStatements = async (req, res) => {
       const fallbackJSON = JSON.stringify(allRecords.map((r, i) => ({
         id: r.id || `ps_${i + 1}`,
         title: r.title,
-        description: r.description,
-        maxCapacity: r.max_capacity
+        description: r.description
       })));
 
       const { error: eventErr } = await supabase
@@ -561,10 +535,9 @@ exports.saveProblemStatements = async (req, res) => {
       if (eventErr) throw eventErr;
 
       return res.json({
-        message: `Successfully configured ${allRecords.length} problem statement(s) with total capacity of ${totalConfiguredCapacity} slots.`,
+        message: `Successfully configured ${allRecords.length} problem statement(s).`,
         problemStatements: allRecords,
-        totalTeams,
-        totalCapacity: totalConfiguredCapacity
+        totalTeams
       });
     };
 
@@ -603,10 +576,9 @@ exports.saveProblemStatements = async (req, res) => {
     }
 
     res.json({
-      message: `Successfully configured ${savedData.length} problem statement(s) with total capacity of ${totalConfiguredCapacity} slots.`,
+      message: `Successfully configured ${savedData.length} problem statement(s).`,
       problemStatements: savedData,
-      totalTeams,
-      totalCapacity: totalConfiguredCapacity
+      totalTeams
     });
   } catch (err) {
     console.error('saveProblemStatements error:', err.message);
@@ -773,10 +745,6 @@ exports.selectProblemStatement = async (req, res) => {
     }
 
     // Fallback if targetPS is non-UUID or RPC missing
-    if (Number(targetPS.allocated_count) >= Number(targetPS.max_capacity)) {
-      return res.status(400).json({ message: 'This problem statement has reached full capacity. Please select another.' });
-    }
-
     const upsertObj = {
       event_id: eventId,
       problem_statement_id: targetPS.id && isUUID(targetPS.id) ? targetPS.id : null,
@@ -1365,14 +1333,6 @@ exports.saveTeamAllocations = async (req, res) => {
 
       if (newPsId && newPsId !== String(oldPsId)) {
         const currentCount = psSimulatedCounts.get(newPsId) || 0;
-        const psObj = psMapById.get(newPsId);
-        const maxCap = psObj ? Number(psObj.max_capacity || 0) : 0;
-
-        if (maxCap > 0 && currentCount >= maxCap) {
-          return res.status(400).json({
-            message: `Problem statement '${finalProblemStatement}' for ${teamName} has reached maximum capacity (${maxCap} slots).`
-          });
-        }
 
         if (oldPsId && psSimulatedCounts.has(String(oldPsId))) {
           psSimulatedCounts.set(String(oldPsId), Math.max(0, psSimulatedCounts.get(String(oldPsId)) - 1));
@@ -1614,30 +1574,14 @@ exports.getMyTeamAllocation = async (req, res) => {
     const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
 
     const availableProblemStatements = (problemStatements || []).map((ps, i) => {
-      const maxCap = Number(ps.max_capacity || 0);
       const allocCount = Number(ps.allocated_count || 0);
-      const remainingSlots = Math.max(0, maxCap - allocCount);
-      const isFull = remainingSlots <= 0;
-
-      let availabilityState = 'healthy';
-      if (isFull) {
-        availabilityState = 'full';
-      } else if (remainingSlots === 1) {
-        availabilityState = 'critical';
-      } else if (remainingSlots <= Math.ceil(maxCap * 0.4)) {
-        availabilityState = 'moderate';
-      }
 
       return {
         id: ps.id,
         code: ps.code || `PS${String(i + 1).padStart(2, '0')}`,
         title: ps.title,
         description: ps.description || '',
-        maxCapacity: maxCap,
         allocatedCount: allocCount,
-        remainingSlots,
-        isFull,
-        availabilityState
       };
     });
 

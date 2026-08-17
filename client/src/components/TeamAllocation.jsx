@@ -6,8 +6,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
   const [allocations, setAllocations] = useState([]);
   const [problemStatements, setProblemStatements] = useState([]);
   const [totalTeams, setTotalTeams] = useState(0);
-  const [totalCapacity, setTotalCapacity] = useState(0);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
@@ -57,7 +55,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         const psArr = psRes.data.problemStatements || [];
         setProblemStatements(psArr);
         setTotalTeams(psRes.data.totalTeams || 0);
-        setTotalCapacity(psRes.data.totalCapacity || 0);
 
         // Initialize local config form
         if (psArr.length > 0) {
@@ -66,21 +63,15 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             code: p.code || `PS${String(i + 1).padStart(2, '0')}`,
             title: p.title || '',
             description: p.description || '',
-            maxCapacity: p.max_capacity || 1,
             allocatedCount: p.allocated_count || 0
           })));
         } else {
           // Default setup if empty
-          const defaultCount = psRes.data.totalTeams || 5;
-          const defaultPerPs = Math.max(1, Math.floor(defaultCount / 5));
-          const rem = defaultCount % 5;
-
           const defaults = Array.from({ length: 5 }, (_, i) => ({
             id: `temp_${i}`,
             code: `PS${String(i + 1).padStart(2, '0')}`,
             title: `Problem Statement ${i + 1}`,
             description: '',
-            maxCapacity: i === 0 ? defaultPerPs + rem : defaultPerPs,
             allocatedCount: 0
           }));
           setPsList(defaults);
@@ -133,18 +124,15 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
     }
   }, [eventId]);
 
-  // Calculate live sum of local psList capacities
-  const currentConfiguredCapacity = psList.reduce((sum, item) => sum + (parseInt(item.maxCapacity, 10) || 0), 0);
-
   // Add new Problem Statement Row
   const handleAddProblemStatement = () => {
     setPsList(prev => [
       ...prev,
       {
         id: `temp_${Date.now()}`,
+        code: `PS${String(prev.length + 1).padStart(2, '0')}`,
         title: `Problem Statement ${prev.length + 1}`,
         description: '',
-        maxCapacity: 1,
         allocatedCount: 0
       }
     ]);
@@ -175,24 +163,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
     for (let i = 0; i < psList.length; i++) {
       const item = psList[i];
       const title = String(item.title || '').trim();
-      const cap = parseInt(item.maxCapacity, 10);
-      const allocCount = Number(item.allocatedCount || 0);
 
       if (!title) {
         setStatusMessage({ type: 'error', text: `Problem statement #${i + 1} title cannot be empty.` });
-        return;
-      }
-
-      if (isNaN(cap) || cap <= 0) {
-        setStatusMessage({ type: 'error', text: `Max capacity for '${title}' must be a positive number.` });
-        return;
-      }
-
-      if (cap < allocCount) {
-        setStatusMessage({
-          type: 'error',
-          text: `Cannot reduce maximum capacity for '${title}' to ${cap} because ${allocCount} allocation(s) are already assigned to it.`
-        });
         return;
       }
     }
@@ -658,7 +631,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         <div className="space-y-6 animate-fade-in">
 
           {/* CAPACITY SUMMARY CARDS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             {/* Card 1: Eligible Teams */}
             <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
@@ -672,19 +645,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               </div>
             </div>
 
-            {/* Card 2: Configured Slots */}
-            <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Configured Slots</span>
-                <div className="text-2xl font-extrabold text-text-primary mt-1">{currentConfiguredCapacity}</div>
-                <span className="text-[11px] text-text-secondary">Total available problem statement capacity</span>
-              </div>
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center text-xl font-bold">
-                🎯
-              </div>
-            </div>
-
-            {/* Card 3: Configured Statements Summary */}
+            {/* Card 2: Configured Statements Summary */}
             <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Configured Statements</span>
@@ -703,7 +664,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-pastel-lavender/20">
               <div>
                 <h3 className="font-heading font-bold text-base text-text-primary">Configure Problem Statements</h3>
-                <p className="text-xs text-text-secondary">Add, edit, or remove problem statements and set maximum team slot capacities.</p>
+                <p className="text-xs text-text-secondary">Add, edit, or remove problem statements for team leaders to choose from.</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -770,7 +731,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                       />
                     </div>
 
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-9">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
                         Title / Name
                       </label>
@@ -780,19 +741,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         onChange={(e) => handlePsChange(idx, 'title', e.target.value)}
                         placeholder="e.g. AI-Based Traffic Optimization"
                         className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
-                      />
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                        Capacity (Max Slots)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={ps.maxCapacity}
-                        onChange={(e) => handlePsChange(idx, 'maxCapacity', Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-extrabold text-center focus:outline-none focus:border-violet-500"
                       />
                     </div>
 
@@ -814,69 +762,6 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               ))}
             </div>
 
-          </div>
-
-          {/* LIVE SLOT STATUS OVERVIEW */}
-          <div className="space-y-3">
-            <h3 className="font-heading font-bold text-sm text-text-primary">Live Problem Statement Slot Overview</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {problemStatements.map((ps) => {
-                const maxCap = Number(ps.max_capacity || 0);
-                const allocCount = Number(ps.allocated_count || 0);
-                const remaining = Math.max(0, maxCap - allocCount);
-                const pct = maxCap > 0 ? Math.min(100, Math.round((allocCount / maxCap) * 100)) : 0;
-
-                let badgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-                let progressClass = 'bg-emerald-500';
-                let statusLabel = `${remaining} slot${remaining === 1 ? '' : 's'} remaining`;
-
-                if (remaining === 0) {
-                  badgeClass = 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20';
-                  progressClass = 'bg-slate-500';
-                  statusLabel = 'Full';
-                } else if (remaining === 1) {
-                  badgeClass = 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
-                  progressClass = 'bg-red-500';
-                  statusLabel = 'Critical (1 slot left)';
-                } else if (pct >= 50) {
-                  badgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-                  progressClass = 'bg-amber-500';
-                  statusLabel = 'Moderate';
-                }
-
-                return (
-                  <div key={ps.id} className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-pastel-lavender/20 rounded-2xl p-4 shadow-soft space-y-3 flex flex-col justify-between">
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <h4 className="font-bold text-xs text-text-primary">{ps.title}</h4>
-                        {ps.description && (
-                          <p className="text-[11px] text-text-secondary mt-0.5 leading-snug">{ps.description}</p>
-                        )}
-                        {ps.venue_room && (
-                          <p className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold mt-1">📍 {ps.venue_room}</p>
-                        )}
-                      </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${badgeClass}`}>
-                        {statusLabel}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-[10px] font-semibold text-text-secondary">
-                        <span>{allocCount} / {maxCap} teams allocated</span>
-                        <span>{pct}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-500 ${progressClass}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
 
         </div>
@@ -1038,7 +923,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                             <button
                               onClick={() => handleClearAllocation(team.teamId)}
                               className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg font-bold hover:bg-red-500/20 transition text-[10px]"
-                              title="Remove allocation and release slot"
+                              title="Remove allocation"
                             >
                               Clear
                             </button>
