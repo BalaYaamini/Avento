@@ -1,10 +1,179 @@
 const supabase = require('../config/supabaseClient');
 const { checkCoreOrganizerAccess } = require('./eventController');
 const { sendEmailNotification } = require('../services/notificationService');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const User = require('../models/User');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (str) => typeof str === 'string' && UUID_REGEX.test(str.trim());
+
+/**
+ * Helper: Generate System Problem Statement PDF Document Buffer using pdf-lib
+ */
+async function generateProblemStatementsPdfBuffer(eventTitle, problemStatements) {
+  const pdfDoc = await PDFDocument.create();
+
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 40;
+  const contentWidth = pageWidth - margin * 2;
+
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+
+  const purplePrimary = rgb(0.486, 0.227, 0.929); // #7c3aed
+  const darkSlate = rgb(0.06, 0.09, 0.16); // #0f172a
+  const textSecondary = rgb(0.28, 0.33, 0.41); // #475569
+  const borderGray = rgb(0.88, 0.91, 0.94); // #e2e8f0
+  const boxBg = rgb(0.97, 0.98, 0.99); // #f8fafc
+
+  const drawHeader = (pg) => {
+    pg.drawText('AVENTO', {
+      x: margin,
+      y: pageHeight - 35,
+      size: 18,
+      font: fontBold,
+      color: purplePrimary,
+    });
+
+    pg.drawText('PROBLEM STATEMENTS SPECIFICATION', {
+      x: margin + 95,
+      y: pageHeight - 33,
+      size: 9,
+      font: fontBold,
+      color: textSecondary,
+    });
+
+    pg.drawText(String(eventTitle || 'Event Problem Statements').toUpperCase(), {
+      x: margin,
+      y: pageHeight - 55,
+      size: 13,
+      font: fontBold,
+      color: darkSlate,
+    });
+
+    pg.drawLine({
+      start: { x: margin, y: pageHeight - 65 },
+      end: { x: pageWidth - margin, y: pageHeight - 65 },
+      thickness: 1.5,
+      color: purplePrimary,
+    });
+  };
+
+  function wrapText(text, maxWidth, fontSize, usedFont) {
+    if (!text) return [];
+    const words = String(text).replace(/\r\n/g, '\n').split(/\s+/);
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const width = usedFont.widthOfTextAtSize(testLine, fontSize);
+      if (width <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
+  drawHeader(page);
+  let y = pageHeight - 85;
+
+  for (let i = 0; i < problemStatements.length; i++) {
+    const ps = problemStatements[i];
+    // DO NOT use ps.id (DB UUID) as user-facing code!
+    const code = (ps.code && String(ps.code).trim()) ? String(ps.code).trim() : `PS${String(i + 1).padStart(2, '0')}`;
+    const title = String(ps.title || ps.name || 'Problem Statement').trim();
+    const description = String(ps.description || 'No description provided.').trim();
+
+    const descLines = wrapText(description, contentWidth - 28, 9.5, font);
+    const blockHeight = Math.max(55, 38 + (descLines.length * 13) + 10);
+
+    if (y - blockHeight < 50) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      drawHeader(page);
+      y = pageHeight - 85;
+    }
+
+    page.drawRectangle({
+      x: margin,
+      y: y - blockHeight,
+      width: contentWidth,
+      height: blockHeight,
+      color: boxBg,
+      borderColor: borderGray,
+      borderWidth: 1,
+    });
+
+    page.drawRectangle({
+      x: margin,
+      y: y - blockHeight,
+      width: 4,
+      height: blockHeight,
+      color: purplePrimary,
+    });
+
+    let currentY = y - 20;
+
+    const headerStr = `${code} — ${title}`;
+    const headerLines = wrapText(headerStr, contentWidth - 30, 11, fontBold);
+
+    page.drawText(headerLines[0] || headerStr, {
+      x: margin + 14,
+      y: currentY,
+      size: 11,
+      font: fontBold,
+      color: darkSlate,
+    });
+
+    currentY -= 16;
+
+    page.drawText('Description:', {
+      x: margin + 14,
+      y: currentY,
+      size: 9,
+      font: fontBold,
+      color: textSecondary,
+    });
+
+    currentY -= 13;
+
+    for (const line of descLines) {
+      page.drawText(line, {
+        x: margin + 14,
+        y: currentY,
+        size: 9.5,
+        font: font,
+        color: darkSlate,
+      });
+      currentY -= 13;
+    }
+
+    y -= (blockHeight + 15);
+  }
+
+  const totalPages = pdfDoc.getPageCount();
+  const pages = pdfDoc.getPages();
+  for (let i = 0; i < totalPages; i++) {
+    const p = pages[i];
+    p.drawText(`Page ${i + 1} of ${totalPages} • AVENTO Event Management Platform`, {
+      x: margin,
+      y: 20,
+      size: 8,
+      font: font,
+      color: textSecondary,
+    });
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
 
 // Helper to send allocation notification emails to all registered team members
 async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemStatement, description = '', venueRoom }) {
@@ -71,6 +240,8 @@ async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemState
         }
       }
 
+      const displayVenue = (venueRoom && venueRoom.trim()) ? venueRoom.trim() : 'Yet to assign';
+
       if (email) {
         const subject = `Problem Statement & Venue Allocation — ${eventTitle}`;
         const htmlBody = `
@@ -95,7 +266,7 @@ async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemState
         <tr><td style="padding:4px 0;font-size:13px;color:#64748b;width:35%;"><strong>Allocation:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${displayOwnerName}</td></tr>
         <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Problem Statement:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${problemStatement}</td></tr>
         ${psDescription ? `<tr><td style="padding:4px 0;font-size:13px;color:#64748b;vertical-align:top;"><strong>Description:</strong></td><td style="padding:4px 0;font-size:13px;color:#334155;line-height:1.5;">${psDescription}</td></tr>` : ''}
-        <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Venue / Room:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#7c3aed;">${venueRoom}</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Venue / Room:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#7c3aed;">${displayVenue}</td></tr>
       </table>
     </div>
 
@@ -190,7 +361,6 @@ async function fetchProblemStatementsForEvent(eventId) {
               event_id: eventId,
               title: p.title || p.name || `Problem Statement ${i + 1}`,
               description: p.description || '',
-              venue_room: p.venueRoom || p.venue_room || '',
               max_capacity: Number(p.maxCapacity || p.max_capacity || 1),
               allocated_count: countByTitle
             };
@@ -253,7 +423,6 @@ exports.getProblemStatements = async (req, res) => {
 /**
  * POST /api/allocations/event/:eventId/problem-statements
  * Save / Configure Problem Statements for an event (Organizers)
- * Decoupled from registered team count. Admin can configure any capacity.
  */
 exports.saveProblemStatements = async (req, res) => {
   try {
@@ -293,8 +462,8 @@ exports.saveProblemStatements = async (req, res) => {
 
     for (let i = 0; i < problemStatements.length; i++) {
       const ps = problemStatements[i];
+      const code = (ps.code && String(ps.code).trim()) ? String(ps.code).trim() : `PS${String(i + 1).padStart(2, '0')}`;
       const title = String(ps.title || ps.name || '').trim();
-      const venueRoom = String(ps.venueRoom || ps.venue_room || '').trim();
       const description = String(ps.description || '').trim();
       const maxCapacity = parseInt(ps.maxCapacity || ps.max_capacity, 10);
 
@@ -324,9 +493,9 @@ exports.saveProblemStatements = async (req, res) => {
         existingRecordsToUpdate.push({
           id: String(ps.id).trim(),
           event_id: eventId,
+          code,
           title,
           description,
-          venue_room: venueRoom,
           max_capacity: maxCapacity,
           updated_at: new Date().toISOString()
         });
@@ -334,9 +503,9 @@ exports.saveProblemStatements = async (req, res) => {
         // NEW record: OMIT id property completely so PostgreSQL DEFAULT gen_random_uuid() triggers
         newRecordsToInsert.push({
           event_id: eventId,
+          code,
           title,
           description,
-          venue_room: venueRoom,
           max_capacity: maxCapacity,
           updated_at: new Date().toISOString()
         });
@@ -381,7 +550,6 @@ exports.saveProblemStatements = async (req, res) => {
         id: r.id || `ps_${i + 1}`,
         title: r.title,
         description: r.description,
-        venueRoom: r.venue_room,
         maxCapacity: r.max_capacity
       })));
 
@@ -472,7 +640,7 @@ exports.selectProblemStatement = async (req, res) => {
       return res.status(403).json({ message: 'No active registration found for this event.' });
     }
 
-    // Step 2: Attendance check-in validation
+    // Step 2: Attendance check-in validation (BACKEND ENFORCED)
     if (registration.attendance_status !== 'Present') {
       return res.status(403).json({ message: 'Your attendance/QR check-in must be scanned before selecting a problem statement.' });
     }
@@ -512,7 +680,7 @@ exports.selectProblemStatement = async (req, res) => {
           allocation: {
             teamName: team.name,
             problemStatement: existingAlloc.problem_statement,
-            venueRoom: existingAlloc.venue_room
+            venueRoom: existingAlloc.venue_room && existingAlloc.venue_room.trim() ? existingAlloc.venue_room.trim() : 'Yet to assign'
           }
         });
       }
@@ -531,7 +699,7 @@ exports.selectProblemStatement = async (req, res) => {
           allocation: {
             teamName: 'Individual Participant',
             problemStatement: existingAlloc.problem_statement,
-            venueRoom: existingAlloc.venue_room
+            venueRoom: existingAlloc.venue_room && existingAlloc.venue_room.trim() ? existingAlloc.venue_room.trim() : 'Yet to assign'
           }
         });
       }
@@ -545,8 +713,8 @@ exports.selectProblemStatement = async (req, res) => {
       return res.status(404).json({ message: 'Problem statement not found.' });
     }
 
-    // Preserve existing team preassigned venue if present; otherwise default to 'To be assigned'
-    let venue = 'To be assigned';
+    // Preserve existing team preassigned venue if present; otherwise default to ''
+    let venue = '';
     let teamVenueQuery = supabase.from('team_allocations').select('venue_room').eq('event_id', eventId);
     if (isTeamReg) {
       teamVenueQuery = teamVenueQuery.eq('team_id', team.id);
@@ -593,7 +761,7 @@ exports.selectProblemStatement = async (req, res) => {
           allocation: {
             teamName: isTeamReg ? team.name : 'Individual Participant',
             problemStatement: allocatedTitle,
-            venueRoom: allocatedVenue
+            venueRoom: allocatedVenue && allocatedVenue.trim() ? allocatedVenue.trim() : 'Yet to assign'
           }
         });
       }
@@ -650,7 +818,7 @@ exports.selectProblemStatement = async (req, res) => {
       allocation: {
         teamName: isTeamReg ? team.name : 'Individual Participant',
         problemStatement: targetPS.title,
-        venueRoom: venue
+        venueRoom: venue && venue.trim() ? venue.trim() : 'Yet to assign'
       }
     });
   } catch (err) {
@@ -722,14 +890,37 @@ exports.getEventAllocations = async (req, res) => {
     const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
     const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
 
+    // Fetch configured problem statements
+    const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
+
+    const psCodeMapByPsId = new Map();
+    const psCodeMapByTitle = new Map();
+
+    (problemStatements || []).forEach(p => {
+      if (p.id) psCodeMapByPsId.set(String(p.id).trim(), p.code);
+      if (p.title) psCodeMapByTitle.set(String(p.title).trim().toLowerCase(), p.code);
+    });
+
+    const getPsCodeForAlloc = (alloc) => {
+      if (!alloc) return '';
+      if (alloc.problem_statement_id && psCodeMapByPsId.has(String(alloc.problem_statement_id).trim())) {
+        return psCodeMapByPsId.get(String(alloc.problem_statement_id).trim());
+      }
+      if (alloc.problem_statement && psCodeMapByTitle.has(String(alloc.problem_statement).trim().toLowerCase())) {
+        return psCodeMapByTitle.get(String(alloc.problem_statement).trim().toLowerCase());
+      }
+      return '';
+    };
+
     const teamList = (teams || []).map(t => {
       const alloc = teamAllocMap.get(t.id);
       return {
         teamId: t.id,
         teamName: t.name || 'Unnamed Team',
         isIndividual: false,
-        venueRoom: alloc ? alloc.venue_room : '',
-        problemStatement: alloc ? alloc.problem_statement : '',
+        venueRoom: alloc && alloc.venue_room ? alloc.venue_room : '',
+        problemStatement: alloc && alloc.problem_statement ? alloc.problem_statement : '',
+        problemStatementCode: getPsCodeForAlloc(alloc),
         isAllocated: !!alloc,
         updatedAt: alloc ? alloc.updated_at : null
       };
@@ -744,8 +935,9 @@ exports.getEventAllocations = async (req, res) => {
         userId: r.user_id,
         teamName: `${name} (Individual)`,
         isIndividual: true,
-        venueRoom: alloc ? alloc.venue_room : '',
-        problemStatement: alloc ? alloc.problem_statement : '',
+        venueRoom: alloc && alloc.venue_room ? alloc.venue_room : '',
+        problemStatement: alloc && alloc.problem_statement ? alloc.problem_statement : '',
+        problemStatementCode: getPsCodeForAlloc(alloc),
         isAllocated: !!alloc,
         updatedAt: alloc ? alloc.updated_at : null
       };
@@ -753,8 +945,210 @@ exports.getEventAllocations = async (req, res) => {
 
     const combinedList = [...teamList, ...indivList];
 
+    res.json({
+      allocations: combinedList,
+      problemStatements
+    });
+  } catch (err) {
+    console.error('getEventAllocations error:', err.message);
+    res.status(500).json({ message: 'Failed to fetch team allocations.', error: err.message });
+  }
+};
+
+/**
+ * GET /api/allocations/event/:eventId/template
+ * Download allocation template data for confirmed teams & individual participants (Organizers)
+ */
+exports.getAllocationTemplateData = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+    if (!isOrganizer) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const { data: teams } = await supabase
+      .from('event_teams')
+      .select('id, name, status')
+      .eq('event_id', eventId)
+      .in('status', ['registered', 'confirmed']);
+
+    const { data: indivRegs } = await supabase
+      .from('event_registrations')
+      .select('id, user_id, status')
+      .eq('event_id', eventId)
+      .is('team_id', null)
+      .eq('status', 'registered');
+
+    const indivUserIds = (indivRegs || []).map(r => r.user_id).filter(Boolean);
+    let indivProfileMap = new Map();
+    if (indivUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', indivUserIds);
+      if (profiles) {
+        indivProfileMap = new Map(profiles.map(p => [p.id, p]));
+      }
+    }
+
+    let allocations = [];
+    const { data: allocData } = await supabase.from('team_allocations').select('*').eq('event_id', eventId);
+    if (allocData) allocations = allocData;
+
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
+
+    const teamRows = (teams || []).map(t => {
+      const alloc = teamAllocMap.get(t.id);
+      return {
+        'Team ID': t.id,
+        'Team Name': t.name || 'Unnamed Team',
+        'Venue / Room': alloc ? alloc.venue_room : '',
+        'Problem Statement': alloc ? alloc.problem_statement : ''
+      };
+    });
+
+    const indivRows = (indivRegs || []).map(r => {
+      const alloc = userAllocMap.get(r.user_id);
+      const profile = indivProfileMap.get(r.user_id);
+      const name = profile ? profile.name : 'Individual Participant';
+      return {
+        'Team ID': `user_${r.user_id}`,
+        'Team Name': `${name} (Individual)`,
+        'Venue / Room': alloc ? alloc.venue_room : '',
+        'Problem Statement': alloc ? alloc.problem_statement : ''
+      };
+    });
+
+    res.json([...teamRows, ...indivRows]);
+  } catch (err) {
+    console.error('getAllocationTemplateData error:', err.message);
+    res.status(500).json({ message: 'Failed to generate template data.', error: err.message });
+  }
+};
+
+/**
+ * GET /api/allocations/event/:eventId
+ * Fetch all team & individual allocations & problem statements for an event (Organizers)
+ */
+exports.getEventAllocations = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const { data: event, error: evErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', eventId)
+      .maybeSingle();
+
+    if (evErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+    if (!isOrganizer) {
+      return res.status(403).json({ message: 'Access denied. Only event organizers can view allocations.' });
+    }
+
+    // Fetch confirmed teams
+    const { data: teams, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('id, name, leader_id, status')
+      .eq('event_id', eventId)
+      .in('status', ['registered', 'confirmed']);
+    if (teamErr) throw teamErr;
+
+    // Fetch confirmed individual registrations (where team_id is null)
+    const { data: indivRegs } = await supabase
+      .from('event_registrations')
+      .select('id, user_id, status')
+      .eq('event_id', eventId)
+      .is('team_id', null)
+      .eq('status', 'registered');
+
+    // Fetch profiles for individual registrants
+    const indivUserIds = (indivRegs || []).map(r => r.user_id).filter(Boolean);
+    let indivProfileMap = new Map();
+    if (indivUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, email, roll_number')
+        .in('id', indivUserIds);
+      if (profiles) {
+        indivProfileMap = new Map(profiles.map(p => [p.id, p]));
+      }
+    }
+
+    // Fetch existing allocations
+    let allocations = [];
+    const { data: allocData } = await supabase
+      .from('team_allocations')
+      .select('*')
+      .eq('event_id', eventId);
+    if (allocData) allocations = allocData;
+
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
+
     // Fetch configured problem statements
     const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
+
+    const psCodeMapByPsId = new Map();
+    const psCodeMapByTitle = new Map();
+
+    (problemStatements || []).forEach(p => {
+      if (p.id) psCodeMapByPsId.set(String(p.id).trim(), p.code);
+      if (p.title) psCodeMapByTitle.set(String(p.title).trim().toLowerCase(), p.code);
+    });
+
+    const getPsCodeForAlloc = (alloc) => {
+      if (!alloc) return '';
+      if (alloc.problem_statement_id && psCodeMapByPsId.has(String(alloc.problem_statement_id).trim())) {
+        return psCodeMapByPsId.get(String(alloc.problem_statement_id).trim());
+      }
+      if (alloc.problem_statement && psCodeMapByTitle.has(String(alloc.problem_statement).trim().toLowerCase())) {
+        return psCodeMapByTitle.get(String(alloc.problem_statement).trim().toLowerCase());
+      }
+      return '';
+    };
+
+    const teamList = (teams || []).map(t => {
+      const alloc = teamAllocMap.get(t.id);
+      return {
+        teamId: t.id,
+        teamName: t.name || 'Unnamed Team',
+        isIndividual: false,
+        venueRoom: alloc && alloc.venue_room ? alloc.venue_room : '',
+        problemStatement: alloc && alloc.problem_statement ? alloc.problem_statement : '',
+        problemStatementCode: getPsCodeForAlloc(alloc),
+        isAllocated: !!alloc,
+        updatedAt: alloc ? alloc.updated_at : null
+      };
+    });
+
+    const indivList = (indivRegs || []).map(r => {
+      const alloc = userAllocMap.get(r.user_id);
+      const profile = indivProfileMap.get(r.user_id);
+      const name = profile ? profile.name : 'Individual Participant';
+      return {
+        teamId: `user_${r.user_id}`,
+        userId: r.user_id,
+        teamName: `${name} (Individual)`,
+        isIndividual: true,
+        venueRoom: alloc && alloc.venue_room ? alloc.venue_room : '',
+        problemStatement: alloc && alloc.problem_statement ? alloc.problem_statement : '',
+        problemStatementCode: getPsCodeForAlloc(alloc),
+        isAllocated: !!alloc,
+        updatedAt: alloc ? alloc.updated_at : null
+      };
+    });
+
+    const combinedList = [...teamList, ...indivList];
 
     res.json({
       allocations: combinedList,
@@ -846,6 +1240,7 @@ exports.getAllocationTemplateData = async (req, res) => {
 /**
  * POST /api/allocations/event/:eventId
  * Save / Upsert Allocations (Organizers only - Excel / Manual edit)
+ * ZERO emails when Venue changes! Email sent ONLY when Problem Statement is newly assigned/changed.
  */
 exports.saveTeamAllocations = async (req, res) => {
   try {
@@ -931,11 +1326,10 @@ exports.saveTeamAllocations = async (req, res) => {
       const existingRecord = targetTeamId ? existingTeamAllocMap.get(targetTeamId) : existingUserAllocMap.get(targetUserId);
       const oldProblemStatement = existingRecord ? String(existingRecord.problem_statement || '').trim() : '';
 
-      // VENUE IS MANDATORY FOR BULK ALLOCATION / SAVE
-      const finalVenueRoom = inputVenueRoom || (existingRecord ? (existingRecord.venue_room || '') : '');
-      if (!finalVenueRoom) {
-        return res.status(400).json({ message: `Venue / Room is required for team: ${teamName}` });
-      }
+      // VENUE AND PROBLEM STATEMENT ARE COMPLETELY INDEPENDENT
+      const finalVenueRoom = (inputVenueRoom !== '')
+        ? inputVenueRoom
+        : (existingRecord ? (existingRecord.venue_room || '') : '');
 
       // PROBLEM STATEMENT IS OPTIONAL
       let targetPS = null;
@@ -1004,6 +1398,8 @@ exports.saveTeamAllocations = async (req, res) => {
       if (targetUserId) record.user_id = targetUserId;
 
       recordsToUpsert.push(record);
+      
+      // STRICT EMAIL RULE: Send notification ONLY if Problem Statement is newly assigned or changed!
       if (isPsNewlyAssignedOrChanged) {
         recordsToNotify.push(record);
       }
@@ -1146,15 +1542,18 @@ exports.getMyTeamAllocation = async (req, res) => {
 
     const { data: alloc } = await allocQuery.maybeSingle();
 
-    if (alloc && alloc.problem_statement) {
+    const venueDisplay = (alloc && alloc.venue_room && alloc.venue_room.trim()) ? alloc.venue_room.trim() : 'Yet to assign';
+
+    if (alloc && alloc.problem_statement && alloc.problem_statement.trim() !== '') {
       let problemDescription = '';
+      let allocCode = '';
       try {
         let psInfo = null;
 
         if (alloc.problem_statement_id && typeof alloc.problem_statement_id === 'string' && alloc.problem_statement_id.length > 20) {
           const { data: infoById } = await supabase
             .from('event_problem_statements')
-            .select('description')
+            .select('code, description')
             .eq('event_id', eventId)
             .eq('id', alloc.problem_statement_id)
             .maybeSingle();
@@ -1164,7 +1563,7 @@ exports.getMyTeamAllocation = async (req, res) => {
         if (!psInfo && alloc.problem_statement) {
           const { data: infoByTitle } = await supabase
             .from('event_problem_statements')
-            .select('description')
+            .select('code, description')
             .eq('event_id', eventId)
             .eq('title', alloc.problem_statement)
             .maybeSingle();
@@ -1172,6 +1571,7 @@ exports.getMyTeamAllocation = async (req, res) => {
         }
 
         if (psInfo) {
+          allocCode = psInfo.code || '';
           problemDescription = psInfo.description || '';
         }
       } catch (psErr) {
@@ -1181,7 +1581,8 @@ exports.getMyTeamAllocation = async (req, res) => {
       return res.json({
         allocation: {
           teamName: teamName,
-          venueRoom: alloc.venue_room,
+          venueRoom: venueDisplay,
+          code: allocCode,
           problemStatement: alloc.problem_statement,
           description: problemDescription,
           updatedAt: alloc.updated_at,
@@ -1191,11 +1592,12 @@ exports.getMyTeamAllocation = async (req, res) => {
         checkedIn: isCheckedIn,
         isLeader,
         isIndividual: !isTeamReg,
+        venueRoom: venueDisplay,
         availableProblemStatements: []
       });
     }
 
-    // Check attendance check-in status if unallocated
+    // Unallocated state for Problem Statement
     if (!isCheckedIn) {
       return res.json({
         allocation: null,
@@ -1203,14 +1605,15 @@ exports.getMyTeamAllocation = async (req, res) => {
         checkedIn: false,
         isLeader,
         isIndividual: !isTeamReg,
-        message: 'Problem statement selection and venue allocation will be available after check-in.'
+        venueRoom: venueDisplay,
+        message: 'Problem statement selection will be available after attendance check-in.'
       });
     }
 
     // Fetch configured problem statements for selection if unallocated
     const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
 
-    const availableProblemStatements = (problemStatements || []).map(ps => {
+    const availableProblemStatements = (problemStatements || []).map((ps, i) => {
       const maxCap = Number(ps.max_capacity || 0);
       const allocCount = Number(ps.allocated_count || 0);
       const remainingSlots = Math.max(0, maxCap - allocCount);
@@ -1227,9 +1630,9 @@ exports.getMyTeamAllocation = async (req, res) => {
 
       return {
         id: ps.id,
+        code: ps.code || `PS${String(i + 1).padStart(2, '0')}`,
         title: ps.title,
         description: ps.description || '',
-        venueRoom: '', // VENUE HIDDEN BEFORE SELECTION
         maxCapacity: maxCap,
         allocatedCount: allocCount,
         remainingSlots,
@@ -1244,6 +1647,7 @@ exports.getMyTeamAllocation = async (req, res) => {
       checkedIn: true,
       isLeader,
       isIndividual: !isTeamReg,
+      venueRoom: venueDisplay,
       availableProblemStatements,
       message: isTeamReg 
         ? (isLeader ? 'Please select a problem statement for your team.' : 'Waiting for your team leader to make a selection.')
@@ -1301,5 +1705,61 @@ exports.deleteAllocation = async (req, res) => {
   } catch (err) {
     console.error('deleteAllocation error:', err.message);
     res.status(500).json({ message: 'Failed to remove allocation.', error: err.message });
+  }
+};
+
+/**
+ * GET /api/allocations/event/:eventId/problem-statement-pdf
+ * System-Generated Problem Statement PDF download for an event
+ * Attendance-gated for participants: requires attendance_status === 'Present'!
+ */
+exports.getProblemStatementPdf = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    const { data: event } = await supabase.from('events').select('id, title').eq('id', eventId).maybeSingle();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+
+    if (!isOrganizer) {
+      // BACKEND ATTENDANCE CHECK: Participant MUST be marked 'Present'
+      const { data: registration } = await supabase
+        .from('event_registrations')
+        .select('status, attendance_status')
+        .eq('event_id', eventId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!registration || registration.status !== 'registered') {
+        return res.status(403).json({ message: 'No active registration found for this event.' });
+      }
+
+      if (registration.attendance_status !== 'Present') {
+        return res.status(403).json({
+          message: 'Attendance check-in is required before accessing the problem statement document.',
+          attendanceRequired: true
+        });
+      }
+    }
+
+    const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
+
+    if (!problemStatements || problemStatements.length === 0) {
+      return res.status(404).json({
+        message: 'No problem statements have been configured for this event yet.'
+      });
+    }
+
+    const pdfBuffer = await generateProblemStatementsPdfBuffer(event.title, problemStatements);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Problem_Statements_${eventId}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('getProblemStatementPdf error:', err.message);
+    res.status(500).json({ message: 'Failed to generate Problem Statement PDF.', error: err.message });
   }
 };

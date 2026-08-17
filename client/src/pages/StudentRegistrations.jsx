@@ -814,13 +814,16 @@ const StudentRegistrations = () => {
                         const allocData = teamAllocations[eventId];
                         if (!allocData) return null;
 
-                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message } = allocData;
+                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message, venueRoom } = allocData;
+                        const displayVenue = (venueRoom && venueRoom.trim()) ? venueRoom.trim() : 'Yet to assign';
 
                         // Only show for confirmed teams or individual registrations
                         if (!teamConfirmed) return null;
 
-                        // 1. If ALREADY has an assigned allocation (by Admin, Leader, or Individual selection), render it immediately!
-                        if (allocation) {
+                        // 1. If ALREADY has an assigned Problem Statement (by Admin, Leader, or Individual selection), render it immediately!
+                        if (allocation && allocation.problemStatement && allocation.problemStatement.trim() !== '') {
+                          const allocVenue = allocation.venueRoom && allocation.venueRoom.trim() ? allocation.venueRoom.trim() : displayVenue;
+
                           return (
                             <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in space-y-3">
                               <div className="flex items-center justify-between">
@@ -836,7 +839,9 @@ const StudentRegistrations = () => {
                               <div className="space-y-2 text-xs">
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 space-y-1">
                                   <div className="text-[10px] font-extrabold uppercase tracking-wider text-text-secondary">Problem Statement</div>
-                                  <div className="font-bold text-sm text-text-primary">{allocation.problemStatement}</div>
+                                  <div className="font-bold text-sm text-text-primary">
+                                    {allocation.code ? `[${allocation.code}] ${allocation.problemStatement}` : allocation.problemStatement}
+                                  </div>
                                   {allocation.description && (
                                     <p className="text-xs text-text-secondary mt-1 leading-relaxed">{allocation.description}</p>
                                   )}
@@ -844,7 +849,33 @@ const StudentRegistrations = () => {
 
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 flex items-center justify-between">
                                   <span className="text-text-secondary font-semibold text-xs">📍 Allocated Venue / Room</span>
-                                  <span className="font-extrabold text-violet-600 dark:text-violet-400 text-xs">{allocation.venueRoom}</span>
+                                  <span className="font-extrabold text-violet-600 dark:text-violet-400 text-xs">{allocVenue}</span>
+                                </div>
+
+                                <div className="pt-1 flex justify-end">
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const res = await axios.get(`/api/allocations/event/${eventId}/problem-statement-pdf`, {
+                                          responseType: 'blob'
+                                        });
+                                        const blob = new Blob([res.data], { type: 'application/pdf' });
+                                        const url = window.URL.createObjectURL(blob);
+                                        const link = document.createElement('a');
+                                        link.href = url;
+                                        link.download = `Problem_Statements_${eventId}.pdf`;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        link.remove();
+                                        window.URL.revokeObjectURL(url);
+                                      } catch (err) {
+                                        alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
+                                      }
+                                    }}
+                                    className="px-3.5 py-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-xl text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1.5"
+                                  >
+                                    📄 Download Problem Statement PDF
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -854,14 +885,26 @@ const StudentRegistrations = () => {
                         // 2. If unallocated and student hasn't scanned QR / checked in yet
                         if (!checkedIn) {
                           return (
-                            <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in">
-                              <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span>📍</span>
-                                <span>Event Allocation</span>
+                            <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>🔒</span>
+                                  <span>Problem Statement Selection & PDF</span>
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                  Check-in Required
+                                </span>
                               </div>
-                              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium mt-1">
-                                Allocation will be available after check-in.
+                              
+                              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                                Attendance check-in is required before accessing the problem statement document or making a selection.
                               </p>
+
+                              {displayVenue !== 'Yet to assign' && (
+                                <div className="text-xs font-semibold text-text-primary pt-1">
+                                  📍 Assigned Venue / Room: <span className="font-extrabold text-violet-600">{displayVenue}</span>
+                                </div>
+                              )}
                             </div>
                           );
                         }
@@ -869,19 +912,49 @@ const StudentRegistrations = () => {
                         // 3. If checked in, but problem statement not selected yet and user is not team leader
                         if (!isLeader) {
                           return (
-                            <div className="mt-4 p-4 bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/20 rounded-2xl animate-fade-in">
-                              <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <span>📍</span>
-                                <span>Problem Statement Selection</span>
+                            <div className="mt-4 p-4 bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/20 rounded-2xl animate-fade-in space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>📍</span>
+                                  <span>Problem Statement Selection</span>
+                                </div>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const res = await axios.get(`/api/allocations/event/${eventId}/problem-statement-pdf`, {
+                                        responseType: 'blob'
+                                      });
+                                      const blob = new Blob([res.data], { type: 'application/pdf' });
+                                      const url = window.URL.createObjectURL(blob);
+                                      const link = document.createElement('a');
+                                      link.href = url;
+                                      link.download = `Problem_Statements_${eventId}.pdf`;
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      link.remove();
+                                      window.URL.revokeObjectURL(url);
+                                    } catch (err) {
+                                      alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
+                                    }
+                                  }}
+                                  className="px-3 py-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-lg text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1"
+                                >
+                                  📄 View PDF Document
+                                </button>
                               </div>
-                              <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mt-1">
+                              <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
                                 {message || 'Waiting for your team leader to make a selection.'}
                               </p>
+                              {displayVenue !== 'Yet to assign' && (
+                                <div className="text-xs font-semibold text-text-primary pt-1">
+                                  📍 Assigned Venue / Room: <span className="font-extrabold text-violet-600">{displayVenue}</span>
+                                </div>
+                              )}
                             </div>
                           );
                         }
 
-                        // 4. PROBLEM STATEMENT SELECTION INTERFACE (Leader or Individual)
+                        // 4. PROBLEM STATEMENT SELECTION INTERFACE (Leader or Individual - Checked In!)
                         return (
                           <div className="mt-4 p-5 bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-slate-900/10 dark:from-violet-950/40 dark:via-purple-950/20 dark:to-slate-900/40 border border-violet-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-violet-500/15 pb-3.5">
@@ -899,10 +972,39 @@ const StudentRegistrations = () => {
                                     ? 'Select one problem statement for your event. Your selection will be final after confirmation.'
                                     : 'Select one problem statement for your entire team. Your selection will be final after confirmation.'}
                                 </p>
+                                {displayVenue !== 'Yet to assign' && (
+                                  <div className="text-xs font-bold text-violet-600 dark:text-violet-400 pt-1 flex items-center gap-1">
+                                    <span>📍 Assigned Venue / Room:</span>
+                                    <span>{displayVenue}</span>
+                                  </div>
+                                )}
                               </div>
-                              <span className="self-start sm:self-auto text-[10px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-violet-600 text-white shadow-xs">
-                                {isIndividual ? 'Participant Selection' : 'Leader Selection Only'}
-                              </span>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const res = await axios.get(`/api/allocations/event/${eventId}/problem-statement-pdf`, {
+                                        responseType: 'blob'
+                                      });
+                                      const blob = new Blob([res.data], { type: 'application/pdf' });
+                                      const url = window.URL.createObjectURL(blob);
+                                      const link = document.createElement('a');
+                                      link.href = url;
+                                      link.download = `Problem_Statements_${eventId}.pdf`;
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      link.remove();
+                                      window.URL.revokeObjectURL(url);
+                                    } catch (err) {
+                                      alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
+                                    }
+                                  }}
+                                  className="px-3.5 py-1.5 bg-violet-600 text-white rounded-xl text-xs font-bold hover:bg-violet-700 transition-all flex items-center gap-1.5 shadow-sm"
+                                >
+                                  📄 Download Problem Statements PDF
+                                </button>
+                              </div>
                             </div>
 
                             {psError && (
@@ -921,18 +1023,19 @@ const StudentRegistrations = () => {
                                 {availableProblemStatements.map((ps, idx) => {
                                   const { remainingSlots, maxCapacity, isFull, availabilityState } = ps;
                                   const isSelected = selectedPsToConfirm?.ps?.id === ps.id;
+                                  const psCode = ps.code || `PS${String(idx + 1).padStart(2, '0')}`;
                                   
                                   let badgeBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
                                   let progressBg = 'bg-emerald-500';
                                   let dotColor = 'bg-emerald-500';
-                                  let statusText = `${remainingSlots} slots remaining`;
+                                  let statusText = `${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} remaining`;
 
-                                  if (availabilityState === 'full') {
+                                  if (isFull || availabilityState === 'full' || remainingSlots <= 0) {
                                     badgeBg = 'bg-slate-500/10 text-slate-500 dark:text-slate-400 border-slate-500/20';
                                     progressBg = 'bg-slate-400';
                                     dotColor = 'bg-slate-400';
-                                    statusText = `0 slots remaining`;
-                                  } else if (availabilityState === 'critical') {
+                                    statusText = `FULL`;
+                                  } else if (availabilityState === 'critical' || remainingSlots === 1) {
                                     badgeBg = 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
                                     progressBg = 'bg-red-500';
                                     dotColor = 'bg-red-500';
@@ -961,7 +1064,7 @@ const StudentRegistrations = () => {
                                       <div className="space-y-3">
                                         <div className="flex justify-between items-center pb-2.5 border-b border-pastel-lavender/10">
                                           <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400">
-                                            Problem Statement {String(idx + 1).padStart(2, '0')}
+                                            {psCode}
                                           </span>
                                           <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${badgeBg}`}>
                                             <span className={`w-2 h-2 rounded-full ${dotColor} animate-pulse`} />
@@ -971,15 +1074,11 @@ const StudentRegistrations = () => {
 
                                         <div className="space-y-1.5">
                                           <h5 className="font-heading font-extrabold text-sm text-text-primary group-hover:text-violet-600 transition-colors leading-snug">
-                                            {ps.title}
+                                            [{psCode}] {ps.title}
                                           </h5>
-                                          {ps.description ? (
+                                          {ps.description && (
                                             <p className="text-xs text-text-secondary leading-relaxed line-clamp-3">
                                               {ps.description}
-                                            </p>
-                                          ) : (
-                                            <p className="text-xs text-text-secondary italic opacity-60">
-                                              No description provided.
                                             </p>
                                           )}
                                         </div>
@@ -2029,11 +2128,6 @@ const StudentRegistrations = () => {
                   <p className="font-bold text-sm text-violet-600 dark:text-violet-400">
                     {selectedPsToConfirm.ps.title}
                   </p>
-                  {selectedPsToConfirm.ps.venueRoom && (
-                    <p className="text-[11px] font-semibold text-text-primary">
-                      📍 Assigned Venue / Room: {selectedPsToConfirm.ps.venueRoom}
-                    </p>
-                  )}
                 </div>
                 <p className="text-amber-600 dark:text-amber-400 font-semibold pt-1">
                   ⚠️ Note: This selection will be assigned to your team and locked.

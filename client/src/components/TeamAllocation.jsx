@@ -32,6 +32,11 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
   const [editingTeamId, setEditingTeamId] = useState(null);
   const [editForm, setEditForm] = useState({ venueRoom: '', problemStatement: '' });
 
+  // PDF Upload State
+  const [pdfInfo, setPdfInfo] = useState({ pdfUrl: null, fileName: null });
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfFileInputRef = useRef(null);
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -56,10 +61,10 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
         // Initialize local config form
         if (psArr.length > 0) {
-          setPsList(psArr.map(p => ({
+          setPsList(psArr.map((p, i) => ({
             id: p.id,
+            code: p.code || `PS${String(i + 1).padStart(2, '0')}`,
             title: p.title || '',
-            venueRoom: p.venue_room || '',
             description: p.description || '',
             maxCapacity: p.max_capacity || 1,
             allocatedCount: p.allocated_count || 0
@@ -72,8 +77,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
           const defaults = Array.from({ length: 5 }, (_, i) => ({
             id: `temp_${i}`,
+            code: `PS${String(i + 1).padStart(2, '0')}`,
             title: `Problem Statement ${i + 1}`,
-            venueRoom: `Room ${101 + i}`,
             description: '',
             maxCapacity: i === 0 ? defaultPerPs + rem : defaultPerPs,
             allocatedCount: 0
@@ -86,6 +91,41 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       setError(err.response?.data?.message || 'Failed to load team allocation data.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadGeneratedPdf = async () => {
+    try {
+      setStatusMessage(null);
+      const res = await axios.get(`/api/allocations/event/${eventId}/problem-statement-pdf`, {
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Problem_Statements_${eventId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setStatusMessage({ type: 'success', text: 'Problem Statement PDF generated and downloaded successfully.' });
+    } catch (err) {
+      console.error('PDF Download Error:', err);
+      let errorText = 'Failed to generate Problem Statement PDF. Please configure and save problem statements first.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const parsed = JSON.parse(text);
+          if (parsed.message) errorText = parsed.message;
+        } catch (e) {}
+      } else if (err.response?.data?.message) {
+        errorText = err.response.data.message;
+      }
+      setStatusMessage({
+        type: 'error',
+        text: errorText
+      });
     }
   };
 
@@ -668,7 +708,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 <p className="text-xs text-text-secondary">Add, edit, or remove problem statements and set maximum team slot capacities.</p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleAddProblemStatement}
                   className="px-3.5 py-2 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-xl text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1.5"
@@ -680,7 +720,14 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                   disabled={savingConfig}
                   className="btn-primary px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md disabled:opacity-40 transition-all"
                 >
-                  {savingConfig ? 'Saving Configuration...' : 'Save Configuration'}
+                  {savingConfig ? 'Saving Configuration...' : '💾 Save Configuration'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadGeneratedPdf}
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                >
+                  📄 Download Problem Statements PDF
                 </button>
               </div>
             </div>
@@ -691,7 +738,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 <div key={ps.id || idx} className="bg-white/60 dark:bg-slate-900/60 p-4 rounded-xl border border-pastel-lavender/20 space-y-3 relative group transition-all hover:border-violet-500/30 shadow-sm">
                   <div className="flex justify-between items-center pb-2 border-b border-pastel-lavender/10">
                     <span className="text-xs font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
-                      Problem Statement #{idx + 1}
+                      Problem Statement #{idx + 1} ({ps.code || `PS${String(idx + 1).padStart(2, '0')}`})
                     </span>
                     <button
                       onClick={() => handleRemoveProblemStatement(idx)}
@@ -704,9 +751,22 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                     
-                    <div className="md:col-span-8">
+                    <div className="md:col-span-3">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                        Title
+                        PS Code / ID
+                      </label>
+                      <input
+                        type="text"
+                        value={ps.code || `PS${String(idx + 1).padStart(2, '0')}`}
+                        onChange={(e) => handlePsChange(idx, 'code', e.target.value)}
+                        placeholder="e.g. PS01"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-bold focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-6">
+                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                        Title / Name
                       </label>
                       <input
                         type="text"
@@ -717,9 +777,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                       />
                     </div>
 
-                    <div className="md:col-span-4">
+                    <div className="md:col-span-3">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                        Capacity (Max Team Slots)
+                        Capacity (Max Slots)
                       </label>
                       <input
                         type="number"
@@ -732,13 +792,13 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
                     <div className="md:col-span-12">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                        Description (Optional)
+                        Description (Guidelines & Specifications)
                       </label>
                       <textarea
                         rows="2"
                         value={ps.description || ''}
                         onChange={(e) => handlePsChange(idx, 'description', e.target.value)}
-                        placeholder="Enter problem statement guidelines, description, or instructions..."
+                        placeholder="Enter problem statement guidelines, detailed description, or instructions..."
                         className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-medium focus:outline-none focus:border-violet-500 resize-none"
                       />
                     </div>
@@ -942,10 +1002,10 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                     ) : (
                       <>
                         <td className="px-6 py-4 font-bold text-violet-600 dark:text-violet-400">
-                          {team.venueRoom ? `📍 ${team.venueRoom}` : <span className="text-text-secondary italic">Not assigned</span>}
+                          {team.venueRoom && team.venueRoom.trim() ? `📍 ${team.venueRoom.trim()}` : <span className="text-amber-500 font-semibold">Yet to assign</span>}
                         </td>
                         <td className="px-6 py-4 text-text-primary max-w-sm truncate">
-                          {team.problemStatement ? `📌 ${team.problemStatement}` : <span className="text-text-secondary italic">Not assigned</span>}
+                          {team.problemStatement ? `📌 ${team.problemStatementCode ? `[${team.problemStatementCode}] ` : ''}${team.problemStatement}` : <span className="text-text-secondary italic">Not assigned</span>}
                         </td>
                         <td className="px-6 py-4">
                           {team.isAllocated ? (
