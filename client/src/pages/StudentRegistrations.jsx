@@ -1021,41 +1021,14 @@ const StudentRegistrations = () => {
                             ) : (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                                 {availableProblemStatements.map((ps, idx) => {
-                                  const { remainingSlots, maxCapacity, isFull, availabilityState } = ps;
                                   const isSelected = selectedPsToConfirm?.ps?.id === ps.id;
                                   const psCode = ps.code || `PS${String(idx + 1).padStart(2, '0')}`;
-                                  
-                                  let badgeBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-                                  let progressBg = 'bg-emerald-500';
-                                  let dotColor = 'bg-emerald-500';
-                                  let statusText = `${remainingSlots} slot${remainingSlots === 1 ? '' : 's'} remaining`;
-
-                                  if (isFull || availabilityState === 'full' || remainingSlots <= 0) {
-                                    badgeBg = 'bg-slate-500/10 text-slate-500 dark:text-slate-400 border-slate-500/20';
-                                    progressBg = 'bg-slate-400';
-                                    dotColor = 'bg-slate-400';
-                                    statusText = `FULL`;
-                                  } else if (availabilityState === 'critical' || remainingSlots === 1) {
-                                    badgeBg = 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20';
-                                    progressBg = 'bg-red-500';
-                                    dotColor = 'bg-red-500';
-                                    statusText = `1 slot remaining`;
-                                  } else if (availabilityState === 'moderate') {
-                                    badgeBg = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
-                                    progressBg = 'bg-amber-500';
-                                    dotColor = 'bg-amber-500';
-                                    statusText = `${remainingSlots} slots remaining`;
-                                  }
-
-                                  const pct = Math.min(100, Math.round(((maxCapacity - remainingSlots) / maxCapacity) * 100));
 
                                   return (
                                     <div 
                                       key={ps.id || idx}
                                       className={`group rounded-2xl p-5 border-2 transition-all flex flex-col justify-between shadow-sm relative ${
-                                        isFull 
-                                          ? 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-300/30 opacity-60' 
-                                          : isSelected
+                                        isSelected
                                           ? 'bg-violet-500/10 dark:bg-violet-950/40 border-violet-500 shadow-md ring-2 ring-violet-500/20'
                                           : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-violet-500/40 hover:shadow-soft'
                                       }`}
@@ -1066,10 +1039,11 @@ const StudentRegistrations = () => {
                                           <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400">
                                             {psCode}
                                           </span>
-                                          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${badgeBg}`}>
-                                            <span className={`w-2 h-2 rounded-full ${dotColor} animate-pulse`} />
-                                            <span>{statusText}</span>
-                                          </span>
+                                          {isSelected && (
+                                            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20">
+                                              ✓ Selected
+                                            </span>
+                                          )}
                                         </div>
 
                                         <div className="space-y-1.5">
@@ -1084,31 +1058,18 @@ const StudentRegistrations = () => {
                                         </div>
                                       </div>
 
-                                      {/* Card Bottom Actions & Progress */}
-                                      <div className="space-y-3.5 pt-4 mt-4 border-t border-pastel-lavender/10">
-                                        <div className="space-y-1">
-                                          <div className="flex justify-between text-[10px] font-semibold text-text-secondary">
-                                            <span>Slot Capacity</span>
-                                            <span>{maxCapacity - remainingSlots} / {maxCapacity} Allocated</span>
-                                          </div>
-                                          <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                            <div className={`h-full transition-all duration-500 ${progressBg}`} style={{ width: `${pct}%` }} />
-                                          </div>
-                                        </div>
-
+                                      {/* Card Bottom Actions */}
+                                      <div className="pt-4 mt-4 border-t border-pastel-lavender/10">
                                         <div className="flex justify-end">
                                           <button
-                                            disabled={isFull}
                                             onClick={() => setSelectedPsToConfirm({ eventId, ps })}
                                             className={`px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                                              isFull 
-                                                ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed'
-                                                : isSelected
+                                              isSelected
                                                 ? 'bg-violet-600 text-white ring-2 ring-violet-500/40'
                                                 : 'btn-primary text-white hover:shadow-md'
                                             }`}
                                           >
-                                            {isFull ? 'Completely Full' : isSelected ? '✓ Selected' : 'Select'}
+                                            {isSelected ? '✓ Selected' : 'Select'}
                                           </button>
                                         </div>
                                       </div>
