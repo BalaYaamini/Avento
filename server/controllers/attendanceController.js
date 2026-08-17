@@ -110,7 +110,7 @@ exports.getEventAttendance = async (req, res) => {
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
     const { data: attendance, error } = await supabase
       .from('event_registrations')
-      .select('*, userId:profiles(*), eventId:events(*)')
+      .select('*, userId:profiles!event_registrations_user_id_fkey(*), eventId:events(*)')
       .eq('event_id', eventId)
       .eq('attendance_status', 'Present');
 
