@@ -470,18 +470,18 @@ exports.saveProblemStatements = async (req, res) => {
         existingRecordsToUpdate.push({
           id: String(ps.id).trim(),
           event_id: eventId,
-          code,
           title,
           description,
+          max_capacity: 99999,
           updated_at: new Date().toISOString()
         });
       } else {
         // NEW record: OMIT id property completely so PostgreSQL DEFAULT gen_random_uuid() triggers
         newRecordsToInsert.push({
           event_id: eventId,
-          code,
           title,
           description,
+          max_capacity: 99999,
           updated_at: new Date().toISOString()
         });
       }
@@ -1699,11 +1699,13 @@ exports.uploadProblemStatementPdf = async (req, res) => {
       throw new Error('Failed to retrieve public URL for uploaded PDF.');
     }
 
+    const pdfUrlWithName = `${pdfUrl}?filename=${encodeURIComponent(fileName)}`;
+
     // Update events table
     const { error: updateErr } = await supabase
       .from('events')
       .update({
-        problem_statement_pdf_url: pdfUrl,
+        problem_statement_pdf_url: pdfUrlWithName,
         updated_at: new Date().toISOString()
       })
       .eq('id', eventId);
@@ -1712,7 +1714,7 @@ exports.uploadProblemStatementPdf = async (req, res) => {
 
     res.json({
       message: 'Problem Statement PDF uploaded successfully!',
-      pdfUrl,
+      pdfUrl: pdfUrlWithName,
       fileName
     });
   } catch (err) {
@@ -1770,12 +1772,20 @@ exports.getProblemStatementPdf = async (req, res) => {
 
     const pdfUrl = event.problem_statement_pdf_url.trim();
 
+    // Extract filename from URL query param or fallback to event title
+    let downloadFilename = `${(event.title || 'Problem_Statement').replace(/[^a-zA-Z0-9_\- ]/g, '_').replace(/\s+/g, '_')}.pdf`;
+    try {
+      const urlObj = new URL(pdfUrl);
+      const fnParam = urlObj.searchParams.get('filename');
+      if (fnParam) downloadFilename = fnParam;
+    } catch (e) {}
+
     // Stream uploaded PDF via axios or redirect
     const axios = require('axios');
-    const pdfResponse = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
+    const pdfResponse = await axios.get(pdfUrl.split('?')[0], { responseType: 'arraybuffer' });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Problem_Statements_${eventId}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
     res.setHeader('Content-Length', pdfResponse.data.length);
     res.send(Buffer.from(pdfResponse.data));
   } catch (err) {
