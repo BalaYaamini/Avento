@@ -1189,7 +1189,7 @@ exports.confirmTeamRegistration = async (req, res) => {
     // 1. Fetch team & associated event details
     const { data: teamData, error: teamErr } = await supabase
       .from('event_teams')
-      .select('event_id')
+      .select('event_id, events(*)')
       .eq('id', teamId)
       .eq('leader_id', leaderId)
       .single();
