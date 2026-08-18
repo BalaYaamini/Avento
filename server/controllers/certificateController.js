@@ -39,7 +39,6 @@ exports.uploadTemplate = async (req, res) => {
       return res.status(400).json({ message: 'No template file uploaded.' });
     }
 
-    // Verify user is allowed (Faculty or Student Organizer of this event)
     const { data: event, error: eventErr } = await supabase
       .from('events')
       .select('*')
@@ -76,10 +75,8 @@ exports.uploadTemplate = async (req, res) => {
       .from('certificates')
       .getPublicUrl(fileName);
 
-    // Append timestamp to bust browser and CDN caches so the user sees the latest position
     const templatePath = `${publicUrlData.publicUrl}?t=${Date.now()}`;
     
-    // Default config (A4 Landscape roughly: 842 x 595)
     const defaultConfig = {
       STUDENT_NAME: { x: 421, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
       QR_CODE: { x: 692, y: 440, fontSize: 80, fontFamily: 'Helvetica', align: 'left', color: '#000000' }
@@ -326,6 +323,7 @@ exports.generateAllCertificates = async (req, res) => {
       return res.status(400).json({ message: 'No certificate template uploaded for this event.' });
     }
 
+    // Get all approved/registered participants marked Present
     const { data: registrations } = await supabase
       .from('event_registrations')
       .select('user_id, attendance_status')
@@ -348,15 +346,20 @@ exports.generateAllCertificates = async (req, res) => {
       return res.status(400).json({ message: 'No participant profiles found.' });
     }
 
-    // Batch-check which users already have certificates (single query, not per-user)
+    // Batch-check which users already have PARTICIPANT certificates (single query, distinguishing type)
     const { data: existingCerts } = await supabase
       .from('certificates')
-      .select('user_id')
+      .select('user_id, certificate_type')
       .eq('event_id', eventId)
       .in('user_id', eligibleUserIds);
 
-    const existingUserIds = new Set((existingCerts || []).map(c => c.user_id));
-    const pendingProfiles = profiles.filter(p => !existingUserIds.has(p.id));
+    // Only filter out users who already have a participant certificate (or type is null/default participant)
+    const existingParticipantUserIds = new Set(
+      (existingCerts || [])
+        .filter(c => !c.certificate_type || c.certificate_type === 'participant')
+        .map(c => c.user_id)
+    );
+    const pendingProfiles = profiles.filter(p => !existingParticipantUserIds.has(p.id));
 
     if (pendingProfiles.length === 0) {
       return res.json({ message: 'All certificates already generated.', generated: 0, skipped: profiles.length });
@@ -378,14 +381,22 @@ exports.generateAllCertificates = async (req, res) => {
       const { succeeded, failed } = await processBatch(batch, async (profile) => {
         const certId = generateCertId();
         const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName, templateCache);
-        return { event_id: eventId, user_id: profile.id, certificate_id: certId, certificate_url: certUrl, profile };
+        return { event_id: eventId, user_id: profile.id, certificate_id: certId, certificate_url: certUrl, certificate_type: 'participant', profile };
       });
 
       allFailed.push(...failed);
 
       if (succeeded.length > 0) {
         const insertRows = succeeded.map(({ profile, ...rest }) => rest);
-        const { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        let { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        if (batchInsertErr && batchInsertErr.message?.includes('certificate_type')) {
+          // Fallback if DB schema lacks certificate_type column
+          const fallbackRows = insertRows.map(({ certificate_type, ...row }) => row);
+          const { error: fallbackErr } = await supabase.from('certificates').insert(fallbackRows);
+          if (fallbackErr) batchInsertErr = fallbackErr;
+          else batchInsertErr = null;
+        }
+
         if (batchInsertErr) {
           console.error('[Certificates] Batch insert error:', batchInsertErr.message);
           allFailed.push(...insertRows.map(r => ({ userId: r.user_id, error: batchInsertErr.message })));
@@ -467,12 +478,13 @@ exports.generateSingleCertificate = async (req, res) => {
       return res.status(403).json({ message: "Certificate can only be generated for students marked Present." });
     }
 
-    // Check if already generated
+    // Check if already generated (participant type)
     const { data: existing } = await supabase
       .from('certificates')
       .select('*')
       .eq('event_id', eventId)
       .eq('user_id', userId)
+      .or('certificate_type.eq.participant,certificate_type.is.null')
       .maybeSingle();
 
     if (existing) {
@@ -486,14 +498,20 @@ exports.generateSingleCertificate = async (req, res) => {
     const certId = generateCertId();
     const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
 
-    const { data: newCert, error: insertErr } = await supabase.from('certificates').insert({
+    const insertPayload = {
       event_id: eventId,
       user_id: userId,
       certificate_id: certId,
-      certificate_url: certUrl
-    }).select().single();
+      certificate_url: certUrl,
+      certificate_type: 'participant'
+    };
 
-    if (insertErr) throw insertErr;
+    let { data: newCert, error: insertErr } = await supabase.from('certificates').insert(insertPayload).select().single();
+    if (insertErr) {
+      delete insertPayload.certificate_type;
+      const res = await supabase.from('certificates').insert(insertPayload).select().single();
+      newCert = res.data;
+    }
 
     // Notify user about certificate
     try {
@@ -545,11 +563,9 @@ exports.generateTestCertificate = async (req, res) => {
     if (!profile) return res.status(404).json({ message: 'User not found.' });
 
     const { facultyName, organizerName } = await fetchOrganizerNames(event);
-    // Use a dummy ID for the test certificate
     const certId = 'CERT-TEST-PREVIEW';
     const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
 
-    // Return the URL directly without saving to the DB
     res.json({ message: 'Test certificate generated successfully.', certificate_url: certUrl });
   } catch (err) {
     console.error(err);
@@ -667,7 +683,14 @@ exports.generateAllOrganizerCertificates = async (req, res) => {
 
       if (succeeded.length > 0) {
         const insertRows = succeeded.map(({ profile, ...rest }) => rest);
-        const { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        let { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        if (batchInsertErr && batchInsertErr.message?.includes('certificate_type')) {
+          const fallbackRows = insertRows.map(({ certificate_type, ...row }) => row);
+          const { error: fallbackErr } = await supabase.from('certificates').insert(fallbackRows);
+          if (fallbackErr) batchInsertErr = fallbackErr;
+          else batchInsertErr = null;
+        }
+
         if (batchInsertErr) {
           console.error('[Org Certs] Batch insert error:', batchInsertErr.message);
           allFailed.push(...insertRows.map(r => ({ userId: r.user_id, error: batchInsertErr.message })));
