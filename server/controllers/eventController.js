@@ -1699,37 +1699,39 @@ const withdrawOrganizerRequest = async (req, res) => {
 // PROPOSAL WORKSPACE CONTROLLERS
 // ==========================================
 
-// Helper function to check if user is an Organizer for the Proposal Workspace
+// Helper function to check if user is a Core Organizer for the Proposal Workspace
 const checkCoreOrganizerAccess = async (eventId, event, user) => {
   if (!user || !user.id || !user.roles) return false;
-  const isAdmin = user.roles.includes('admin');
-  const isFaculty = String(user.id) === String(event.faculty_id);
-  const isCreator = String(user.id) === String(event.proposed_by) || 
-                    String(user.id) === String(event.student_organizer_id) || 
-                    String(user.id) === String(event.organizer_id) ||
-                    String(user.id) === String(event.created_by);
+  const isAdmin = user.roles.includes('admin') || user.role === 'admin';
+  const isFaculty = String(user.id) === String(event?.faculty_id) || user.roles.includes('faculty') || user.roles.includes('faculty_organizer');
+  const isCreator = String(user.id) === String(event?.proposed_by) || 
+                    String(user.id) === String(event?.student_organizer_id) || 
+                    String(user.id) === String(event?.organizer_id) ||
+                    String(user.id) === String(event?.created_by);
 
   if (isAdmin || isFaculty || isCreator) return true;
 
-  // Check if they are an organizer in event_organizers (student or faculty organizer)
+  // Check if they are a core organizer in event_organizers
   const { data: org } = await supabase
     .from('event_organizers')
-    .select('id')
+    .select('id, organizer_role, category')
     .eq('event_id', eventId)
     .eq('student_id', user.id)
     .maybeSingle();
 
-  if (org) return true;
+  if (org && (org.organizer_role === 'core' || org.category === 'Event Head' || org.category === 'Faculty Organizer')) return true;
 
-  // Check if they are an organizer in event_members
+  // Check if they are a core organizer in event_members
   const { data: member } = await supabase
     .from('event_members')
-    .select('id')
+    .select('id, organizer_type, role')
     .eq('event_id', eventId)
     .eq('user_id', user.id)
     .maybeSingle();
 
-  return !!member;
+  if (member && (member.organizer_type === 'core' || member.role === 'Event Head' || member.role === 'Core Organizer')) return true;
+
+  return false;
 };
 
 const getProposalWorkspace = async (req, res) => {

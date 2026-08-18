@@ -90,8 +90,19 @@ const VerifyCertificate = () => {
                 </span>
               </div>
 
+              {certData.certificateType && (
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100/80 gap-1">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Certificate Type</span>
+                  <span className="text-sm font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-lg w-fit">
+                    {certData.certificateType} Certificate
+                  </span>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100/80 gap-1">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Participant Name</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  {certData.certificateType === 'Organizer' ? 'Organizer Name' : 'Participant Name'}
+                </span>
                 <span className="text-sm font-bold text-slate-800">
                   {certData.studentName}
                 </span>

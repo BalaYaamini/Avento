@@ -53,15 +53,10 @@ exports.uploadTemplate = async (req, res) => {
       return res.status(404).json({ message: 'Event not found.' });
     }
 
-    const isAuthorized = 
-      req.user.roles.includes('admin') ||
-      event.faculty_id === userId ||
-      event.organizer_id === userId ||
-      event.student_organizer_id === userId ||
-      event.proposed_by === userId;
+    const isAuthorized = req.user.roles?.includes('admin') || req.user.role === 'admin';
 
     if (!isAuthorized) {
-      return res.status(403).json({ message: 'Not authorized to upload template for this event.' });
+      return res.status(403).json({ message: 'Access denied. Certificate administration is strictly reserved for Admins.' });
     }
 
     const file = req.file;
@@ -114,6 +109,11 @@ exports.uploadTemplate = async (req, res) => {
 // 1.5 Get Template Config
 exports.getTemplateConfig = async (req, res) => {
   try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Certificate configuration is strictly reserved for Admins.' });
+    }
+
     const { eventId } = req.params;
     const { data: event, error: eventErr } = await supabase
       .from('events')
@@ -151,15 +151,10 @@ exports.saveTemplateConfig = async (req, res) => {
       return res.status(404).json({ message: 'Event not found.' });
     }
 
-    const isAuthorized = 
-      req.user.roles.includes('admin') ||
-      event.faculty_id === userId ||
-      event.organizer_id === userId ||
-      event.student_organizer_id === userId ||
-      event.proposed_by === userId;
+    const isAuthorized = req.user.roles?.includes('admin') || req.user.role === 'admin';
 
     if (!isAuthorized) {
-      return res.status(403).json({ message: 'Not authorized to save config for this event.' });
+      return res.status(403).json({ message: 'Access denied. Certificate administration is strictly reserved for Admins.' });
     }
 
     const { error: updateErr } = await supabase
@@ -182,9 +177,11 @@ const createPdfCertificate = async (event, student, certId, facultyName = '', or
   let ext;
 
   if (templatePathStr.startsWith('http')) {
-    ext = path.extname(templatePathStr).split('?')[0].toLowerCase();
+    const cleanUrlPath = templatePathStr.split('?')[0];
+    ext = path.extname(cleanUrlPath).toLowerCase();
     if (!ext || ext === '') {
-      if (templatePathStr.includes('.png')) ext = '.png';
+      if (templatePathStr.includes('.pdf')) ext = '.pdf';
+      else if (templatePathStr.includes('.png')) ext = '.png';
       else if (templatePathStr.includes('.jpg') || templatePathStr.includes('.jpeg')) ext = '.jpg';
       else ext = '.png';
     }
@@ -351,6 +348,11 @@ const createPdfCertificate = async (event, student, certId, facultyName = '', or
 // 2. Generate Certificates (Bulk)
 exports.generateAllCertificates = async (req, res) => {
   try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Certificate generation is strictly reserved for Admins.' });
+    }
+
     const { eventId } = req.params;
     
     const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
@@ -436,6 +438,11 @@ exports.generateAllCertificates = async (req, res) => {
 // 3. Generate Certificate (Single)
 exports.generateSingleCertificate = async (req, res) => {
   try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Certificate generation is strictly reserved for Admins.' });
+    }
+
     const { eventId, userId } = req.params;
     
     const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
@@ -516,6 +523,11 @@ exports.generateSingleCertificate = async (req, res) => {
 // 4. Generate TEST Certificate (Preview)
 exports.generateTestCertificate = async (req, res) => {
   try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Certificate generation is strictly reserved for Admins.' });
+    }
+
     const { eventId } = req.params;
     const userId = req.user.id;
     
@@ -540,6 +552,199 @@ exports.generateTestCertificate = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error generating test certificate.', error: err.message });
+  }
+};
+
+// Helper to fetch all unique eligible organizers for an event
+const getEligibleEventOrganizers = async (eventId) => {
+  const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
+  if (!event) return { event: null, organizers: [] };
+
+  const { data: orgs } = await supabase
+    .from('event_organizers')
+    .select('student_id')
+    .eq('event_id', eventId);
+
+  const { data: members } = await supabase
+    .from('event_members')
+    .select('user_id')
+    .eq('event_id', eventId);
+
+  const directIds = [
+    event.faculty_id,
+    event.student_organizer_id,
+    event.proposed_by,
+    event.organizer_id,
+    event.created_by
+  ].filter(Boolean);
+
+  const orgIds = (orgs || []).map(o => o.student_id).filter(Boolean);
+  const memIds = (members || []).map(m => m.user_id).filter(Boolean);
+
+  const allUserIds = [...new Set([...directIds, ...orgIds, ...memIds])];
+  if (allUserIds.length === 0) return { event, organizers: [] };
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, name, email, department')
+    .in('id', allUserIds);
+
+  return { event, organizers: profiles || [] };
+};
+
+// GET /api/certificates/organizers/:eventId (Admin Only)
+exports.getEligibleOrganizers = async (req, res) => {
+  try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+    const { eventId } = req.params;
+    const { organizers } = await getEligibleEventOrganizers(eventId);
+    res.json(organizers);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error fetching eligible organizers.', error: err.message });
+  }
+};
+
+// Generate Organizer Certificates (Bulk)
+exports.generateAllOrganizerCertificates = async (req, res) => {
+  try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Certificate generation is strictly reserved for Admins.' });
+    }
+
+    const { eventId } = req.params;
+    const { event, organizers } = await getEligibleEventOrganizers(eventId);
+
+    if (!event || event.status !== 'completed') {
+      return res.status(400).json({ message: 'Event not found or not completed.' });
+    }
+    if (!event.certificate_template) {
+      return res.status(400).json({ message: 'No certificate template uploaded for this event.' });
+    }
+    if (organizers.length === 0) {
+      return res.status(400).json({ message: 'No event organizers found for this event.' });
+    }
+
+    let generatedCount = 0;
+    const { facultyName, organizerName } = await fetchOrganizerNames(event);
+
+    for (const profile of organizers) {
+      const { data: existing } = await supabase
+        .from('certificates')
+        .select('*')
+        .eq('event_id', eventId)
+        .eq('user_id', profile.id)
+        .eq('certificate_type', 'organizer')
+        .maybeSingle();
+
+      if (!existing) {
+        const certId = `CERT-ORG-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
+
+        const insertPayload = {
+          event_id: eventId,
+          user_id: profile.id,
+          certificate_id: certId,
+          certificate_url: certUrl,
+          certificate_type: 'organizer'
+        };
+
+        const { error: insertErr } = await supabase.from('certificates').insert(insertPayload);
+        if (insertErr) {
+          delete insertPayload.certificate_type;
+          await supabase.from('certificates').insert(insertPayload);
+        }
+        generatedCount++;
+
+        try {
+          await notifyUser({
+            recipientId: profile.id,
+            title: 'Organizer Certificate Available',
+            message: `Your organizer certificate for "${event.title}" is ready for download.`,
+            type: 'success',
+            eventId: event.id,
+            emailSubject: 'Your Organizer Certificate is Ready',
+            emailData: {
+              eventName: event.title,
+              publishDate: new Date().toLocaleDateString(),
+              status: 'Published',
+              instructions: "Please log into AVENTO and navigate to the Certificates dashboard to download your verified organizer certificate."
+            }
+          });
+        } catch (notifErr) {
+          console.error('Non-fatal error sending organizer certificate notification:', notifErr.message);
+        }
+      }
+    }
+
+    res.json({ message: `Successfully generated ${generatedCount} organizer certificates.` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error generating organizer certificates.', error: err.message });
+  }
+};
+
+// Generate Organizer Certificate (Single)
+exports.generateSingleOrganizerCertificate = async (req, res) => {
+  try {
+    const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Access denied. Certificate generation is strictly reserved for Admins.' });
+    }
+
+    const { eventId, userId } = req.params;
+    const { event, organizers } = await getEligibleEventOrganizers(eventId);
+
+    if (!event || event.status !== 'completed') {
+      return res.status(400).json({ message: 'Event not found or not completed.' });
+    }
+    if (!event.certificate_template) {
+      return res.status(400).json({ message: 'No certificate template uploaded.' });
+    }
+
+    const organizerProfile = organizers.find(o => String(o.id) === String(userId));
+    if (!organizerProfile) {
+      return res.status(400).json({ message: 'User is not a registered organizer for this event.' });
+    }
+
+    const { data: existing } = await supabase
+      .from('certificates')
+      .select('*')
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+      .eq('certificate_type', 'organizer')
+      .maybeSingle();
+
+    if (existing) {
+      return res.json({ message: 'Organizer certificate already exists.', certificate: existing });
+    }
+
+    const { facultyName, organizerName } = await fetchOrganizerNames(event);
+    const certId = `CERT-ORG-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const certUrl = await createPdfCertificate(event, organizerProfile, certId, facultyName, organizerName);
+
+    const insertPayload = {
+      event_id: eventId,
+      user_id: userId,
+      certificate_id: certId,
+      certificate_url: certUrl,
+      certificate_type: 'organizer'
+    };
+
+    let { data: newCert, error: insertErr } = await supabase.from('certificates').insert(insertPayload).select().single();
+    if (insertErr) {
+      delete insertPayload.certificate_type;
+      const res = await supabase.from('certificates').insert(insertPayload).select().single();
+      newCert = res.data;
+    }
+
+    res.json({ message: 'Organizer certificate generated successfully.', certificate: newCert });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error generating organizer certificate.', error: err.message });
   }
 };
 
@@ -606,7 +811,8 @@ exports.verifyCertificate = async (req, res) => {
       eventDate: cert.eventId?.date ? new Date(cert.eventId.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A',
       issuingOrganization: profile?.department || 'AVENTO University System',
       status: cert.status ? cert.status.charAt(0).toUpperCase() + cert.status.slice(1) : 'Valid',
-      issuedAt: cert.issued_at
+      issuedAt: cert.issued_at,
+      certificateType: cert.certificate_type === 'organizer' ? 'Organizer' : 'Participant'
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error verifying certificate.', error: err.message });

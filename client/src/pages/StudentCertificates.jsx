@@ -84,9 +84,13 @@ const StudentCertificates = () => {
                 
                 <div className="p-6 md:p-8 relative z-10 flex flex-col h-full">
                   <div className="mb-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-pastel-lavender/10 text-pastel-lavender border border-pastel-lavender/20">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider ${
+                      cert.certificate_type === 'organizer' 
+                        ? 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+                        : 'bg-pastel-lavender/10 text-pastel-lavender border border-pastel-lavender/20'
+                    }`}>
                       <StarDoodle className="w-3 h-3" />
-                      {cert.eventId?.category || 'Event'}
+                      {cert.certificate_type === 'organizer' ? 'Organizer Certificate' : (cert.eventId?.category || 'Event')}
                     </span>
                   </div>
                   

@@ -9,9 +9,27 @@ const defaultFields = {
 
 const CertificateManager = ({ eventId, eventStatus }) => {
   const { user } = useAuth();
+  const isAdmin = user?.roles?.includes('admin') || user?.role === 'admin';
+  if (!isAdmin) return null;
+
   const [templateFile, setTemplateFile] = useState(null);
   const [templateUrl, setTemplateUrl] = useState(null);
+  const [config, setConfig] = useState(defaultFields);
+  const [certTypeMode, setCertTypeMode] = useState('participant');
   
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+  
+  // Visual Editor State
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [activeField, setActiveField] = useState(null);
+  const [draggingField, setDraggingField] = useState(null);
+  const [dragStart, setDragStart] = useState({ clickOffsetX: 0, clickOffsetY: 0 });
+
   const getFullImageUrl = (urlPath) => {
     if (!urlPath) return '';
     if (urlPath.startsWith('http')) return urlPath;
@@ -22,45 +40,38 @@ const CertificateManager = ({ eventId, eventStatus }) => {
     }
     return urlPath;
   };
-  const [config, setConfig] = useState(defaultFields);
-  
-  const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [feedback, setFeedback] = useState(null);
-  
-  // Visual Editor State
-  const imgRef = useRef(null);
-  const [scale, setScale] = useState(1);
-  const [activeField, setActiveField] = useState(null);
-  const [draggingField, setDraggingField] = useState(null);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0, startX: 0, startY: 0 });
+
+  const isPdf = templateUrl ? templateUrl.split('?')[0].toLowerCase().endsWith('.pdf') : false;
 
   const recalculateScale = () => {
-    if (imgRef.current) {
-      const naturalWidth = imgRef.current.naturalWidth;
-      const clientWidth = imgRef.current.clientWidth;
-      if (naturalWidth > 0 && clientWidth > 0) {
-        setScale(naturalWidth / clientWidth);
+    if (canvasRef.current) {
+      const clientWidth = canvasRef.current.clientWidth;
+      if (clientWidth > 0) {
+        if (isPdf) {
+          setScale(842 / clientWidth);
+        } else if (imgRef.current && imgRef.current.naturalWidth > 0) {
+          setScale(imgRef.current.naturalWidth / clientWidth);
+        } else {
+          setScale(842 / clientWidth);
+        }
       }
     }
   };
 
   useEffect(() => {
     recalculateScale();
-    window.addEventListener('resize', recalculateScale);
-    return () => window.removeEventListener('resize', recalculateScale);
-  }, [templateUrl]);
+    const handleResize = () => recalculateScale();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [templateUrl, isPdf]);
 
   useEffect(() => {
-    // Fetch initial config
     const fetchConfig = async () => {
       try {
         const res = await axios.get(`/api/certificates/config/${eventId}`);
         if (res.data.template) {
           setTemplateUrl(res.data.template);
         }
-        // Always guarantee all defaultFields are present and initialized
         const merged = { ...defaultFields };
         if (res.data.config && typeof res.data.config === 'object') {
           for (let key in defaultFields) {
@@ -88,32 +99,59 @@ const CertificateManager = ({ eventId, eventStatus }) => {
   // Drag Handlers
   const handleMouseDown = (e, key) => {
     e.stopPropagation();
+    e.preventDefault();
     setActiveField(key);
     setDraggingField(key);
+
+    const elem = document.getElementById(`placeholder-${key}`);
+    const elemRect = elem ? elem.getBoundingClientRect() : { left: e.clientX, top: e.clientY };
+
     setDragStart({
-      x: e.clientX,
-      y: e.clientY,
-      startX: Number(config[key]?.x) || 0,
-      startY: Number(config[key]?.y) || 0
+      clickOffsetX: e.clientX - elemRect.left,
+      clickOffsetY: e.clientY - elemRect.top
     });
   };
 
   useEffect(() => {
     const handleMouseMove = (e) => {
-      if (!draggingField) return;
-      const dx = e.clientX - dragStart.x;
-      const dy = e.clientY - dragStart.y;
-      
-      const safeScale = (scale && !isNaN(scale) && isFinite(scale) && scale > 0) ? scale : 1;
-      const naturalDx = dx * safeScale;
-      const naturalDy = dy * safeScale;
-      
+      if (!draggingField || !canvasRef.current) return;
+
+      const canvasRect = canvasRef.current.getBoundingClientRect();
+      const currentScale = scale > 0 ? scale : 1;
+
+      const mouseCanvasX = e.clientX - canvasRect.left;
+      const mouseCanvasY = e.clientY - canvasRect.top;
+
+      const targetScreenX = mouseCanvasX - (dragStart.clickOffsetX || 0);
+      const targetScreenY = mouseCanvasY - (dragStart.clickOffsetY || 0);
+
+      const field = config[draggingField];
+      const align = field?.align || 'left';
+
+      const naturalWidth = isPdf ? 842 : (imgRef.current?.naturalWidth || 842);
+      const naturalHeight = isPdf ? 595 : (imgRef.current?.naturalHeight || 595);
+
+      let naturalX = Math.round(targetScreenX * currentScale);
+      let naturalY = Math.round(targetScreenY * currentScale);
+
+      const elem = document.getElementById(`placeholder-${draggingField}`);
+      if (elem && align === 'center') {
+        const screenWidth = elem.getBoundingClientRect().width;
+        naturalX = Math.round((targetScreenX + (screenWidth / 2)) * currentScale);
+      } else if (elem && align === 'right') {
+        const screenWidth = elem.getBoundingClientRect().width;
+        naturalX = Math.round((targetScreenX + screenWidth) * currentScale);
+      }
+
+      naturalX = Math.max(0, Math.min(naturalWidth, naturalX));
+      naturalY = Math.max(0, Math.min(naturalHeight, naturalY));
+
       setConfig(prev => ({
         ...prev,
         [draggingField]: {
           ...prev[draggingField],
-          x: Math.round(dragStart.startX + naturalDx),
-          y: Math.round(dragStart.startY + naturalDy)
+          x: naturalX,
+          y: naturalY
         }
       }));
     };
@@ -130,9 +168,9 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingField, dragStart, scale]);
+  }, [draggingField, dragStart, scale, isPdf, config]);
 
-  const handleImageLoad = (e) => {
+  const handleImageLoad = () => {
     recalculateScale();
   };
 
@@ -200,11 +238,8 @@ const CertificateManager = ({ eventId, eventStatus }) => {
     setFeedback(null);
     try {
       const res = await axios.post(`/api/certificates/generate/${eventId}/test`);
-      
-      // Open the preview certificate in a new tab using the fully qualified backend URL
       const pdfUrl = getFullImageUrl(res.data.certificate_url);
       window.open(pdfUrl, '_blank');
-
       setFeedback({ type: 'success', message: 'Test certificate opened in a new tab!' });
     } catch (err) {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Error generating test certificate' });
@@ -221,6 +256,19 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       setFeedback({ type: 'success', message: res.data.message });
     } catch (err) {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Error generating certificates' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleGenerateAllOrganizer = async () => {
+    setGenerating(true);
+    setFeedback(null);
+    try {
+      const res = await axios.post(`/api/certificates/generate-organizers/${eventId}/all`);
+      setFeedback({ type: 'success', message: res.data.message });
+    } catch (err) {
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Error generating organizer certificates' });
     } finally {
       setGenerating(false);
     }
@@ -246,12 +294,12 @@ const CertificateManager = ({ eventId, eventStatus }) => {
 
       {/* STEP 1: Upload Template */}
       <div className="mb-8 border border-slate-200 p-5 rounded-xl glass-panel">
-        <h3 className="font-medium text-text-primary mb-2">1. Upload Template Image</h3>
-        <p className="text-xs text-text-secondary mb-4">Provide a high-quality blank certificate (PNG or JPG recommended).</p>
+        <h3 className="font-medium text-text-primary mb-2">1. Upload Template File</h3>
+        <p className="text-xs text-text-secondary mb-4">Provide a high-quality blank certificate template (PNG, JPG, or PDF recommended).</p>
         <div className="flex gap-2">
           <input 
             type="file" 
-            accept=".png,.jpg,.jpeg"
+            accept=".png,.jpg,.jpeg,.pdf"
             onChange={handleFileChange}
             className="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-colors"
           />
@@ -287,19 +335,44 @@ const CertificateManager = ({ eventId, eventStatus }) => {
           <div className="flex flex-col lg:flex-row gap-6">
             
             {/* Editor Canvas */}
-            <div className="flex-1 bg-slate-200/80 rounded-xl border border-slate-300 overflow-hidden relative group min-h-[300px]">
+            <div className="flex-1 bg-slate-200/80 rounded-xl border border-slate-300 relative group min-h-[300px]">
               <div 
+                ref={canvasRef}
                 className="relative shadow-sm w-full select-none"
                 style={{ cursor: draggingField ? 'grabbing' : 'auto' }}
               >
-                <img 
-                  ref={imgRef}
-                  src={getFullImageUrl(templateUrl)} 
-                  onLoad={handleImageLoad} 
-                  className="w-full h-auto pointer-events-none block min-h-[200px]" 
-                  alt="Certificate Template"
-                  draggable={false}
-                />
+                {isPdf ? (
+                  <div className="w-full aspect-[842/595] bg-white border border-slate-300 rounded-lg relative overflow-hidden flex flex-col items-center justify-center select-none shadow-inner">
+                    <object 
+                      data={`${getFullImageUrl(templateUrl)}#toolbar=0&navpanes=0&scrollbar=0`} 
+                      type="application/pdf" 
+                      className="w-full h-full pointer-events-none absolute inset-0 z-0"
+                    >
+                      <div className="flex flex-col items-center justify-center h-full p-6 text-center bg-slate-100 text-slate-600">
+                        <svg className="w-12 h-12 mb-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        <span className="font-bold text-sm">PDF Template Active</span>
+                        <span className="text-xs text-slate-400 mt-1">A4 Landscape Canvas (842 x 595 pt)</span>
+                      </div>
+                    </object>
+                    <div className="absolute top-3 left-3 z-10 bg-indigo-600/90 text-white px-2.5 py-1 rounded-md text-[11px] font-bold shadow-md backdrop-blur-sm flex items-center gap-1.5 pointer-events-none">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 00-2-2V5a2 2 0 002-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 00-2 2z" />
+                      </svg>
+                      PDF Template Active
+                    </div>
+                  </div>
+                ) : (
+                  <img 
+                    ref={imgRef}
+                    src={getFullImageUrl(templateUrl)} 
+                    onLoad={handleImageLoad} 
+                    className="w-full h-auto pointer-events-none block min-h-[200px]" 
+                    alt="Certificate Template"
+                    draggable={false}
+                  />
+                )}
                 
                 {Object.entries(config).map(([key, field]) => {
                   if (!field) return null;
@@ -316,9 +389,10 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                     const qrBoxSize = Math.max(32, (Number(field.fontSize) || 80) / safeScale);
                     return (
                       <div 
+                        id={`placeholder-${key}`}
                         key={key}
                         onMouseDown={(e) => handleMouseDown(e, key)}
-                        className={`absolute cursor-grab flex flex-col items-center justify-center border-2 transition-all shadow-md rounded ${
+                        className={`absolute cursor-grab flex flex-col items-center justify-center border-2 transition-all shadow-md rounded select-none ${
                           activeField === key 
                             ? 'border-indigo-600 bg-indigo-500/30 ring-4 ring-indigo-500/30 shadow-xl z-30' 
                             : 'border-slate-800 bg-white/95 hover:border-indigo-500 z-20'
@@ -341,9 +415,10 @@ const CertificateManager = ({ eventId, eventStatus }) => {
 
                   return (
                     <div 
+                      id={`placeholder-${key}`}
                       key={key}
                       onMouseDown={(e) => handleMouseDown(e, key)}
-                      className={`absolute px-2 py-1 cursor-grab transition-all rounded shadow-sm ${
+                      className={`absolute px-2.5 py-1 cursor-grab transition-all rounded shadow-sm select-none ${
                         activeField === key 
                           ? 'border-2 border-indigo-600 bg-indigo-500/30 ring-4 ring-indigo-500/30 shadow-xl z-30 font-bold text-indigo-950' 
                           : 'border-2 border-indigo-500/80 bg-white/90 hover:border-indigo-600 text-slate-900 z-20 hover:bg-white'
@@ -402,7 +477,29 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                   <div className="space-y-4 animate-fade-in-up">
                     <div>
                       <p className="text-xs font-bold text-indigo-600 mb-1">{config[activeField].label}</p>
-                      <p className="text-[10px] text-slate-400 mb-3">X: {config[activeField].x}px, Y: {config[activeField].y}px (Drag on image to reposition)</p>
+                      <p className="text-[10px] text-slate-400 mb-2">Drag on canvas or type exact coordinates below:</p>
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">X Position (px)</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            value={config[activeField].x ?? 0}
+                            onChange={(e) => updateFieldProperty(activeField, 'x', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Y Position (px)</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            value={config[activeField].y ?? 0}
+                            onChange={(e) => updateFieldProperty(activeField, 'y', e.target.value === '' ? 0 : Number(e.target.value))}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div>
@@ -414,11 +511,11 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                         className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
                       />
                     </div>
-                    
+
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Font Family</label>
                       <select 
-                        value={config[activeField].fontFamily}
+                        value={config[activeField].fontFamily || 'Helvetica'}
                         onChange={(e) => updateFieldProperty(activeField, 'fontFamily', e.target.value)}
                         className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm"
                       >
@@ -427,20 +524,22 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                         <option value="Courier">Courier (Monospace)</option>
                       </select>
                     </div>
-                    
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Text Color</label>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="color" 
-                          value={config[activeField].color || '#000000'}
-                          onChange={(e) => updateFieldProperty(activeField, 'color', e.target.value)}
-                          className="h-8 w-8 rounded cursor-pointer border-0 p-0"
-                        />
-                        <span className="text-xs text-slate-600 font-mono uppercase">{config[activeField].color || '#000000'}</span>
+
+                    {activeField !== 'QR_CODE' && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Text Color</label>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="color" 
+                            value={config[activeField].color || '#000000'}
+                            onChange={(e) => updateFieldProperty(activeField, 'color', e.target.value)}
+                            className="h-8 w-8 rounded cursor-pointer border-0 p-0"
+                          />
+                          <span className="text-xs text-slate-600 font-mono uppercase">{config[activeField].color || '#000000'}</span>
+                        </div>
                       </div>
-                    </div>
-                    
+                    )}
+
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Alignment</label>
                       <div className="flex gap-2">
@@ -478,24 +577,79 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       {/* STEP 3: Generate */}
       {templateUrl && (
         <div className="border border-slate-200 border-t-4 border-t-emerald-400 p-5 rounded-xl scrapbook-panel">
-          <h3 className="font-medium text-emerald-500 mb-2">3. Issue Certificates</h3>
-          <p className="text-xs text-text-secondary mb-4">Ensure you have saved your layout configuration before generating. This will generate personalized PDFs for all registered/attended participants.</p>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button 
-              onClick={handleGenerateTest}
-              disabled={generating}
-              className="px-6 py-2.5 bg-white border border-emerald-500 text-emerald-600 text-sm font-bold rounded-xl shadow-sm hover:bg-emerald-50 transition-colors disabled:opacity-50"
-            >
-              Generate Test (For Me)
-            </button>
-            <button 
-              onClick={handleGenerateAll}
-              disabled={generating}
-              className="px-6 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors disabled:opacity-50"
-            >
-              {generating ? 'Generating...' : 'Generate All Certificates'}
-            </button>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h3 className="font-medium text-emerald-500">3. Issue Certificates</h3>
+              <p className="text-xs text-text-secondary">Select certificate generation flow below.</p>
+            </div>
+
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setCertTypeMode('participant')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  certTypeMode === 'participant' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Participant Certificates
+              </button>
+              <button
+                type="button"
+                onClick={() => setCertTypeMode('organizer')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  certTypeMode === 'organizer' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Organizer Certificates
+              </button>
+            </div>
           </div>
+
+          {certTypeMode === 'participant' ? (
+            <div>
+              <p className="text-xs text-text-secondary mb-4">
+                Generates certificates for all eligible participating students marked <strong>Present</strong>.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button 
+                  onClick={handleGenerateTest}
+                  disabled={generating}
+                  className="px-6 py-2.5 bg-white border border-emerald-500 text-emerald-600 text-sm font-bold rounded-xl shadow-sm hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                >
+                  Generate Test (Preview)
+                </button>
+                <button 
+                  onClick={handleGenerateAll}
+                  disabled={generating}
+                  className="px-6 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  {generating ? 'Generating...' : 'Generate Participant Certificates (Bulk)'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-text-secondary mb-4">
+                Generates certificates for all registered <strong>Event Organizers</strong> associated with this event.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button 
+                  onClick={handleGenerateTest}
+                  disabled={generating}
+                  className="px-6 py-2.5 bg-white border border-indigo-500 text-indigo-600 text-sm font-bold rounded-xl shadow-sm hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                >
+                  Generate Test (Preview)
+                </button>
+                <button 
+                  onClick={handleGenerateAllOrganizer}
+                  disabled={generating}
+                  className="px-6 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  {generating ? 'Generating...' : 'Generate Organizer Certificates (Bulk)'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -261,6 +261,12 @@ const Workspace = () => {
     };
   }, [eventId, user.id]);
 
+  useEffect(() => {
+    if (isNormalOrganizer() && !['tasks', 'confirmed_teams'].includes(activeTab)) {
+      setActiveTab('tasks');
+    }
+  }, [organizers, user, activeTab]);
+
   const handleCreateTask = () => {
     setEditingTask(null);
     setIsTaskModalOpen(true);
@@ -286,7 +292,21 @@ const Workspace = () => {
   };
 
   const hasFullAccess = () => {
-    return canAssignTasks();
+    if (!event || !user) return false;
+    const isAdmin = user.roles?.includes('admin') || user.role === 'admin';
+    const isFacultyRole = user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer') || user.role === 'faculty' || user.role === 'faculty_organizer';
+    const isEventFaculty = String(user.id) === String(event.faculty_id);
+    const isEventHead = String(user.id) === String(event.student_organizer_id) || String(user.id) === String(event.proposed_by) || String(user.id) === String(event.organizer_id) || String(user.id) === String(event.created_by);
+    const orgMember = (organizers || []).find(org => String(org.userId) === String(user.id));
+    const isCoreOrg = orgMember?.organizerRole === 'core' || orgMember?.category === 'Event Head' || orgMember?.category === 'Faculty Organizer';
+
+    return isAdmin || isFacultyRole || isEventFaculty || isEventHead || isCoreOrg;
+  };
+
+  const isNormalOrganizer = () => {
+    if (!user) return false;
+    const isOrg = (organizers || []).some(org => String(org.userId) === String(user.id));
+    return isOrg && !hasFullAccess();
   };
 
   // Stats
@@ -347,148 +367,171 @@ const Workspace = () => {
           <p className="text-text-secondary">Manage tasks and coordinate with your team</p>
         </div>
         <div className="flex items-center gap-3">
-        <div className="relative inline-block text-left" ref={dropdownRef}>
+        {isNormalOrganizer() ? (
           <button
             type="button"
-            onClick={() => setIsActionsDropdownOpen(prev => !prev)}
-            className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-fuchsia-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
+            onClick={() => {
+              setScanFeedback(null);
+              setIsScannerOpen(true);
+            }}
+            className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-purple-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
           >
-            <span>Actions</span>
-            <svg className={`h-4 w-4 transition-transform duration-200 ${isActionsDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            <svg className="h-4 w-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
             </svg>
+            <span>Scan QR</span>
           </button>
+        ) : (
+          <div className="relative inline-block text-left" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsActionsDropdownOpen(prev => !prev)}
+              className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-fuchsia-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
+            >
+              <span>Actions</span>
+              <svg className={`h-4 w-4 transition-transform duration-200 ${isActionsDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
-          {isActionsDropdownOpen && (
-            <div className="origin-top-right absolute right-0 mt-2 w-60 rounded-2xl shadow-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 z-50 p-1.5 space-y-1 animate-fade-in-scale">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsActionsDropdownOpen(false);
-                  setIsConfirmationEmailModalOpen(true);
-                }}
-                className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-              >
-                <svg className="h-4 w-4 text-fuchsia-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span>Customize Confirmation Email</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsActionsDropdownOpen(false);
-                  openEditModal();
-                }}
-                className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-              >
-                <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                <span>Edit Event</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsActionsDropdownOpen(false);
-                  setScanFeedback(null);
-                  setIsScannerOpen(true);
-                }}
-                className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-              >
-                <svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
-                  <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
-                  <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
-                  <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
-                </svg>
-                <span>Scan QR</span>
-              </button>
-
-              {user && (user.roles?.includes('admin') || user.role === 'admin') && event?.registration_type === 'team' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsDropdownOpen(false);
-                    setIsAdminCreateTeamOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <svg className="h-4 w-4 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Create Team Manually</span>
-                </button>
-              )}
-
-              {hasFullAccess() && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsDropdownOpen(false);
-                    handleCreateTask();
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  <span>Create Task</span>
-                </button>
-              )}
-
-              {user && (user.roles?.includes('admin') || user.role === 'admin') && (
-                event.registration_deadline && new Date(event.registration_deadline) <= new Date() ? (
+            {isActionsDropdownOpen && (
+              <div className="origin-top-right absolute right-0 mt-2 w-60 rounded-2xl shadow-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 z-50 p-1.5 space-y-1 animate-fade-in-scale">
+                {hasFullAccess() && (
                   <button
                     type="button"
                     onClick={() => {
                       setIsActionsDropdownOpen(false);
-                      handleAdminOpenRegistrations();
+                      setIsConfirmationEmailModalOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-fuchsia-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    <span>Customize Confirmation Email</span>
+                  </button>
+                )}
+
+                {hasFullAccess() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      openEditModal();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span>Edit Event</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionsDropdownOpen(false);
+                    setScanFeedback(null);
+                    setIsScannerOpen(true);
+                  }}
+                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                    <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                    <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                    <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                  </svg>
+                  <span>Scan QR</span>
+                </button>
+
+                {user && (user.roles?.includes('admin') || user.role === 'admin') && event?.registration_type === 'team' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      setIsAdminCreateTeamOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Create Team Manually</span>
+                  </button>
+                )}
+
+                {hasFullAccess() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      handleCreateTask();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    <span>Create Task</span>
+                  </button>
+                )}
+
+                {user && (user.roles?.includes('admin') || user.role === 'admin') && (
+                  event.registration_deadline && new Date(event.registration_deadline) <= new Date() ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsActionsDropdownOpen(false);
+                        handleAdminOpenRegistrations();
+                      }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                      </svg>
+                      <span>Open Registrations</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsActionsDropdownOpen(false);
+                        handleAdminCloseRegistrations();
+                      }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      <span>Close Registrations</span>
+                    </button>
+                  )
+                )}
+
+                {hasFullAccess() && event.status !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      handleMarkCompleted();
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
                     <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>Open Registrations</span>
+                    <span>Mark as Completed</span>
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsActionsDropdownOpen(false);
-                      handleAdminCloseRegistrations();
-                    }}
-                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-                  >
-                    <svg className="h-4 w-4 text-amber-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                    <span>Close Registrations</span>
-                  </button>
-                )
-              )}
-
-              {hasFullAccess() && event.status !== 'completed' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsDropdownOpen(false);
-                    handleMarkCompleted();
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <svg className="h-4 w-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span>Mark as Completed</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         </div>
       </div>
 
@@ -502,58 +545,71 @@ const Workspace = () => {
         >
           Tasks & Progress
         </button>
-        <button
-          onClick={() => setActiveTab('registrations')}
-          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-            activeTab === 'registrations' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-          }`}
-        >
-          Event Registrations
-        </button>
-        {event?.registration_type === 'team' && (
+
+        {(event?.registration_type === 'team' || isNormalOrganizer()) && (
+          <button
+            onClick={() => setActiveTab('confirmed_teams')}
+            className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+              activeTab === 'confirmed_teams' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            Confirmed Teams
+          </button>
+        )}
+
+        {!isNormalOrganizer() && (
           <>
             <button
-              onClick={() => setActiveTab('confirmed_teams')}
+              onClick={() => setActiveTab('registrations')}
               className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-                activeTab === 'confirmed_teams' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                activeTab === 'registrations' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
               }`}
             >
-              Confirmed Teams
+              Event Registrations
             </button>
 
-            <button
-              onClick={() => setActiveTab('allocation')}
-              className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-                activeTab === 'allocation' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-              }`}
-            >
-            Team Allocation
-            </button>
-            <button onClick={() => setActiveTab('scoring')} className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${activeTab === 'scoring' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>Scoring</button>
+            {event?.registration_type === 'team' && (
+              <button
+                onClick={() => setActiveTab('allocation')}
+                className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+                  activeTab === 'allocation' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                Team Allocation
+              </button>
+            )}
+
+            {(event?.scoring_enabled || event?.registration_type === 'team') && (
+              <button
+                onClick={() => setActiveTab('scoring')}
+                className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+                  activeTab === 'scoring' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                Scoring
+              </button>
+            )}
           </>
-        )}
-        {event?.scoring_enabled && event?.registration_type !== 'team' && (
-          <button onClick={() => setActiveTab('scoring')} className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${activeTab === 'scoring' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}>Scoring</button>
         )}
       </div>
 
-      {activeTab === 'registrations' && (
+      {activeTab === 'registrations' && !isNormalOrganizer() && (
         <div className="mb-8">
           <OrganizerRegistrations eventId={eventId} event={event} />
         </div>
       )}
 
-      {activeTab === 'scoring' && event?.scoring_enabled && (
+      {activeTab === 'scoring' && event?.scoring_enabled && !isNormalOrganizer() && (
         <ScoringBoard eventId={eventId} canEdit={hasFullAccess()} />
       )}
 
-      {activeTab === 'confirmed_teams' && event?.registration_type === 'team' && (
+      {activeTab === 'confirmed_teams' && (event?.registration_type === 'team' || isNormalOrganizer()) && (
         <div className="mb-8">
           <ConfirmedTeamsOverview eventId={eventId} eventTitle={event.title} />
         </div>
       )}
 
-      {activeTab === 'allocation' && event?.registration_type === 'team' && (
+      {activeTab === 'allocation' && event?.registration_type === 'team' && !isNormalOrganizer() && (
         <div className="mb-8">
           <TeamAllocation eventId={eventId} eventTitle={event.title} />
         </div>
@@ -661,8 +717,8 @@ const Workspace = () => {
         onEditTask={hasFullAccess() ? handleEditTask : undefined}
       />
 
-      {/* Certificate Management (Only for completed events) */}
-      {hasFullAccess() && (
+      {/* Certificate Management (Strictly Admin only) */}
+      {user && (user.roles?.includes('admin') || user.role === 'admin') && (
         <CertificateManager eventId={eventId} eventStatus={event.status} />
       )}
 
