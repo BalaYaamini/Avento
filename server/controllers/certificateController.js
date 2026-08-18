@@ -4,6 +4,7 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const QRCode = require('qrcode');
 
 // Helper to get font size
 const getFontSize = (size) => size || 24;
@@ -89,13 +90,7 @@ exports.uploadTemplate = async (req, res) => {
     // Default config (A4 Landscape roughly: 842 x 595)
     const defaultConfig = {
       STUDENT_NAME: { x: 421, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
-      EVENT_NAME: { x: 421, y: 380, fontSize: 24, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
-      EVENT_DATE: { x: 421, y: 420, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
-      EVENT_VENUE: { x: 421, y: 460, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000' },
-      ISSUE_DATE: { x: 150, y: 500, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
-      CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
-      ORGANIZER_NAME: { x: 150, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000' },
-      FACULTY_COORDINATOR: { x: 692, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'right', color: '#000000' }
+      QR_CODE: { x: 692, y: 440, fontSize: 80, fontFamily: 'Helvetica', align: 'left', color: '#000000' }
     };
 
     const { error: updateErr } = await supabase
@@ -294,13 +289,43 @@ const createPdfCertificate = async (event, student, certId, facultyName = '', or
   };
 
   drawText(student.name, 'STUDENT_NAME');
-  drawText(event.title, 'EVENT_NAME');
-  drawText(new Date(event.date).toLocaleDateString(), 'EVENT_DATE');
-  drawText(event.venue || '', 'EVENT_VENUE');
-  drawText(facultyName, 'FACULTY_COORDINATOR');
-  drawText(organizerName, 'ORGANIZER_NAME');
-  drawText(new Date().toLocaleDateString(), 'ISSUE_DATE');
-  drawText(certId, 'CERTIFICATE_ID');
+
+  // Embed QR Code into Certificate PDF pointing strictly to <base-url>/verify/<certId>
+  try {
+    const cleanBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    const verifyUrl = `${cleanBaseUrl}/verify/${certId}`;
+    console.log(`📌 Certificate [${certId}] QR destination: ${verifyUrl}`);
+    
+    const qrDataUrl = await QRCode.toDataURL(verifyUrl, {
+      margin: 1,
+      width: 300,
+      errorCorrectionLevel: 'H'
+    });
+    
+    const qrImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');
+    const qrImage = await pdfDoc.embedPng(qrImageBytes);
+
+    const qrConfig = config.QR_CODE || { x: width - 150, y: 440, fontSize: 80 };
+    const qrSize = Number(qrConfig.fontSize) || Number(qrConfig.width) || 80;
+    
+    let qrX = Number(qrConfig.x) || (width - 150);
+    if (qrConfig.align === 'center') {
+      qrX = qrX - (qrSize / 2);
+    } else if (qrConfig.align === 'right') {
+      qrX = qrX - qrSize;
+    }
+    
+    const qrY = height - Number(qrConfig.y) - qrSize;
+
+    firstPage.drawImage(qrImage, {
+      x: qrX,
+      y: qrY,
+      width: qrSize,
+      height: qrSize
+    });
+  } catch (qrErr) {
+    console.error('Error generating QR code on certificate:', qrErr);
+  }
 
   const pdfBytes = await pdfDoc.save();
   const certFileName = `generated/certificate-${certId}-${Date.now()}.pdf`;
@@ -542,25 +567,45 @@ exports.getMyCertificates = async (req, res) => {
 exports.verifyCertificate = async (req, res) => {
   try {
     const { certificateId } = req.params;
-    const { data: cert, error } = await supabase
+    
+    // Fetch certificate and event details
+    const { data: cert, error: certError } = await supabase
       .from('certificates')
       .select(`
         *,
-        eventId:events (title, date),
-        userId:profiles (name)
+        eventId:events (title, date, category)
       `)
       .eq('certificate_id', certificateId)
       .maybeSingle();
 
-    if (error || !cert) {
-      return res.status(404).json({ valid: false, message: 'Invalid or missing certificate.' });
+    const isStatusValid = cert && (!cert.status || cert.status.toLowerCase() === 'valid');
+
+    if (certError || !cert || !isStatusValid) {
+      return res.status(404).json({ 
+        valid: false, 
+        message: 'Certificate not found or is no longer valid.' 
+      });
+    }
+
+    // Fetch user profile separately to avoid PostgREST relationship resolve error
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('name, department')
+      .eq('id', cert.user_id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('Error fetching profile for certificate verification:', profileError);
     }
 
     res.json({
       valid: true,
-      studentName: cert.userId?.name,
-      eventName: cert.eventId?.title,
-      eventDate: cert.eventId?.date,
+      certificateId: cert.certificate_id,
+      studentName: profile?.name || 'N/A',
+      eventName: cert.eventId?.title || 'N/A',
+      eventDate: cert.eventId?.date ? new Date(cert.eventId.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A',
+      issuingOrganization: profile?.department || 'AVENTO University System',
+      status: cert.status ? cert.status.charAt(0).toUpperCase() + cert.status.slice(1) : 'Valid',
       issuedAt: cert.issued_at
     });
   } catch (err) {

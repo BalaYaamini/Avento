@@ -13,6 +13,7 @@ import Contact from './pages/Contact';
 import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ChangePassword from './pages/ChangePassword';
+import VerifyCertificate from './pages/VerifyCertificate';
 
 // Protected Student views
 import Profile from './pages/Profile';
@@ -96,6 +97,8 @@ const AnimatedRoutes = () => {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/verify/:certificateId" element={<VerifyCertificate />} />
+        <Route path="/verify-certificate/:certificateId" element={<VerifyCertificate />} />
 
         {/* Student Paths — accessible to both student and student_organizer */}
         <Route
@@ -214,29 +217,38 @@ const AnimatedRoutes = () => {
   );
 };
 
+const AppLayout = () => {
+  const location = useLocation();
+  const isVerifyPage = location.pathname.startsWith('/verify');
+
+  return (
+    <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
+      {/* ── Animated Background Orbs ── */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute top-[-200px] left-[-200px] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-[#FFB6C1]/20 via-[#C8A2C8]/15 to-[#E6E6FA]/20 blur-[150px] animate-orb-1" />
+        <div className="absolute bottom-[-250px] right-[-250px] w-[900px] h-[900px] rounded-full bg-gradient-to-br from-[#98FF98]/15 via-[#ADD8E6]/20 to-[#E6E6FA]/15 blur-[180px] animate-orb-2" />
+        <div className="absolute top-[30%] right-[5%] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-[#FFDAB9]/20 via-[#FFFACD]/15 to-[#F08080]/10 blur-[130px] animate-orb-3" />
+        <div className="absolute inset-0 dot-pattern opacity-20" />
+      </div>
+
+      <div className="relative z-10 flex flex-col min-h-screen w-full">
+        {!isVerifyPage && <Navbar />}
+        <main className="flex-grow flex flex-col relative">
+          <AnimatedRoutes />
+        </main>
+        {!isVerifyPage && <Footer />}
+      </div>
+    </div>
+  );
+};
+
 function App() {
   return (
     <Router>
       <AuthProvider>
         <SplashScreen />
         <GlobalAlert />
-        <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
-          {/* ── Animated Background Orbs ── */}
-          <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
-            <div className="absolute top-[-200px] left-[-200px] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-[#FFB6C1]/20 via-[#C8A2C8]/15 to-[#E6E6FA]/20 blur-[150px] animate-orb-1" />
-            <div className="absolute bottom-[-250px] right-[-250px] w-[900px] h-[900px] rounded-full bg-gradient-to-br from-[#98FF98]/15 via-[#ADD8E6]/20 to-[#E6E6FA]/15 blur-[180px] animate-orb-2" />
-            <div className="absolute top-[30%] right-[5%] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-[#FFDAB9]/20 via-[#FFFACD]/15 to-[#F08080]/10 blur-[130px] animate-orb-3" />
-            <div className="absolute inset-0 dot-pattern opacity-20" />
-          </div>
-
-          <div className="relative z-10 flex flex-col min-h-screen w-full">
-            <Navbar />
-            <main className="flex-grow flex flex-col relative">
-              <AnimatedRoutes />
-            </main>
-            <Footer />
-          </div>
-        </div>
+        <AppLayout />
       </AuthProvider>
     </Router>
   );

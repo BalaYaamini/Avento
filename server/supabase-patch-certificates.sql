@@ -17,17 +17,20 @@ CREATE TABLE IF NOT EXISTS public.certificates (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   certificate_id TEXT NOT NULL UNIQUE,
   certificate_url TEXT NOT NULL,
+  status TEXT DEFAULT 'valid',
   issued_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(event_id, user_id)
 );
 
+ALTER TABLE public.certificates ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'valid';
+
 -- ─── RLS POLICIES FOR CERTIFICATES ───────────────────────────
 ALTER TABLE public.certificates ENABLE ROW LEVEL SECURITY;
 
--- Students can view their own certificates
-DROP POLICY IF EXISTS "certificates_select_own" ON public.certificates;
-CREATE POLICY "certificates_select_own" ON public.certificates
-  FOR SELECT USING (auth.uid() = user_id OR auth.uid() IS NOT NULL);
+-- Allow public verification of certificates by certificate_id
+DROP POLICY IF EXISTS "certificates_select_public_verify" ON public.certificates;
+CREATE POLICY "certificates_select_public_verify" ON public.certificates
+  FOR SELECT USING (true);
 
 -- Event organizers and faculty can insert/update/delete (Admin bypassed by service role)
 DROP POLICY IF EXISTS "certificates_insert_auth" ON public.certificates;

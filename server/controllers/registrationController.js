@@ -1392,7 +1392,7 @@ exports.getConfirmedTeams = async (req, res) => {
       .from('event_registrations')
       .select(`
         id, team_id, user_id, attendance_status, created_at,
-         profiles!event_registrations_user_id_fkey(id, name, email, department, roll_number)
+        profiles!event_registrations_user_id_fkey(id, name, email, department, roll_number)
       `)
       .in('team_id', teamIds)
       .eq('status', 'registered');
@@ -1407,7 +1407,8 @@ exports.getConfirmedTeams = async (req, res) => {
         name: r.profiles?.name || 'Unknown',
         email: r.profiles?.email || 'N/A',
         department: r.profiles?.department || 'N/A',
-        rollNumber: r.profiles?.roll_number || 'N/A'
+        rollNumber: r.profiles?.roll_number || 'N/A',
+        attendanceStatus: r.attendance_status
       }));
 
       return {
@@ -1754,63 +1755,244 @@ exports.updatePaymentStatus = async (req, res) => {
   }
 };
 
+/**
+ * ADMIN ONLY: Manually create a team for an event.
+ */
 exports.adminCreateTeam = async (req, res) => {
   try {
-    const { eventId, teamName, leaderId, memberIds } = req.body;
-    if (!eventId || !teamName || !leaderId) {
-      return res.status(400).json({ message: 'Event ID, team name, and leader are required.' });
+    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
     }
-    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
-    if (!event) return res.status(404).json({ message: 'Event not found.' });
-    const { data: team, error: teamErr } = await supabase.from('event_teams').insert({
-      event_id: eventId, name: teamName, leader_id: leaderId, leader_contact_number: null, status: 'registered'
-    }).select().single();
+
+    const { eventId, teamName, leaderId, memberIds } = req.body;
+
+    if (!eventId || !teamName || !leaderId) {
+      return res.status(400).json({ message: 'Event ID, Team Name, and Team Leader ID are required.' });
+    }
+
+    const membersList = Array.isArray(memberIds) ? memberIds : [];
+
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', eventId)
+      .maybeSingle();
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    if (event.registration_type !== 'team') {
+      return res.status(400).json({ message: 'This event does not support team registration.' });
+    }
+
+    // Fetch organizers for this event
+    const { data: organizers } = await supabase
+      .from('event_organizers')
+      .select('student_id')
+      .eq('event_id', eventId);
+
+    const { data: proposalMembers } = await supabase
+      .from('event_members')
+      .select('user_id')
+      .eq('event_id', eventId);
+
+    const organizerIds = (organizers || []).map(o => String(o.student_id));
+    if (event.organizer_id) organizerIds.push(String(event.organizer_id));
+    if (event.student_organizer_id) organizerIds.push(String(event.student_organizer_id));
+    if (event.proposed_by) organizerIds.push(String(event.proposed_by));
+    if (event.faculty_id) organizerIds.push(String(event.faculty_id));
+    if (event.created_by) organizerIds.push(String(event.created_by));
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.push(String(m.user_id)); });
+
+    const allSelectedIds = [...new Set([leaderId, ...membersList])];
+    const containsOrganizer = allSelectedIds.some(id => organizerIds.includes(String(id)));
+
+    if (containsOrganizer) {
+      return res.status(403).json({ message: 'One or more selected students are organizers for this event and cannot be added as team members.' });
+    }
+
+    const minSize = event.min_team_size || 1;
+    const maxSize = event.max_team_size || 4;
+    if (allSelectedIds.length < minSize || allSelectedIds.length > maxSize) {
+      return res.status(400).json({ message: `Team size must be between ${minSize} and ${maxSize} members.` });
+    }
+
+    const { data: existingTeamByName } = await supabase
+      .from('event_teams')
+      .select('id')
+      .eq('event_id', eventId)
+      .ilike('name', teamName.trim());
+
+    if (existingTeamByName && existingTeamByName.length > 0) {
+      return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
+    }
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .insert({
+        event_id: eventId,
+        name: teamName.trim(),
+        leader_id: leaderId,
+        status: 'registered'
+      })
+      .select()
+      .single();
+
     if (teamErr) throw teamErr;
-    await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', eventId);
-    const allMemberIds = [leaderId, ...(memberIds || [])];
-    const { error: regErr } = await supabase.from('event_registrations').insert(allMemberIds.map(uid => ({
-      event_id: eventId, user_id: uid, team_id: team.id, status: 'registered'
-    })));
+
+    const registrations = allSelectedIds.map(uid => ({
+      user_id: uid,
+      event_id: eventId,
+      team_id: team.id,
+      status: 'registered',
+      created_at: new Date().toISOString()
+    }));
+
+    const { error: regErr } = await supabase
+      .from('event_registrations')
+      .insert(registrations);
+
     if (regErr) throw regErr;
-    res.json({ message: 'Team created successfully by admin.', team });
+
+    await supabase.from('events').update({
+      registered_count: (event.registered_count || 0) + 1
+    }).eq('id', eventId);
+
+    res.json({ message: 'Team created successfully by Admin.', team });
   } catch (err) {
     console.error('Error in adminCreateTeam:', err);
     res.status(500).json({ message: 'Server error creating team.', error: err.message });
   }
 };
 
+/**
+ * ADMIN ONLY: Manually cancel a team registration.
+ */
 exports.adminCancelTeamRegistration = async (req, res) => {
   try {
+    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
+    }
+
     const { teamId } = req.params;
-    const { error } = await supabase.from('event_teams').update({ status: 'cancelled' }).eq('id', teamId);
-    if (error) throw error;
-    await supabase.from('event_registrations').update({ status: 'cancelled' }).eq('team_id', teamId);
-    res.json({ message: 'Team registration cancelled.' });
+    if (!teamId) {
+      return res.status(400).json({ message: 'Team ID is required.' });
+    }
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*')
+      .eq('id', teamId)
+      .maybeSingle();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    const eventId = team.event_id;
+
+    await supabase.from('event_registrations').delete().eq('team_id', teamId);
+    await supabase.from('event_teams').delete().eq('id', teamId);
+
+    if (team.status === 'registered') {
+      const { data: event } = await supabase.from('events').select('registered_count').eq('id', eventId).single();
+      if (event) {
+        await supabase.from('events').update({
+          registered_count: Math.max(0, (event.registered_count || 0) - 1)
+        }).eq('id', eventId);
+      }
+    }
+
+    res.json({ message: 'Team registration cancelled successfully by Admin.' });
   } catch (err) {
     console.error('Error in adminCancelTeamRegistration:', err);
-    res.status(500).json({ message: 'Server error cancelling team.', error: err.message });
+    res.status(500).json({ message: 'Server error cancelling team registration.', error: err.message });
   }
 };
 
+/**
+ * ADMIN ONLY: Approve a student's team request/invitation directly.
+ */
 exports.adminApproveTeamRequest = async (req, res) => {
   try {
+    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
+    }
+
     const { registrationId } = req.params;
-    const { error } = await supabase.from('event_registrations').update({ status: 'registered' }).eq('id', registrationId);
-    if (error) throw error;
-    res.json({ message: 'Team request approved.' });
+    if (!registrationId) {
+      return res.status(400).json({ message: 'Registration ID is required.' });
+    }
+
+    const { data: reg, error: regErr } = await supabase
+      .from('event_registrations')
+      .select('*')
+      .eq('id', registrationId)
+      .maybeSingle();
+
+    if (regErr || !reg) {
+      return res.status(404).json({ message: 'Registration record not found.' });
+    }
+
+    if (reg.status === 'registered') {
+      return res.status(400).json({ message: 'Student team request is already approved.' });
+    }
+
+    const { error: updateErr } = await supabase
+      .from('event_registrations')
+      .update({ status: 'registered' })
+      .eq('id', registrationId);
+
+    if (updateErr) throw updateErr;
+
+    // Notify student that their team request was approved
+    try {
+      const eventTitle = 'your event';
+      await notifyUser({
+        recipientId: reg.user_id,
+        title: 'Team Request Approved',
+        message: `Your team request has been approved by the admin.`,
+        type: 'success',
+        eventId: reg.event_id,
+        emailSubject: `Team Approved – ${eventTitle}`,
+        emailData: { eventName: eventTitle, status: 'Approved by Admin' }
+      });
+    } catch (notifErr) {
+      console.error('Non-fatal error sending admin approve notification:', notifErr.message);
+    }
+
+    res.json({ message: 'Student team request approved successfully by Admin.' });
   } catch (err) {
     console.error('Error in adminApproveTeamRequest:', err);
-    res.status(500).json({ message: 'Server error approving request.', error: err.message });
+    res.status(500).json({ message: 'Server error approving team request.', error: err.message });
   }
 };
 
+/**
+ * ADMIN ONLY: Fetch eligible non-organizer students for manual team creation.
+ */
 exports.getNonOrganizerStudentsForEvent = async (req, res) => {
   try {
+    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
+    }
+
     const { eventId } = req.params;
-    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
+
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
     if (!event) return res.status(404).json({ message: 'Event not found.' });
-    const { data: organizers } = await supabase.from('event_organizers').select('student_id').eq('event_id', eventId);
-    const { data: proposalMembers } = await supabase.from('event_members').select('user_id').eq('event_id', eventId);
+
+    const { data: organizers } = await supabase
+      .from('event_organizers')
+      .select('student_id')
+      .eq('event_id', eventId);
+
+    const { data: proposalMembers } = await supabase
+      .from('event_members')
+      .select('user_id')
+      .eq('event_id', eventId);
+
     const organizerIds = new Set((organizers || []).map(o => String(o.student_id)));
     if (event.organizer_id) organizerIds.add(String(event.organizer_id));
     if (event.student_organizer_id) organizerIds.add(String(event.student_organizer_id));
@@ -1818,19 +2000,26 @@ exports.getNonOrganizerStudentsForEvent = async (req, res) => {
     if (event.faculty_id) organizerIds.add(String(event.faculty_id));
     if (event.created_by) organizerIds.add(String(event.created_by));
     (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.add(String(m.user_id)); });
+
     let students = [];
     let from = 0;
+    const pageSize = 1000;
     while (true) {
       const { data: page, error: studentErr } = await supabase
-        .from('profiles').select('id, name, fullName:name, email, roll_number, department, role')
-        .eq('role', 'student').range(from, from + 999);
+        .from('profiles')
+        .select('id, name, fullName:name, email, roll_number, department, role')
+        .eq('role', 'student')
+        .range(from, from + pageSize - 1);
       if (studentErr) throw studentErr;
       if (!page || page.length === 0) break;
       students = students.concat(page);
-      if (page.length < 1000) break;
-      from += 1000;
+      if (page.length < pageSize) break;
+      from += pageSize;
     }
-    res.json(students.filter(s => !organizerIds.has(String(s.id))));
+
+    const eligibleStudents = students.filter(s => !organizerIds.has(String(s.id)));
+
+    res.json(eligibleStudents);
   } catch (err) {
     console.error('Error in getNonOrganizerStudentsForEvent:', err);
     res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });

@@ -3,14 +3,8 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
 const defaultFields = {
-  STUDENT_NAME: { x: 421, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Student Name' },
-  EVENT_NAME: { x: 421, y: 380, fontSize: 24, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Event Name' },
-  EVENT_DATE: { x: 421, y: 420, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Event Date' },
-  EVENT_VENUE: { x: 421, y: 460, fontSize: 18, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Event Venue' },
-  ISSUE_DATE: { x: 150, y: 500, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Issue Date' },
-  CERTIFICATE_ID: { x: 150, y: 530, fontSize: 12, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Certificate ID' },
-  ORGANIZER_NAME: { x: 150, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'Organizer Name' },
-  FACULTY_COORDINATOR: { x: 692, y: 560, fontSize: 16, fontFamily: 'Helvetica', align: 'right', color: '#000000', label: 'Faculty Coordinator' }
+  STUDENT_NAME: { x: 421, y: 300, fontSize: 36, fontFamily: 'Helvetica', align: 'center', color: '#000000', label: 'Participant Name' },
+  QR_CODE: { x: 692, y: 440, fontSize: 80, fontFamily: 'Helvetica', align: 'left', color: '#000000', label: 'QR Code Verification' }
 };
 
 const CertificateManager = ({ eventId, eventStatus }) => {
@@ -36,10 +30,27 @@ const CertificateManager = ({ eventId, eventStatus }) => {
   const [feedback, setFeedback] = useState(null);
   
   // Visual Editor State
+  const imgRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [activeField, setActiveField] = useState(null);
   const [draggingField, setDraggingField] = useState(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, startX: 0, startY: 0 });
+
+  const recalculateScale = () => {
+    if (imgRef.current) {
+      const naturalWidth = imgRef.current.naturalWidth;
+      const clientWidth = imgRef.current.clientWidth;
+      if (naturalWidth > 0 && clientWidth > 0) {
+        setScale(naturalWidth / clientWidth);
+      }
+    }
+  };
+
+  useEffect(() => {
+    recalculateScale();
+    window.addEventListener('resize', recalculateScale);
+    return () => window.removeEventListener('resize', recalculateScale);
+  }, [templateUrl]);
 
   useEffect(() => {
     // Fetch initial config
@@ -49,22 +60,30 @@ const CertificateManager = ({ eventId, eventStatus }) => {
         if (res.data.template) {
           setTemplateUrl(res.data.template);
         }
-        if (res.data.config) {
-          // Merge with default to ensure label/structure is correct
-          const merged = { ...defaultFields };
-          for (let key in res.data.config) {
-            if (merged[key]) {
-              merged[key] = { ...merged[key], ...res.data.config[key] };
+        // Always guarantee all defaultFields are present and initialized
+        const merged = { ...defaultFields };
+        if (res.data.config && typeof res.data.config === 'object') {
+          for (let key in defaultFields) {
+            if (res.data.config[key]) {
+              merged[key] = {
+                ...defaultFields[key],
+                ...res.data.config[key]
+              };
             }
           }
-          setConfig(merged);
         }
+        setConfig(merged);
       } catch (err) {
         console.error("Failed to fetch certificate config", err);
       }
     };
     if (eventId) fetchConfig();
   }, [eventId]);
+
+  const handleResetLayout = () => {
+    setConfig(defaultFields);
+    setFeedback({ type: 'success', message: 'Layout reset to default placeholder positions.' });
+  };
 
   // Drag Handlers
   const handleMouseDown = (e, key) => {
@@ -74,8 +93,8 @@ const CertificateManager = ({ eventId, eventStatus }) => {
     setDragStart({
       x: e.clientX,
       y: e.clientY,
-      startX: Number(config[key].x) || 0,
-      startY: Number(config[key].y) || 0
+      startX: Number(config[key]?.x) || 0,
+      startY: Number(config[key]?.y) || 0
     });
   };
 
@@ -85,15 +104,16 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
       
-      const naturalDx = dx * scale;
-      const naturalDy = dy * scale;
+      const safeScale = (scale && !isNaN(scale) && isFinite(scale) && scale > 0) ? scale : 1;
+      const naturalDx = dx * safeScale;
+      const naturalDy = dy * safeScale;
       
       setConfig(prev => ({
         ...prev,
         [draggingField]: {
           ...prev[draggingField],
-          x: dragStart.startX + naturalDx,
-          y: dragStart.startY + naturalDy
+          x: Math.round(dragStart.startX + naturalDx),
+          y: Math.round(dragStart.startY + naturalDy)
         }
       }));
     };
@@ -113,8 +133,7 @@ const CertificateManager = ({ eventId, eventStatus }) => {
   }, [draggingField, dragStart, scale]);
 
   const handleImageLoad = (e) => {
-    const { naturalWidth, clientWidth } = e.target;
-    setScale(naturalWidth / clientWidth);
+    recalculateScale();
   };
 
   const updateFieldProperty = (key, property, value) => {
@@ -249,73 +268,141 @@ const CertificateManager = ({ eventId, eventStatus }) => {
       {/* STEP 2: Visual Editor */}
       {templateUrl && (
         <div className="mb-8">
-          <h3 className="font-medium text-text-primary mb-4">2. Visual Designer</h3>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h3 className="font-medium text-text-primary">2. Visual Designer</h3>
+              <p className="text-xs text-slate-500">Drag placeholders directly on the template canvas to position them. Click a placeholder to customize styling.</p>
+            </div>
+            <button
+              onClick={handleResetLayout}
+              className="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors flex items-center gap-1.5 border border-slate-300"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reset to Default Layout
+            </button>
+          </div>
           
           <div className="flex flex-col lg:flex-row gap-6">
             
             {/* Editor Canvas */}
-            <div className="flex-1 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden relative group">
+            <div className="flex-1 bg-slate-200/80 rounded-xl border border-slate-300 overflow-hidden relative group min-h-[300px]">
               <div 
                 className="relative shadow-sm w-full select-none"
                 style={{ cursor: draggingField ? 'grabbing' : 'auto' }}
               >
                 <img 
+                  ref={imgRef}
                   src={getFullImageUrl(templateUrl)} 
                   onLoad={handleImageLoad} 
-                  className="w-full h-auto pointer-events-none block" 
+                  className="w-full h-auto pointer-events-none block min-h-[200px]" 
                   alt="Certificate Template"
                   draggable={false}
                 />
                 
                 {Object.entries(config).map(([key, field]) => {
-                  const safeScale = scale || 1;
-                  const screenX = Number(field.x) / safeScale;
-                  const screenY = Number(field.y) / safeScale;
-                  const screenFontSize = Math.max(8, (Number(field.fontSize) || 12) / safeScale); // don't let it get too small visually
+                  if (!field) return null;
+                  const safeScale = (scale && !isNaN(scale) && isFinite(scale) && scale > 0) ? scale : 1;
+                  const screenX = Number(field.x || 0) / safeScale;
+                  const screenY = Number(field.y || 0) / safeScale;
+                  const screenFontSize = Math.max(10, (Number(field.fontSize) || 14) / safeScale);
                   
                   let transform = '';
                   if (field.align === 'center') transform = 'translateX(-50%)';
                   else if (field.align === 'right') transform = 'translateX(-100%)';
                   
+                  if (key === 'QR_CODE') {
+                    const qrBoxSize = Math.max(32, (Number(field.fontSize) || 80) / safeScale);
+                    return (
+                      <div 
+                        key={key}
+                        onMouseDown={(e) => handleMouseDown(e, key)}
+                        className={`absolute cursor-grab flex flex-col items-center justify-center border-2 transition-all shadow-md rounded ${
+                          activeField === key 
+                            ? 'border-indigo-600 bg-indigo-500/30 ring-4 ring-indigo-500/30 shadow-xl z-30' 
+                            : 'border-slate-800 bg-white/95 hover:border-indigo-500 z-20'
+                        }`}
+                        style={{
+                          left: `${screenX}px`,
+                          top: `${screenY}px`,
+                          width: `${qrBoxSize}px`,
+                          height: `${qrBoxSize}px`,
+                          transform
+                        }}
+                      >
+                        <svg className="w-1/2 h-1/2 text-slate-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                        </svg>
+                        <span className="text-[9px] font-mono font-bold text-slate-800 mt-0.5">QR CODE</span>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div 
                       key={key}
                       onMouseDown={(e) => handleMouseDown(e, key)}
-                      className={`absolute px-1 py-0.5 cursor-grab transition-colors duration-100 ${
+                      className={`absolute px-2 py-1 cursor-grab transition-all rounded shadow-sm ${
                         activeField === key 
-                          ? 'border-2 border-indigo-500 bg-indigo-500/20 shadow-lg' 
-                          : 'border-2 border-dashed border-slate-400/70 hover:border-indigo-400 bg-white/20'
+                          ? 'border-2 border-indigo-600 bg-indigo-500/30 ring-4 ring-indigo-500/30 shadow-xl z-30 font-bold text-indigo-950' 
+                          : 'border-2 border-indigo-500/80 bg-white/90 hover:border-indigo-600 text-slate-900 z-20 hover:bg-white'
                       }`}
                       style={{
-                        left: screenX,
-                        top: screenY,
+                        left: `${screenX}px`,
+                        top: `${screenY}px`,
                         transform,
-                        color: field.color,
-                        fontFamily: field.fontFamily,
+                        color: field.color || '#000000',
+                        fontFamily: field.fontFamily || 'Helvetica',
                         fontSize: `${screenFontSize}px`,
                         lineHeight: 1,
                         whiteSpace: 'nowrap'
                       }}
                     >
-                      {'{'}{key}{'}'}
+                      {'{'}{field.label || key}{'}'}
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Properties Panel */}
-            <div className="w-full lg:w-72 flex-shrink-0 space-y-4">
+            {/* Properties & Selector Panel */}
+            <div className="w-full lg:w-80 flex-shrink-0 space-y-4">
+              
+              {/* Available Placeholders Quick Selector */}
               <div className="glass-panel border border-slate-200 rounded-xl p-4">
-                <h4 className="text-sm font-bold text-text-primary mb-4 border-b border-slate-200/50 pb-2">Placeholder Styling</h4>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5 pb-1 border-b border-slate-200 flex items-center justify-between">
+                  <span>Template Placeholders</span>
+                  <span className="text-[10px] font-normal text-slate-400">Click to select</span>
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(config).map(([key, field]) => (
+                    <button
+                      key={key}
+                      onClick={() => setActiveField(key)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
+                        activeField === key
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm font-bold'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50'
+                      }`}
+                    >
+                      {field.label || key}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Placeholder Styling Box */}
+              <div className="glass-panel border border-slate-200 rounded-xl p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 border-b border-slate-200 pb-2">Placeholder Styling</h4>
                 
-                {!activeField ? (
-                  <p className="text-xs text-slate-500 italic text-center py-8">Click on a placeholder in the template to edit its styles.</p>
+                {!activeField || !config[activeField] ? (
+                  <p className="text-xs text-slate-500 italic text-center py-6">Click on a placeholder in the canvas or list above to edit its position and styles.</p>
                 ) : (
                   <div className="space-y-4 animate-fade-in-up">
                     <div>
                       <p className="text-xs font-bold text-indigo-600 mb-1">{config[activeField].label}</p>
-                      <p className="text-[10px] text-slate-400 mb-3">Drag on image to reposition</p>
+                      <p className="text-[10px] text-slate-400 mb-3">X: {config[activeField].x}px, Y: {config[activeField].y}px (Drag on image to reposition)</p>
                     </div>
 
                     <div>
@@ -346,11 +433,11 @@ const CertificateManager = ({ eventId, eventStatus }) => {
                       <div className="flex items-center gap-2">
                         <input 
                           type="color" 
-                          value={config[activeField].color}
+                          value={config[activeField].color || '#000000'}
                           onChange={(e) => updateFieldProperty(activeField, 'color', e.target.value)}
                           className="h-8 w-8 rounded cursor-pointer border-0 p-0"
                         />
-                        <span className="text-xs text-slate-600 font-mono uppercase">{config[activeField].color}</span>
+                        <span className="text-xs text-slate-600 font-mono uppercase">{config[activeField].color || '#000000'}</span>
                       </div>
                     </div>
                     
