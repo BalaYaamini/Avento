@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 
 const rankStyles = [
   'border-amber-300 bg-gradient-to-br from-amber-100 to-yellow-50',
@@ -8,9 +9,11 @@ const rankStyles = [
 ];
 
 const ScoringBoard = ({ eventId, canEdit }) => {
+  const { user } = useAuth();
   const [data, setData] = useState({ enabled: false, visible: false, rounds: [], teams: [], scores: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [myTeamId, setMyTeamId] = useState(null);
 
   const load = async () => {
     try {
@@ -25,6 +28,15 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   };
 
   useEffect(() => { load(); }, [eventId]);
+
+  useEffect(() => {
+    if (!canEdit && user?.id && eventId) {
+      axios.get('/api/registrations/my-registrations').then(res => {
+        const reg = (res.data || []).find(r => String(r.event_id || r.eventId?.id) === String(eventId) && r.team_id);
+        if (reg) setMyTeamId(reg.team_id);
+      }).catch(() => {});
+    }
+  }, [canEdit, user, eventId]);
 
   const update = (path, value) => setData(previous => {
     const next = JSON.parse(JSON.stringify(previous));
@@ -91,6 +103,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
     .map((team, index, sorted) => ({ ...team, rank: index > 0 && team.total === sorted[index - 1].total ? sorted[index - 1].rank : index + 1 }));
 
+  const detailTeams = canEdit ? data.teams : data.teams.filter(t => String(t.id) === String(myTeamId));
+
   if (loading) return <div className="glass-panel rounded-2xl p-6 text-sm text-slate-500">Loading scoring module...</div>;
   if (!canEdit && !data.visible) return null;
 
@@ -121,7 +135,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
             {leaderboard.length > 3 && <div className="mt-3 space-y-2">{leaderboard.slice(3).map(team => <div key={team.id} className="flex items-center gap-4 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900"><span className="w-8 text-center text-sm font-black text-slate-400">#{team.rank}</span><span className="flex-1 text-sm font-bold text-slate-700 dark:text-slate-200">{team.name}</span><span className="font-black text-violet-700 dark:text-violet-300">{team.total}</span><span className="text-[10px] font-bold uppercase text-slate-400">points</span></div>)}</div>}
           </div>
 
-          <div><div className="mb-4"><h3 className="font-display text-xl font-black text-slate-800">Score Details</h3><p className="text-xs text-slate-500">{canEdit ? 'Enter scores directly in the evaluation grid.' : 'Scores are read-only for participants.'}</p></div><div className="overflow-x-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><th className="sticky left-0 bg-slate-50 p-4">Team</th>{data.rounds.map(round => <th key={round.id || round.name} colSpan={(round.subrounds || []).length} className="border-l border-slate-200 p-3 text-center">{round.name}</th>)}<th className="border-l border-slate-200 p-4 text-center">Total</th></tr><tr className="border-t border-slate-200 bg-white text-[10px] text-slate-400"><th className="sticky left-0 bg-white p-3" />{subrounds.map(subround => <th key={subround.id || subround.name} className="p-3 text-center">{subround.name}<span className="mt-1 block text-[9px]">/{subround.max_score}</span></th>)}<th className="p-3" /></tr></thead><tbody>{data.teams.map(team => { const total = subrounds.reduce((sum, subround) => sum + Number(scoreFor(team.id, subround.id) || 0), 0); return <tr key={team.id} className="border-t border-slate-100 hover:bg-violet-50/30"><td className="sticky left-0 bg-white p-4 font-bold text-slate-700">{team.name}</td>{subrounds.map(subround => <td key={subround.id} className="p-2 text-center">{canEdit ? <input type="number" min="0" max={subround.max_score} value={scoreFor(team.id, subround.id)} onChange={event => saveScore(team.id, subround.id, event.target.value)} className="w-20 rounded-lg border border-slate-200 px-2 py-2 text-center font-bold text-slate-700 focus:border-violet-500 focus:outline-none" /> : <span className="font-semibold text-slate-600">{scoreFor(team.id, subround.id) || '-'}</span>}</td>)}<td className="border-l border-slate-100 p-4 text-center text-base font-black text-violet-700">{total}</td></tr>; })}</tbody></table></div></div>
+          <div><div className="mb-4"><h3 className="font-display text-xl font-black text-slate-800">Score Details</h3><p className="text-xs text-slate-500">{canEdit ? 'Enter scores directly in the evaluation grid.' : 'Showing scores for your team only.'}</p></div><div className="overflow-x-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><th className="sticky left-0 bg-slate-50 p-4">Team</th>{data.rounds.map(round => <th key={round.id || round.name} colSpan={(round.subrounds || []).length} className="border-l border-slate-200 p-3 text-center">{round.name}</th>)}<th className="border-l border-slate-200 p-4 text-center">Total</th></tr><tr className="border-t border-slate-200 bg-white text-[10px] text-slate-400"><th className="sticky left-0 bg-white p-3" />{subrounds.map(subround => <th key={subround.id || subround.name} className="p-3 text-center">{subround.name}<span className="mt-1 block text-[9px]">/{subround.max_score}</span></th>)}<th className="p-3" /></tr></thead><tbody>{detailTeams.map(team => { const total = subrounds.reduce((sum, subround) => sum + Number(scoreFor(team.id, subround.id) || 0), 0); return <tr key={team.id} className="border-t border-slate-100 hover:bg-violet-50/30"><td className="sticky left-0 bg-white p-4 font-bold text-slate-700">{team.name}</td>{subrounds.map(subround => <td key={subround.id} className="p-2 text-center">{canEdit ? <input type="number" min="0" max={subround.max_score} value={scoreFor(team.id, subround.id)} onChange={event => saveScore(team.id, subround.id, event.target.value)} className="w-20 rounded-lg border border-slate-200 px-2 py-2 text-center font-bold text-slate-700 focus:border-violet-500 focus:outline-none" /> : <span className="font-semibold text-slate-600">{scoreFor(team.id, subround.id) || '-'}</span>}</td>)}<td className="border-l border-slate-100 p-4 text-center text-base font-black text-violet-700">{total}</td></tr>})}</tbody></table></div></div>
         </>}
       </div>
     </section>
