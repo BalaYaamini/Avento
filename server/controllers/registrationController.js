@@ -1719,3 +1719,112 @@ exports.checkTeamName = async (req, res) => {
     res.status(500).json({ message: 'Server error.', error: err.message });
   }
 };
+
+exports.updatePaymentStatus = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { payment_status } = req.body;
+
+    if (!payment_status) {
+      return res.status(400).json({ message: 'payment_status is required.' });
+    }
+
+    const { data, error } = await supabase
+      .from('event_registrations')
+      .update({ payment_status, updated_at: new Date().toISOString() })
+      .eq('id', registrationId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ message: 'Registration not found.' });
+
+    res.json({ message: 'Payment status updated.', registration: data });
+  } catch (err) {
+    console.error('updatePaymentStatus error:', err.message);
+    res.status(500).json({ message: 'Failed to update payment status.', error: err.message });
+  }
+};
+
+exports.adminCreateTeam = async (req, res) => {
+  try {
+    const { eventId, teamName, leaderId, memberIds } = req.body;
+    if (!eventId || !teamName || !leaderId) {
+      return res.status(400).json({ message: 'Event ID, team name, and leader are required.' });
+    }
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+    const { data: team, error: teamErr } = await supabase.from('event_teams').insert({
+      event_id: eventId, name: teamName, leader_id: leaderId, leader_contact_number: null, status: 'registered'
+    }).select().single();
+    if (teamErr) throw teamErr;
+    await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', eventId);
+    const allMemberIds = [leaderId, ...(memberIds || [])];
+    const { error: regErr } = await supabase.from('event_registrations').insert(allMemberIds.map(uid => ({
+      event_id: eventId, user_id: uid, team_id: team.id, status: 'registered'
+    })));
+    if (regErr) throw regErr;
+    res.json({ message: 'Team created successfully by admin.', team });
+  } catch (err) {
+    console.error('Error in adminCreateTeam:', err);
+    res.status(500).json({ message: 'Server error creating team.', error: err.message });
+  }
+};
+
+exports.adminCancelTeamRegistration = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { error } = await supabase.from('event_teams').update({ status: 'cancelled' }).eq('id', teamId);
+    if (error) throw error;
+    await supabase.from('event_registrations').update({ status: 'cancelled' }).eq('team_id', teamId);
+    res.json({ message: 'Team registration cancelled.' });
+  } catch (err) {
+    console.error('Error in adminCancelTeamRegistration:', err);
+    res.status(500).json({ message: 'Server error cancelling team.', error: err.message });
+  }
+};
+
+exports.adminApproveTeamRequest = async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { error } = await supabase.from('event_registrations').update({ status: 'registered' }).eq('id', registrationId);
+    if (error) throw error;
+    res.json({ message: 'Team request approved.' });
+  } catch (err) {
+    console.error('Error in adminApproveTeamRequest:', err);
+    res.status(500).json({ message: 'Server error approving request.', error: err.message });
+  }
+};
+
+exports.getNonOrganizerStudentsForEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+    const { data: organizers } = await supabase.from('event_organizers').select('student_id').eq('event_id', eventId);
+    const { data: proposalMembers } = await supabase.from('event_members').select('user_id').eq('event_id', eventId);
+    const organizerIds = new Set((organizers || []).map(o => String(o.student_id)));
+    if (event.organizer_id) organizerIds.add(String(event.organizer_id));
+    if (event.student_organizer_id) organizerIds.add(String(event.student_organizer_id));
+    if (event.proposed_by) organizerIds.add(String(event.proposed_by));
+    if (event.faculty_id) organizerIds.add(String(event.faculty_id));
+    if (event.created_by) organizerIds.add(String(event.created_by));
+    (proposalMembers || []).forEach(m => { if (m.user_id) organizerIds.add(String(m.user_id)); });
+    let students = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error: studentErr } = await supabase
+        .from('profiles').select('id, name, fullName:name, email, roll_number, department, role')
+        .eq('role', 'student').range(from, from + 999);
+      if (studentErr) throw studentErr;
+      if (!page || page.length === 0) break;
+      students = students.concat(page);
+      if (page.length < 1000) break;
+      from += 1000;
+    }
+    res.json(students.filter(s => !organizerIds.has(String(s.id))));
+  } catch (err) {
+    console.error('Error in getNonOrganizerStudentsForEvent:', err);
+    res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });
+  }
+};
