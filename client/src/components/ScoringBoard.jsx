@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
@@ -14,6 +14,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [myTeamId, setMyTeamId] = useState(null);
+  const pendingSaves = useRef({});
+  const [pendingCount, setPendingCount] = useState(0);
 
   const load = async () => {
     try {
@@ -37,6 +39,12 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       }).catch(() => {});
     }
   }, [canEdit, user, eventId]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    const interval = setInterval(() => { if (Object.keys(pendingSaves.current).length > 0) flushPendingSaves(); }, 3000);
+    return () => clearInterval(interval);
+  }, [canEdit, flushPendingSaves]);
 
   const update = (path, value) => setData(previous => {
     const next = JSON.parse(JSON.stringify(previous));
@@ -84,28 +92,49 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }
   };
 
-  const saveScore = async (teamId, subroundId, value) => {
+  const flushPendingSaves = useCallback(async () => {
+    const entries = Object.entries(pendingSaves.current);
+    if (entries.length === 0) return;
+    pendingSaves.current = {};
+    setPendingCount(0);
+    const scores = entries.map(([key, score]) => {
+      const [teamId, subroundId] = key.split(':');
+      return { teamId, subroundId, score };
+    });
     try {
-      const response = await axios.put(`/api/events/${eventId}/scoring/score`, { teamId, subroundId, score: value });
-      setData(previous => ({
-        ...previous,
-        scores: [...previous.scores.filter(score => !(score.team_id === teamId && score.subround_id === subroundId)), response.data]
-      }));
+      const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
+      setData(previous => ({ ...previous, scores: response.data.scores }));
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save score.');
+      alert(err.response?.data?.message || 'Failed to save scores.');
     }
-  };
+  }, [eventId]);
 
-  const subrounds = data.rounds.flatMap(round => round.subrounds || []);
-  const scoreFor = (teamId, subroundId) => data.scores.find(score => score.team_id === teamId && score.subround_id === subroundId)?.score ?? '';
-  const sorted = data.teams
-    .map(team => ({ ...team, total: subrounds.reduce((sum, subround) => sum + Number(scoreFor(team.id, subround.id) || 0), 0) }))
-    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-  let currentRank = 0;
-  const leaderboard = sorted.map((team, index) => {
-    if (index === 0 || team.total !== sorted[index - 1].total) currentRank += 1;
-    return { ...team, rank: currentRank };
-  });
+  const saveScore = useCallback((teamId, subroundId, value) => {
+    const key = `${teamId}:${subroundId}`;
+    pendingSaves.current[key] = value;
+    setPendingCount(Object.keys(pendingSaves.current).length);
+  }, []);
+
+  const scoresMap = useMemo(() => {
+    const map = {};
+    data.scores.forEach(score => { map[`${score.team_id}:${score.subround_id}`] = score.score; });
+    return map;
+  }, [data.scores]);
+
+  const scoreFor = useCallback((teamId, subroundId) => scoresMap[`${teamId}:${subroundId}`] ?? '', [scoresMap]);
+
+  const subrounds = useMemo(() => data.rounds.flatMap(round => round.subrounds || []), [data.rounds]);
+
+  const leaderboard = useMemo(() => {
+    const sorted = data.teams
+      .map(team => ({ ...team, total: subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0) }))
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    let currentRank = 0;
+    return sorted.map((team, index) => {
+      if (index === 0 || team.total !== sorted[index - 1].total) currentRank += 1;
+      return { ...team, rank: currentRank };
+    });
+  }, [data.teams, subrounds, scoresMap]);
 
   const detailTeams = canEdit ? data.teams : data.teams.filter(t => String(t.id) === String(myTeamId));
 
@@ -122,7 +151,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
             <h2 className="font-display text-2xl font-black sm:text-3xl">Scoring Board</h2>
             <p className="mt-1 text-sm text-violet-100/80">Round performance and current team standings.</p>
           </div>
-          {canEdit && <div className="flex flex-wrap gap-2"><button onClick={() => update(['visible'], !data.visible)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">{data.visible ? 'Hide Scoreboard' : 'Show Scoreboard'}</button><button onClick={saveConfig} disabled={saving} className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-violet-800 shadow-lg hover:bg-violet-50">{saving ? 'Saving...' : 'Save Changes'}</button></div>}
+          {canEdit && <div className="flex flex-wrap gap-2">{pendingCount > 0 && <button onClick={flushPendingSaves} className="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-lg hover:bg-emerald-600 animate-pulse">{pendingCount} unsaved — Click to Save</button>}<button onClick={() => update(['visible'], !data.visible)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">{data.visible ? 'Hide Scoreboard' : 'Show Scoreboard'}</button><button onClick={saveConfig} disabled={saving} className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-violet-800 shadow-lg hover:bg-violet-50">{saving ? 'Saving...' : 'Save Changes'}</button></div>}
         </div>
       </div>
 
@@ -139,7 +168,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
             {leaderboard.length > 3 && <div className="mt-3 space-y-2">{leaderboard.slice(3).map(team => <div key={team.id} className="flex items-center gap-4 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900"><span className="min-w-[2rem] text-center text-sm font-black text-slate-400">#{team.rank}</span><span className="flex-1 text-sm font-bold text-slate-700 dark:text-slate-200">{team.name}</span><span className="font-black text-violet-700 dark:text-violet-300">{team.total}</span><span className="text-[10px] font-bold uppercase text-slate-400">points</span></div>)}</div>}
           </div>
 
-          <div><div className="mb-4"><h3 className="font-display text-xl font-black text-slate-800">Score Details</h3><p className="text-xs text-slate-500">{canEdit ? 'Enter scores directly in the evaluation grid.' : 'Showing scores for your team only.'}</p></div><div className="overflow-x-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><th className="sticky left-0 bg-slate-50 p-4">Team</th>{data.rounds.map(round => <th key={round.id || round.name} colSpan={(round.subrounds || []).length} className="border-l border-slate-200 p-3 text-center">{round.name}</th>)}<th className="border-l border-slate-200 p-4 text-center">Total</th></tr><tr className="border-t border-slate-200 bg-white text-[10px] text-slate-400"><th className="sticky left-0 bg-white p-3" />{subrounds.map(subround => <th key={subround.id || subround.name} className="p-3 text-center">{subround.name}<span className="mt-1 block text-[9px]">/{subround.max_score}</span></th>)}<th className="p-3" /></tr></thead><tbody>{detailTeams.map(team => { const total = subrounds.reduce((sum, subround) => sum + Number(scoreFor(team.id, subround.id) || 0), 0); return <tr key={team.id} className="border-t border-slate-100 hover:bg-violet-50/30"><td className="sticky left-0 bg-white p-4 font-bold text-slate-700">{team.name}</td>{subrounds.map(subround => <td key={subround.id} className="p-2 text-center">{canEdit ? <input type="number" min="0" max={subround.max_score} value={scoreFor(team.id, subround.id)} onChange={event => saveScore(team.id, subround.id, event.target.value)} className="w-20 rounded-lg border border-slate-200 px-2 py-2 text-center font-bold text-slate-700 focus:border-violet-500 focus:outline-none" /> : <span className="font-semibold text-slate-600">{scoreFor(team.id, subround.id) || '-'}</span>}</td>)}<td className="border-l border-slate-100 p-4 text-center text-base font-black text-violet-700">{total}</td></tr>})}</tbody></table></div></div>
+          <div><div className="mb-4"><h3 className="font-display text-xl font-black text-slate-800">Score Details</h3><p className="text-xs text-slate-500">{canEdit ? 'Enter scores directly in the evaluation grid.' : 'Showing scores for your team only.'}</p></div><div className="overflow-x-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><th className="sticky left-0 bg-slate-50 p-4">Team</th>{data.rounds.map(round => <th key={round.id || round.name} colSpan={(round.subrounds || []).length} className="border-l border-slate-200 p-3 text-center">{round.name}</th>)}<th className="border-l border-slate-200 p-4 text-center">Total</th></tr><tr className="border-t border-slate-200 bg-white text-[10px] text-slate-400"><th className="sticky left-0 bg-white p-3" />{subrounds.map(subround => <th key={subround.id || subround.name} className="p-3 text-center">{subround.name}<span className="mt-1 block text-[9px]">/{subround.max_score}</span></th>)}<th className="p-3" /></tr></thead><tbody>{detailTeams.map(team => { const total = subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0); return <tr key={team.id} className="border-t border-slate-100 hover:bg-violet-50/30"><td className="sticky left-0 bg-white p-4 font-bold text-slate-700">{team.name}</td>{subrounds.map(subround => <td key={subround.id} className="p-2 text-center">{canEdit ? <input type="number" min="0" max={subround.max_score} defaultValue={scoresMap[`${team.id}:${subround.id}`] ?? ''} onBlur={event => saveScore(team.id, subround.id, event.target.value)} onKeyDown={event => { if (event.key === 'Tab' || event.key === 'Enter') { saveScore(team.id, subround.id, event.target.value); if (event.key === 'Enter') { event.preventDefault(); const inputs = Array.from(event.target.closest('table').querySelectorAll('input[type=number]')); const idx = inputs.indexOf(event.target); if (idx < inputs.length - 1) inputs[idx + 1].focus(); } } }} className="w-20 rounded-lg border border-slate-200 px-2 py-2 text-center font-bold text-slate-700 focus:border-violet-500 focus:outline-none" /> : <span className="font-semibold text-slate-600">{scoresMap[`${team.id}:${subround.id}`] || '-'}</span>}</td>)}<td className="border-l border-slate-100 p-4 text-center text-base font-black text-violet-700">{total}</td></tr>})}</tbody></table></div></div>
         </>}
       </div>
     </section>

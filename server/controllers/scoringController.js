@@ -105,4 +105,42 @@ const updateScore = async (req, res) => {
   }
 };
 
-module.exports = { getScoring, updateConfig, updateScore };
+const bulkUpdateScores = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { scores = [] } = req.body;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+    if (!allowed) return res.status(403).json({ message: 'Participants cannot edit scores.' });
+    if (!Array.isArray(scores) || scores.length === 0) return res.status(400).json({ message: 'Scores array is required.' });
+
+    const subroundIds = [...new Set(scores.map(s => s.subroundId))];
+    const { data: subrounds } = await supabase.from('scoring_subrounds').select('id, max_score, scoring_rounds!inner(event_id)').in('id', subroundIds);
+    const validSubrounds = {};
+    (subrounds || []).forEach(s => {
+      if (String(s.scoring_rounds.event_id) === String(eventId)) validSubrounds[s.id] = Number(s.max_score);
+    });
+
+    const rows = [];
+    const errors = [];
+    scores.forEach(({ teamId, subroundId, score }) => {
+      const numericScore = Number(score);
+      if (!teamId || !subroundId || !Number.isFinite(numericScore) || numericScore < 0) { errors.push({ teamId, subroundId, error: 'Invalid score' }); return; }
+      if (!(subroundId in validSubrounds)) { errors.push({ teamId, subroundId, error: 'Invalid subround' }); return; }
+      if (numericScore > validSubrounds[subroundId]) { errors.push({ teamId, subroundId, error: `Score exceeds max ${validSubrounds[subroundId]}` }); return; }
+      rows.push({ event_id: eventId, team_id: teamId, subround_id: subroundId, score: numericScore, evaluator_id: req.user.id, updated_at: new Date().toISOString() });
+    });
+
+    if (rows.length > 0) {
+      const { error } = await supabase.from('scoring_scores').upsert(rows, { onConflict: 'team_id,subround_id' });
+      if (error) throw error;
+    }
+
+    const { data: updatedScores } = await supabase.from('scoring_scores').select('*').eq('event_id', eventId);
+    res.json({ saved: rows.length, errors, scores: updatedScores || [] });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error bulk saving scores.', error: err.message });
+  }
+};
+
+module.exports = { getScoring, updateConfig, updateScore, bulkUpdateScores };

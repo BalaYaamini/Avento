@@ -32,6 +32,7 @@ router.get('/', eventController.getEvents);
 router.get('/:eventId/scoring', authMiddleware, scoringController.getScoring);
 router.put('/:eventId/scoring', authMiddleware, scoringController.updateConfig);
 router.put('/:eventId/scoring/score', authMiddleware, scoringController.updateScore);
+router.put('/:eventId/scoring/bulk', authMiddleware, scoringController.bulkUpdateScores);
 
 // IMPORTANT: /organizer/my-events MUST come before /:id to avoid being matched as an id
 router.get(
