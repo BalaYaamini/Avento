@@ -98,10 +98,14 @@ const ScoringBoard = ({ eventId, canEdit }) => {
 
   const subrounds = data.rounds.flatMap(round => round.subrounds || []);
   const scoreFor = (teamId, subroundId) => data.scores.find(score => score.team_id === teamId && score.subround_id === subroundId)?.score ?? '';
-  const leaderboard = data.teams
+  const sorted = data.teams
     .map(team => ({ ...team, total: subrounds.reduce((sum, subround) => sum + Number(scoreFor(team.id, subround.id) || 0), 0) }))
-    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
-    .map((team, index, sorted) => ({ ...team, rank: index > 0 && team.total === sorted[index - 1].total ? sorted[index - 1].rank : index + 1 }));
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  let currentRank = 0;
+  const leaderboard = sorted.map((team, index) => {
+    if (index === 0 || team.total !== sorted[index - 1].total) currentRank = index + 1;
+    return { ...team, rank: currentRank };
+  });
 
   const detailTeams = canEdit ? data.teams : data.teams.filter(t => String(t.id) === String(myTeamId));
 
