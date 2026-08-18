@@ -103,7 +103,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   let currentRank = 0;
   const leaderboard = sorted.map((team, index) => {
-    if (index === 0 || team.total !== sorted[index - 1].total) currentRank = index + 1;
+    if (index === 0 || team.total !== sorted[index - 1].total) currentRank += 1;
     return { ...team, rank: currentRank };
   });
 
