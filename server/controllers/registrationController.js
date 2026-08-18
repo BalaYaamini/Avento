@@ -1182,7 +1182,7 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: 'A valid 10-digit Indian mobile number is required for the Team Leader.' });
     }
 
-    if (utrNumber !== undefined && utrNumber !== null && !validateUtr(utrNumber)) {
+    if (utrNumber && String(utrNumber).trim() !== '' && !validateUtr(utrNumber)) {
       return res.status(400).json({ message: 'UTR must be 12-22 letters or numbers.' });
     }
 
