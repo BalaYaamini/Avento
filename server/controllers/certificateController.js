@@ -5,16 +5,13 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const QRCode = require('qrcode');
+const crypto = require('crypto');
 
-// Helper to get font size
 const getFontSize = (size) => size || 24;
 
-// Helper to generate a unique certificate ID
-const generateCertId = () => {
-  const year = new Date().getFullYear();
-  const random = Math.floor(1000 + Math.random() * 9000);
-  return `CERT-${year}-${random}`;
-};
+const generateCertId = () => `CERT-${new Date().getFullYear()}-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+
+const BATCH_SIZE = 10;
 
 // Helper to fetch names
 const fetchOrganizerNames = async (event) => {
@@ -170,12 +167,9 @@ exports.saveTemplateConfig = async (req, res) => {
   }
 };
 
-// Internal function to generate PDF
-const createPdfCertificate = async (event, student, certId, facultyName = '', organizerName = '') => {
-  const templatePathStr = event.certificate_template;
-  let fileBytes;
-  let ext;
-
+// Fetch template bytes once (cached for bulk generation)
+const fetchTemplateBytes = async (templatePathStr) => {
+  let fileBytes, ext;
   if (templatePathStr.startsWith('http')) {
     const cleanUrlPath = templatePathStr.split('?')[0];
     ext = path.extname(cleanUrlPath).toLowerCase();
@@ -185,46 +179,50 @@ const createPdfCertificate = async (event, student, certId, facultyName = '', or
       else if (templatePathStr.includes('.jpg') || templatePathStr.includes('.jpeg')) ext = '.jpg';
       else ext = '.png';
     }
-    const response = await axios.get(templatePathStr, { responseType: 'arraybuffer' });
+    const response = await axios.get(templatePathStr, { responseType: 'arraybuffer', timeout: 30000 });
     fileBytes = response.data;
   } else {
-    // Backward compatibility for old local templates
     const templatePathLocal = path.join(__dirname, '..', templatePathStr);
-    if (!fs.existsSync(templatePathLocal)) {
-      throw new Error('Template file not found on server.');
-    }
+    if (!fs.existsSync(templatePathLocal)) throw new Error('Template file not found on server.');
     ext = path.extname(templatePathLocal).toLowerCase();
     fileBytes = fs.readFileSync(templatePathLocal);
   }
+  return { fileBytes, ext };
+};
+
+// Internal function to generate PDF (templateCache = { fileBytes, ext })
+const createPdfCertificate = async (event, student, certId, facultyName = '', organizerName = '', templateCache = null) => {
+  const { fileBytes, ext } = templateCache || await fetchTemplateBytes(event.certificate_template);
+
+  let config = event.certificate_fields_config;
   let pdfDoc;
+  let width = 842, height = 595;
 
   if (ext === '.pdf') {
     pdfDoc = await PDFDocument.load(fileBytes);
+    const firstPage = pdfDoc.getPages()[0];
+    const size = firstPage.getSize();
+    width = size.width;
+    height = size.height;
   } else {
     pdfDoc = await PDFDocument.create();
     let image;
-    if (ext === '.png') {
-      image = await pdfDoc.embedPng(fileBytes);
-    } else if (ext === '.jpg' || ext === '.jpeg') {
-      image = await pdfDoc.embedJpg(fileBytes);
-    }
-    const { width, height } = image.scale(1);
+    if (ext === '.png') image = await pdfDoc.embedPng(fileBytes);
+    else if (ext === '.jpg' || ext === '.jpeg') image = await pdfDoc.embedJpg(fileBytes);
+    if (!image) throw new Error('Unsupported template image format.');
+    const dims = image.scale(1);
+    width = dims.width;
+    height = dims.height;
     const page = pdfDoc.addPage([width, height]);
     page.drawImage(image, { x: 0, y: 0, width, height });
   }
 
-  const pages = pdfDoc.getPages();
-  const firstPage = pages[0];
-  const { width, height } = firstPage.getSize();
-  
   const fonts = {
     Helvetica: await pdfDoc.embedFont(StandardFonts.Helvetica),
     'Times New Roman': await pdfDoc.embedFont(StandardFonts.TimesRoman),
     Courier: await pdfDoc.embedFont(StandardFonts.Courier)
   };
 
-  let config = event.certificate_fields_config;
-  // Handle old config format if present
   if (config && config.name) {
     config = {
       STUDENT_NAME: { x: config.name.x, y: height - config.name.y, fontSize: config.name.size, align: config.name.align, color: '#000000', fontFamily: 'Helvetica' },
@@ -248,104 +246,70 @@ const createPdfCertificate = async (event, student, certId, facultyName = '', or
   const hexToRgb = (hex) => {
     if (!hex) return [0,0,0];
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? [
-      parseInt(result[1], 16) / 255,
-      parseInt(result[2], 16) / 255,
-      parseInt(result[3], 16) / 255
-    ] : [0,0,0];
+    return result ? [parseInt(result[1], 16) / 255, parseInt(result[2], 16) / 255, parseInt(result[3], 16) / 255] : [0,0,0];
   };
+
+  const firstPage = pdfDoc.getPages()[0];
 
   const drawText = (text, fieldKey) => {
     const fieldConfig = config[fieldKey];
     if (!text || !fieldConfig) return;
-    
     const size = Number(fieldConfig.fontSize) || 24;
     const usedFont = fonts[fieldConfig.fontFamily] || fonts.Helvetica;
     const textWidth = usedFont.widthOfTextAtSize(text, size);
-    
     let x = Number(fieldConfig.x) || 0;
-    if (fieldConfig.align === 'center') {
-      x = x - (textWidth / 2);
-    } else if (fieldConfig.align === 'right') {
-      x = x - textWidth;
-    }
-    
-    // Invert Y coordinate because pdf-lib is bottom-left (0,0) but visual editor is top-left
-    // Adjust by `size` because HTML `top` is the top edge, but pdf-lib `y` is the baseline
+    if (fieldConfig.align === 'center') x -= (textWidth / 2);
+    else if (fieldConfig.align === 'right') x -= textWidth;
     const y = height - Number(fieldConfig.y) - size;
-    
     const colorArr = hexToRgb(fieldConfig.color);
-    
-    firstPage.drawText(text, {
-      x,
-      y,
-      size,
-      font: usedFont,
-      color: rgb(colorArr[0], colorArr[1], colorArr[2])
-    });
+    firstPage.drawText(text, { x, y, size, font: usedFont, color: rgb(colorArr[0], colorArr[1], colorArr[2]) });
   };
 
   drawText(student.name, 'STUDENT_NAME');
 
-  // Embed QR Code into Certificate PDF pointing strictly to <base-url>/verify/<certId>
   try {
     const cleanBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, '');
     const verifyUrl = `${cleanBaseUrl}/verify/${certId}`;
-    console.log(`📌 Certificate [${certId}] QR destination: ${verifyUrl}`);
-    
-    const qrDataUrl = await QRCode.toDataURL(verifyUrl, {
-      margin: 1,
-      width: 300,
-      errorCorrectionLevel: 'H'
-    });
-    
+    const qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 1, width: 300, errorCorrectionLevel: 'H' });
     const qrImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');
     const qrImage = await pdfDoc.embedPng(qrImageBytes);
-
     const qrConfig = config.QR_CODE || { x: width - 150, y: 440, fontSize: 80 };
     const qrSize = Number(qrConfig.fontSize) || Number(qrConfig.width) || 80;
-    
     let qrX = Number(qrConfig.x) || (width - 150);
-    if (qrConfig.align === 'center') {
-      qrX = qrX - (qrSize / 2);
-    } else if (qrConfig.align === 'right') {
-      qrX = qrX - qrSize;
-    }
-    
+    if (qrConfig.align === 'center') qrX -= (qrSize / 2);
+    else if (qrConfig.align === 'right') qrX -= qrSize;
     const qrY = height - Number(qrConfig.y) - qrSize;
-
-    firstPage.drawImage(qrImage, {
-      x: qrX,
-      y: qrY,
-      width: qrSize,
-      height: qrSize
-    });
+    firstPage.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
   } catch (qrErr) {
-    console.error('Error generating QR code on certificate:', qrErr);
+    console.error('QR code error (non-fatal):', qrErr.message);
   }
 
   const pdfBytes = await pdfDoc.save();
   const certFileName = `generated/certificate-${certId}-${Date.now()}.pdf`;
-  
+
   const { error: uploadErr } = await supabase.storage
     .from('certificates')
-    .upload(certFileName, pdfBytes, {
-      contentType: 'application/pdf',
-      upsert: true
-    });
-    
-  if (uploadErr) {
-    throw new Error(`Failed to upload certificate to storage: ${uploadErr.message}`);
-  }
-  
-  const { data: urlData } = supabase.storage
-    .from('certificates')
-    .getPublicUrl(certFileName);
-    
+    .upload(certFileName, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+  if (uploadErr) throw new Error(`Failed to upload certificate: ${uploadErr.message}`);
+
+  const { data: urlData } = supabase.storage.from('certificates').getPublicUrl(certFileName);
   return urlData.publicUrl;
 };
 
-// 2. Generate Certificates (Bulk)
+// Process a batch of profiles concurrently
+const processBatch = async (profiles, generateFn) => {
+  const results = await Promise.allSettled(profiles.map(generateFn));
+  const succeeded = [];
+  const failed = [];
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled' && result.value) succeeded.push(result.value);
+    else failed.push({ userId: profiles[i].id, error: result.reason?.message || 'Unknown error' });
+  });
+  return { succeeded, failed };
+};
+
+// 2. Generate Certificates (Bulk) — optimized for 500+
 exports.generateAllCertificates = async (req, res) => {
   try {
     const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
@@ -354,7 +318,6 @@ exports.generateAllCertificates = async (req, res) => {
     }
 
     const { eventId } = req.params;
-    
     const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
     if (!event || event.status !== 'completed') {
       return res.status(400).json({ message: 'Event not found or not completed.' });
@@ -363,13 +326,12 @@ exports.generateAllCertificates = async (req, res) => {
       return res.status(400).json({ message: 'No certificate template uploaded for this event.' });
     }
 
-    // Get all approved/registered participants
     const { data: registrations } = await supabase
       .from('event_registrations')
-      .select('user_id, status, attendance_status')
+      .select('user_id, attendance_status')
       .eq('event_id', eventId);
 
-    const eligibleUserIds = registrations
+    const eligibleUserIds = (registrations || [])
       .filter(r => r.attendance_status === 'Present')
       .map(r => r.user_id);
 
@@ -382,53 +344,93 @@ exports.generateAllCertificates = async (req, res) => {
       .select('id, name')
       .in('id', eligibleUserIds);
 
-    let generatedCount = 0;
+    if (!profiles || profiles.length === 0) {
+      return res.status(400).json({ message: 'No participant profiles found.' });
+    }
+
+    // Batch-check which users already have certificates (single query, not per-user)
+    const { data: existingCerts } = await supabase
+      .from('certificates')
+      .select('user_id')
+      .eq('event_id', eventId)
+      .in('user_id', eligibleUserIds);
+
+    const existingUserIds = new Set((existingCerts || []).map(c => c.user_id));
+    const pendingProfiles = profiles.filter(p => !existingUserIds.has(p.id));
+
+    if (pendingProfiles.length === 0) {
+      return res.json({ message: 'All certificates already generated.', generated: 0, skipped: profiles.length });
+    }
+
+    // Fetch template ONCE for all certificates
+    const templateCache = await fetchTemplateBytes(event.certificate_template);
     const { facultyName, organizerName } = await fetchOrganizerNames(event);
 
-    for (const profile of profiles) {
-      // Check if already generated
-      const { data: existing } = await supabase
-        .from('certificates')
-        .select('*')
-        .eq('event_id', eventId)
-        .eq('user_id', profile.id)
-        .maybeSingle();
+    // Process in concurrent batches of BATCH_SIZE
+    let generatedCount = 0;
+    const allFailed = [];
+    const allInserts = [];
 
-      if (!existing) {
+    for (let i = 0; i < pendingProfiles.length; i += BATCH_SIZE) {
+      const batch = pendingProfiles.slice(i, i + BATCH_SIZE);
+      console.log(`[Certificates] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pendingProfiles.length / BATCH_SIZE)} (${batch.length} certs)`);
+
+      const { succeeded, failed } = await processBatch(batch, async (profile) => {
         const certId = generateCertId();
-        const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
+        const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName, templateCache);
+        return { event_id: eventId, user_id: profile.id, certificate_id: certId, certificate_url: certUrl, profile };
+      });
 
-        await supabase.from('certificates').insert({
-          event_id: eventId,
-          user_id: profile.id,
-          certificate_id: certId,
-          certificate_url: certUrl
-        });
-        generatedCount++;
+      allFailed.push(...failed);
 
-        // Notify user about certificate
-        try {
-          await notifyUser({
-            recipientId: profile.id,
-            title: 'Certificate Available',
-            message: `Your certificate for "${event.title}" is ready for download.`,
-            type: 'success',
-            eventId: event.id,
-            emailSubject: 'Your Certificate is Ready',
-            emailData: {
-              eventName: event.title,
-              publishDate: new Date().toLocaleDateString(),
-              status: 'Published',
-              instructions: "Please log into AVENTO and navigate to the Certificates dashboard to download your verified certificate."
-            }
-          });
-        } catch (notifErr) {
-          console.error('Non-fatal error sending certificate notification:', notifErr.message);
+      if (succeeded.length > 0) {
+        const insertRows = succeeded.map(({ profile, ...rest }) => rest);
+        const { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        if (batchInsertErr) {
+          console.error('[Certificates] Batch insert error:', batchInsertErr.message);
+          allFailed.push(...insertRows.map(r => ({ userId: r.user_id, error: batchInsertErr.message })));
+        } else {
+          generatedCount += insertRows.length;
+          allInserts.push(...succeeded);
         }
       }
     }
 
-    res.json({ message: `Successfully generated ${generatedCount} certificates.` });
+    // Fire notifications asynchronously (don't block the response)
+    if (allInserts.length > 0) {
+      const eventTitle = event.title;
+      const eventIdVal = event.id;
+      setImmediate(async () => {
+        for (const { profile } of allInserts) {
+          try {
+            await notifyUser({
+              recipientId: profile.id,
+              title: 'Certificate Available',
+              message: `Your certificate for "${eventTitle}" is ready for download.`,
+              type: 'success',
+              eventId: eventIdVal,
+              emailSubject: 'Your Certificate is Ready',
+              emailData: {
+                eventName: eventTitle,
+                publishDate: new Date().toLocaleDateString(),
+                status: 'Published',
+                instructions: "Please log into AVENTO and navigate to the Certificates dashboard to download your verified certificate."
+              }
+            });
+          } catch (notifErr) {
+            console.error('Non-fatal notification error:', notifErr.message);
+          }
+        }
+      });
+    }
+
+    res.json({
+      message: `Successfully generated ${generatedCount} certificates.`,
+      generated: generatedCount,
+      skipped: profiles.length - pendingProfiles.length,
+      failed: allFailed.length,
+      errors: allFailed.length > 0 ? allFailed.slice(0, 10) : []
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error generating certificates.', error: err.message });
@@ -607,7 +609,7 @@ exports.getEligibleOrganizers = async (req, res) => {
   }
 };
 
-// Generate Organizer Certificates (Bulk)
+// Generate Organizer Certificates (Bulk) — optimized for 500+
 exports.generateAllOrganizerCertificates = async (req, res) => {
   try {
     const isAdmin = req.user?.roles?.includes('admin') || req.user?.role === 'admin';
@@ -628,59 +630,89 @@ exports.generateAllOrganizerCertificates = async (req, res) => {
       return res.status(400).json({ message: 'No event organizers found for this event.' });
     }
 
-    let generatedCount = 0;
+    // Batch-check existing organizer certificates
+    const organizerIds = organizers.map(o => o.id);
+    const { data: existingCerts } = await supabase
+      .from('certificates')
+      .select('user_id')
+      .eq('event_id', eventId)
+      .eq('certificate_type', 'organizer')
+      .in('user_id', organizerIds);
+
+    const existingUserIds = new Set((existingCerts || []).map(c => c.user_id));
+    const pendingOrgs = organizers.filter(o => !existingUserIds.has(o.id));
+
+    if (pendingOrgs.length === 0) {
+      return res.json({ message: 'All organizer certificates already generated.', generated: 0, skipped: organizers.length });
+    }
+
+    const templateCache = await fetchTemplateBytes(event.certificate_template);
     const { facultyName, organizerName } = await fetchOrganizerNames(event);
 
-    for (const profile of organizers) {
-      const { data: existing } = await supabase
-        .from('certificates')
-        .select('*')
-        .eq('event_id', eventId)
-        .eq('user_id', profile.id)
-        .eq('certificate_type', 'organizer')
-        .maybeSingle();
+    let generatedCount = 0;
+    const allFailed = [];
+    const allInserts = [];
 
-      if (!existing) {
-        const certId = `CERT-ORG-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName);
+    for (let i = 0; i < pendingOrgs.length; i += BATCH_SIZE) {
+      const batch = pendingOrgs.slice(i, i + BATCH_SIZE);
+      console.log(`[Org Certs] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(pendingOrgs.length / BATCH_SIZE)} (${batch.length} certs)`);
 
-        const insertPayload = {
-          event_id: eventId,
-          user_id: profile.id,
-          certificate_id: certId,
-          certificate_url: certUrl,
-          certificate_type: 'organizer'
-        };
+      const { succeeded, failed } = await processBatch(batch, async (profile) => {
+        const certId = `CERT-ORG-${new Date().getFullYear()}-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+        const certUrl = await createPdfCertificate(event, profile, certId, facultyName, organizerName, templateCache);
+        return { event_id: eventId, user_id: profile.id, certificate_id: certId, certificate_url: certUrl, certificate_type: 'organizer', profile };
+      });
 
-        const { error: insertErr } = await supabase.from('certificates').insert(insertPayload);
-        if (insertErr) {
-          delete insertPayload.certificate_type;
-          await supabase.from('certificates').insert(insertPayload);
-        }
-        generatedCount++;
+      allFailed.push(...failed);
 
-        try {
-          await notifyUser({
-            recipientId: profile.id,
-            title: 'Organizer Certificate Available',
-            message: `Your organizer certificate for "${event.title}" is ready for download.`,
-            type: 'success',
-            eventId: event.id,
-            emailSubject: 'Your Organizer Certificate is Ready',
-            emailData: {
-              eventName: event.title,
-              publishDate: new Date().toLocaleDateString(),
-              status: 'Published',
-              instructions: "Please log into AVENTO and navigate to the Certificates dashboard to download your verified organizer certificate."
-            }
-          });
-        } catch (notifErr) {
-          console.error('Non-fatal error sending organizer certificate notification:', notifErr.message);
+      if (succeeded.length > 0) {
+        const insertRows = succeeded.map(({ profile, ...rest }) => rest);
+        const { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        if (batchInsertErr) {
+          console.error('[Org Certs] Batch insert error:', batchInsertErr.message);
+          allFailed.push(...insertRows.map(r => ({ userId: r.user_id, error: batchInsertErr.message })));
+        } else {
+          generatedCount += insertRows.length;
+          allInserts.push(...succeeded);
         }
       }
     }
 
-    res.json({ message: `Successfully generated ${generatedCount} organizer certificates.` });
+    // Fire notifications asynchronously
+    if (allInserts.length > 0) {
+      const eventTitle = event.title;
+      const eventIdVal = event.id;
+      setImmediate(async () => {
+        for (const { profile } of allInserts) {
+          try {
+            await notifyUser({
+              recipientId: profile.id,
+              title: 'Organizer Certificate Available',
+              message: `Your organizer certificate for "${eventTitle}" is ready for download.`,
+              type: 'success',
+              eventId: eventIdVal,
+              emailSubject: 'Your Organizer Certificate is Ready',
+              emailData: {
+                eventName: eventTitle,
+                publishDate: new Date().toLocaleDateString(),
+                status: 'Published',
+                instructions: "Please log into AVENTO and navigate to the Certificates dashboard to download your verified organizer certificate."
+              }
+            });
+          } catch (notifErr) {
+            console.error('Non-fatal notification error:', notifErr.message);
+          }
+        }
+      });
+    }
+
+    res.json({
+      message: `Successfully generated ${generatedCount} organizer certificates.`,
+      generated: generatedCount,
+      skipped: organizers.length - pendingOrgs.length,
+      failed: allFailed.length,
+      errors: allFailed.length > 0 ? allFailed.slice(0, 10) : []
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error generating organizer certificates.', error: err.message });
