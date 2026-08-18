@@ -18,9 +18,10 @@ const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds
       error.statusCode = 409;
       throw error;
     }
-    if (!(rpcMsg.includes('Minimum team size not reached yet') && acceptedUserIds.size >= (event.min_team_size || 1))) {
-      throw new Error(rpcMsg || 'Failed to confirm team registration.');
+    if (rpcMsg.includes('Minimum team size not reached yet') && acceptedUserIds.size < (event.min_team_size || 1)) {
+      throw new Error(rpcMsg);
     }
+    // Fallback: RPC missing or other error — manually set team status
     await supabase.from('event_teams').update({ status: 'registered' }).eq('id', teamId);
     await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', event.id);
   }
@@ -1242,9 +1243,8 @@ exports.confirmTeamRegistration = async (req, res) => {
       }
     }
 
-    // 5. STRICT CHECK: Minimum Team Size (1 Unique Leader + Unique Accepted Team Members)
-    const minTeamSize = event.min_team_size || 1;
-    const { data: teamRegs } = await supabase
+    // 5. Update leader registration to registered
+    const { error: regErr } = await supabase
       .from('event_registrations')
       .update({ status: 'registered' })
       .eq('team_id', teamId)
@@ -1294,6 +1294,14 @@ exports.confirmTeamRegistration = async (req, res) => {
     }
 
     // 7. Call atomic RPC for DB row locking & final confirmation
+    const { data: acceptedRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('team_id', teamId)
+      .eq('status', 'accepted');
+    const acceptedUserIds = new Set((acceptedRegs || []).map(r => r.user_id));
+    acceptedUserIds.add(leaderId);
+
     try {
       await finalizeTeamRegistration(teamId, event, leaderId, acceptedUserIds);
     } catch (finalizeErr) {
