@@ -29,6 +29,29 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }
   };
 
+  const flushPendingSaves = useCallback(async () => {
+    const entries = Object.entries(pendingSaves.current);
+    if (entries.length === 0) return;
+    pendingSaves.current = {};
+    setPendingCount(0);
+    const scores = entries.map(([key, score]) => {
+      const [teamId, subroundId] = key.split(':');
+      return { teamId, subroundId, score };
+    });
+    try {
+      const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
+      setData(previous => ({ ...previous, scores: response.data.scores }));
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to save scores.');
+    }
+  }, [eventId]);
+
+  const saveScore = useCallback((teamId, subroundId, value) => {
+    const key = `${teamId}:${subroundId}`;
+    pendingSaves.current[key] = value;
+    setPendingCount(Object.keys(pendingSaves.current).length);
+  }, []);
+
   useEffect(() => { load(); }, [eventId]);
 
   useEffect(() => {
@@ -92,36 +115,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }
   };
 
-  const flushPendingSaves = useCallback(async () => {
-    const entries = Object.entries(pendingSaves.current);
-    if (entries.length === 0) return;
-    pendingSaves.current = {};
-    setPendingCount(0);
-    const scores = entries.map(([key, score]) => {
-      const [teamId, subroundId] = key.split(':');
-      return { teamId, subroundId, score };
-    });
-    try {
-      const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
-      setData(previous => ({ ...previous, scores: response.data.scores }));
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save scores.');
-    }
-  }, [eventId]);
-
-  const saveScore = useCallback((teamId, subroundId, value) => {
-    const key = `${teamId}:${subroundId}`;
-    pendingSaves.current[key] = value;
-    setPendingCount(Object.keys(pendingSaves.current).length);
-  }, []);
-
   const scoresMap = useMemo(() => {
     const map = {};
     data.scores.forEach(score => { map[`${score.team_id}:${score.subround_id}`] = score.score; });
     return map;
   }, [data.scores]);
-
-  const scoreFor = useCallback((teamId, subroundId) => scoresMap[`${teamId}:${subroundId}`] ?? '', [scoresMap]);
 
   const subrounds = useMemo(() => data.rounds.flatMap(round => round.subrounds || []), [data.rounds]);
 
