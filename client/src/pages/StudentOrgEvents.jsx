@@ -4,7 +4,6 @@ import axios from 'axios';
 import Modal from '../components/Modal';
 import { useAuth, supabase } from '../context/AuthContext';
 import QRScanner from '../components/QRScanner';
-import FeedbackQuestionBuilder from '../components/FeedbackQuestionBuilder';
 import { StickyNoteDoodle, GeometricBlobDoodle } from '../components/Doodles';
 
 const StudentOrgEvents = () => {
@@ -1271,10 +1270,6 @@ const StudentOrgEvents = () => {
                 placeholder="Explain the purpose, target audience, and activities of this event..."
                 className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 resize-none"
               />
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80">
-              <FeedbackQuestionBuilder questions={feedbackQuestions} setQuestions={setFeedbackQuestions} />
             </div>
 
             <div className="flex gap-3 justify-end pt-5 border-t border-slate-200/30">
