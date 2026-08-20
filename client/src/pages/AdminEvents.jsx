@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import Modal from '../components/Modal';
 import QRScanner from '../components/QRScanner';
+import FeedbackQuestionBuilder from '../components/FeedbackQuestionBuilder';
 import { supabase } from '../context/AuthContext';
 
 const AdminEvents = () => {
@@ -48,6 +49,7 @@ const AdminEvents = () => {
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [paymentQrFile, setPaymentQrFile] = useState(null);
   const [scoringEnabled, setScoringEnabled] = useState(false);
+  const [feedbackQuestions, setFeedbackQuestions] = useState([]);
 
   // Organizers States
   const [candidatesList, setCandidatesList] = useState([]);
@@ -203,8 +205,8 @@ const AdminEvents = () => {
     setRegistrationDeadline('');
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
+    setFeedbackQuestions([]);
     setFeedback(null);
-    setScoringEnabled(!!event.scoring_enabled);
     setIsModalOpen(true);
   };
 
@@ -239,6 +241,7 @@ const AdminEvents = () => {
     setPaymentQrFile(null);
 
     setScoringEnabled(!!event.scoring_enabled);
+    setFeedbackQuestions(event.feedback_questions || event.feedbackQuestions || []);
 
     setFeedback(null);
     setIsModalOpen(true);
@@ -338,6 +341,7 @@ const AdminEvents = () => {
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
         scoringEnabled,
+        feedbackQuestions,
       };
 
       if (modalMode === 'create') {
@@ -1060,6 +1064,10 @@ const AdminEvents = () => {
                 placeholder="Details about participation criteria, speaker profiles, event details..."
                 className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 resize-none"
               />
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80">
+              <FeedbackQuestionBuilder questions={feedbackQuestions} setQuestions={setFeedbackQuestions} />
             </div>
 
             {modalMode === 'create' && (

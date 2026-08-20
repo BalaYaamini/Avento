@@ -2,26 +2,29 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { CertificateDoodle, SparkleDoodle, StarDoodle, CloudDoodle } from '../components/Doodles';
+import FeedbackModal from '../components/FeedbackModal';
 
 const StudentCertificates = () => {
   const { user } = useAuth();
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [feedbackCert, setFeedbackCert] = useState(null);
+
+  const fetchCertificates = async () => {
+    try {
+      setLoading(true);
+      const res = await axios.get('/api/certificates/my-certificates');
+      setCertificates(res.data);
+    } catch (err) {
+      console.error('Error fetching certificates', err);
+      setError('Failed to load certificates.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchCertificates = async () => {
-      try {
-        setLoading(true);
-        const res = await axios.get('/api/certificates/my-certificates');
-        setCertificates(res.data);
-      } catch (err) {
-        console.error('Error fetching certificates', err);
-        setError('Failed to load certificates.');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchCertificates();
   }, []);
 
@@ -105,20 +108,46 @@ const StudentCertificates = () => {
                     ID: {cert.certificate_id}
                   </div>
                   
-                  <a
-                    href={getFullPdfUrl(cert.certificate_url)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-center w-full btn-primary px-6 py-3 text-sm font-display font-bold rounded-xl text-white"
-                  >
-                    Download Certificate
-                  </a>
+                  {cert.feedback_submitted ? (
+                    <a
+                      href={getFullPdfUrl(cert.certificate_url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center w-full btn-primary px-6 py-3 text-sm font-display font-bold rounded-xl text-white"
+                    >
+                      Download Certificate
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => setFeedbackCert(cert)}
+                      className="block text-center w-full bg-amber-500 hover:bg-amber-600 px-6 py-3 text-sm font-display font-bold rounded-xl text-white shadow-md shadow-amber-500/20 transition-all"
+                    >
+                      Submit Feedback to Download
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Feedback Modal for downloading certificate after event */}
+      {feedbackCert && (
+        <FeedbackModal
+          isOpen={Boolean(feedbackCert)}
+          onClose={() => setFeedbackCert(null)}
+          event={{
+            id: feedbackCert.event_id || feedbackCert.eventId?.id || feedbackCert.eventId?._id,
+            title: feedbackCert.eventId?.title || 'Event Feedback',
+            feedback_questions: feedbackCert.eventId?.feedback_questions
+          }}
+          onSubmitSuccess={() => {
+            setFeedbackCert(null);
+            fetchCertificates();
+          }}
+        />
+      )}
     </div>
   );
 };

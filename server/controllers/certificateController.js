@@ -788,13 +788,30 @@ exports.getMyCertificates = async (req, res) => {
       .from('certificates')
       .select(`
         *,
-        eventId:events (title, date, category)
+        eventId:events (id, title, date, category, status, feedback_questions)
       `)
       .eq('user_id', userId)
       .order('issued_at', { ascending: false });
 
     if (error) throw error;
-    res.json(certificates);
+
+    const { data: feedbacks } = await supabase
+      .from('feedbacks')
+      .select('event_id')
+      .eq('user_id', userId);
+
+    const feedbackEventIds = new Set((feedbacks || []).map(f => String(f.event_id)));
+
+    const result = (certificates || []).map(cert => {
+      const eventIdVal = cert.event_id || (cert.eventId && (cert.eventId.id || cert.eventId._id));
+      const hasFeedback = cert.certificate_type === 'organizer' || (eventIdVal && feedbackEventIds.has(String(eventIdVal)));
+      return {
+        ...cert,
+        feedback_submitted: Boolean(hasFeedback)
+      };
+    });
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching certificates.', error: err.message });
   }

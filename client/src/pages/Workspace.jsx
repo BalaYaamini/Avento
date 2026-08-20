@@ -7,6 +7,7 @@ import TaskModal from '../components/TaskModal';
 import TaskDetailsModal from '../components/TaskDetailsModal';
 import CertificateManager from '../components/CertificateManager';
 import FeedbackAnalytics from '../components/FeedbackAnalytics';
+import FeedbackQuestionBuilder from '../components/FeedbackQuestionBuilder';
 import OrganizerRegistrations from '../components/OrganizerRegistrations';
 import ConfirmedTeamsOverview from '../components/ConfirmedTeamsOverview';
 import Modal from '../components/Modal';
@@ -103,6 +104,21 @@ const Workspace = () => {
   });
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editFeedback, setEditFeedback] = useState(null);
+
+  // Feedback Questions Modal State
+  const [isFeedbackQuestionsModalOpen, setIsFeedbackQuestionsModalOpen] = useState(false);
+  const [feedbackQuestions, setFeedbackQuestions] = useState([]);
+
+  const handleSaveFeedbackQuestions = async () => {
+    try {
+      await axios.put(`/api/feedbacks/event/${eventId}/questions`, { questions: feedbackQuestions });
+      alert('Feedback questions updated successfully!');
+      setIsFeedbackQuestionsModalOpen(false);
+      fetchWorkspaceData(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update feedback questions.');
+    }
+  };
 
   const formatToDatetimeLocal = (dateStr) => {
     if (!dateStr) return '';
@@ -420,6 +436,23 @@ const Workspace = () => {
                     type="button"
                     onClick={() => {
                       setIsActionsDropdownOpen(false);
+                      setFeedbackQuestions(event.feedback_questions || []);
+                      setIsFeedbackQuestionsModalOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Customize Feedback Questions</span>
+                  </button>
+                )}
+
+                {hasFullAccess() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
                       openEditModal();
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -725,7 +758,24 @@ const Workspace = () => {
       {/* Feedback Analytics (Only for completed events) */}
       {event.status === 'completed' && (
         <div className="mb-8 mt-8 glass-panel p-6 rounded-[2rem] border border-slate-200">
-          <h2 className="text-xl font-bold text-text-primary mb-4">Post-Event Feedback Analytics</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
+            <div>
+              <h2 className="text-xl font-bold text-text-primary">Post-Event Feedback Analytics</h2>
+              <p className="text-xs text-text-secondary">Track student ratings and responses for this event.</p>
+            </div>
+            {hasFullAccess() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFeedbackQuestions(event.feedback_questions || []);
+                  setIsFeedbackQuestionsModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 hover:bg-violet-100 text-xs font-bold rounded-xl transition-all border border-violet-200 dark:border-violet-800 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <span>⚙️ Customize Questions</span>
+              </button>
+            )}
+          </div>
           <FeedbackAnalytics eventId={eventId} />
         </div>
       )}
@@ -973,6 +1023,34 @@ const Workspace = () => {
           event={event}
           onUpdate={() => fetchWorkspaceData(true)}
         />
+      )}
+
+      {event && (
+        <Modal
+          isOpen={isFeedbackQuestionsModalOpen}
+          onClose={() => setIsFeedbackQuestionsModalOpen(false)}
+          title={`Customize Feedback Questions — ${event?.title || ''}`}
+        >
+          <div className="space-y-6">
+            <FeedbackQuestionBuilder questions={feedbackQuestions} setQuestions={setFeedbackQuestions} />
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsFeedbackQuestionsModalOpen(false)}
+                className="px-5 py-2.5 text-xs font-bold rounded-xl text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveFeedbackQuestions}
+                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/20"
+              >
+                Save Questions
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
