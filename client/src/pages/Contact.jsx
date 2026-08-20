@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 const Contact = () => {
   const { user } = useAuth();
   const [formData, setFormData] = useState({
-    name: user?.fullName || '',
+    name: user?.fullName || user?.name || '',
     email: user?.email || '',
     subject: '',
     message: ''
@@ -16,7 +16,7 @@ const Contact = () => {
     if (user) {
       setFormData(prev => ({
         ...prev,
-        name: user.fullName || prev.name,
+        name: user.fullName || user.name || prev.name,
         email: user.email || prev.email
       }));
     }

@@ -225,8 +225,6 @@ const Navbar = () => {
                     </div>
                   </div>
                 </div>
-
-                <NavLink to="/profile" className={navLinkClass}>Profile</NavLink>
               </>
             )}
 
@@ -234,7 +232,6 @@ const Navbar = () => {
             {user && (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) && (
                <>
                  <NavLink to="/faculty-organizer/events" className={navLinkClass}>Proposals</NavLink>
-                 <NavLink to="/profile" className={navLinkClass}>Profile</NavLink>
                </>
              )}
 
@@ -335,23 +332,23 @@ const Navbar = () => {
                      </div>
                    </div>
                  </div>
-
-                 {/* Single Initial Badge + Logout */}
-                 <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 px-3 py-1.5 rounded-full border border-pastel-lavender/30 shadow-soft">
-                   <div 
-                     className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white font-heading font-black text-sm flex items-center justify-center shadow-sm"
-                     title={user.fullName || user.name || 'User'}
-                   >
-                     {(user.fullName || user.name || user.email || 'U').charAt(0).toUpperCase()}
-                   </div>
-                   <button
-                     onClick={handleLogout}
-                     className="btn-secondary px-3.5 py-1 text-xs font-bold rounded-xl"
-                   >
-                     Logout
-                   </button>
-                 </div>
-               </div>
+                                   {/* Right Corner Profile Icon + Logout */}
+                  <div className="flex items-center gap-3 bg-white/80 dark:bg-slate-800/80 px-3 py-1.5 rounded-full border border-pastel-lavender/30 shadow-soft">
+                    <Link
+                      to="/profile"
+                      className="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-600 via-purple-600 to-indigo-600 text-white font-heading font-black text-sm flex items-center justify-center shadow-sm hover:scale-105 hover:ring-2 hover:ring-violet-400 transition-all cursor-pointer"
+                      title="View Profile"
+                    >
+                      {(user.fullName || user.name || user.email || 'U').charAt(0).toUpperCase()}
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="btn-secondary px-3.5 py-1 text-xs font-bold rounded-xl"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
              ) : (
                <div className="flex items-center gap-4">
                  {/* Theme Toggle (Desktop - Logged Out) */}

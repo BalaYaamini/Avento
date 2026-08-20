@@ -230,32 +230,87 @@ exports.submitContactForm = async (req, res) => {
       return res.status(400).json({ message: 'Please provide name, email, subject, and message.' });
     }
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+    const { sendEmailNotification, sendInAppNotification } = require('../services/notificationService');
+
+    // Automatically derive roll number from email prefix (everything before @)
+    const studentRollNo = email.trim().split('@')[0];
+
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.BREVO_SENDER_EMAIL || 'admin.avento@gmail.com';
+    const emailSubject = `[Avento Support Ticket] ${subject} - From ${name} (${studentRollNo})`;
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+        <div style="margin-bottom: 20px;">
+          <span style="background-color: #f3e8ff; color: #7c3aed; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; text-transform: uppercase;">Avento Contact Support</span>
+        </div>
+        <h2 style="color: #0f172a; margin: 0 0 16px 0; font-size: 22px;">New Support Ticket Message</h2>
+        <div style="background-color: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Sender Name:</strong> ${name}</p>
+          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email ID:</strong> <a href="mailto:${email}" style="color: #7c3aed;">${email}</a></p>
+          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Roll Number / ID:</strong> ${studentRollNo}</p>
+          <p style="margin: 0; font-size: 14px;"><strong>Subject:</strong> ${subject}</p>
+        </div>
+        <div style="background-color: #ffffff; padding: 16px; border-radius: 12px; border-left: 4px solid #7c3aed; border-top: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;">
+          <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Message Content:</p>
+          <p style="margin: 0; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: #334155;">${message}</p>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+        <p style="font-size: 12px; color: #94a3b8; margin: 0;">This email notification was sent to ${adminEmail} for the AVENTO support ticket system.</p>
+      </div>
+    `;
+
+    const textContent = `New Contact Support Ticket:\n\nFrom: ${name}\nEmail: ${email}\nRoll Number: ${studentRollNo}\nSubject: ${subject}\n\nMessage:\n${message}`;
+
+    // 1. Send via Brevo / Notification Service
+    await sendEmailNotification({
+      recipientEmail: adminEmail,
+      subject: emailSubject,
+      htmlBody: htmlContent
     });
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: 'admin.avento@gmail.com',
-      replyTo: email,
-      subject: `Avento Contact: ${subject}`,
-      text: `From: ${name}\nStudent Email: ${email}\n\nSubject: ${subject}\n\nMessage:\n${message}`,
-    };
+    // 2. Also attempt Nodemailer fallback if EMAIL_USER and EMAIL_PASS are set
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      try {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+          },
+        });
 
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('SMTP Connection timeout forced by server')), 5000)
-    );
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: adminEmail,
+          replyTo: email,
+          subject: emailSubject,
+          text: textContent,
+          html: htmlContent,
+        });
+      } catch (nodemailerErr) {
+        console.warn('[submitContactForm] Nodemailer send failed:', nodemailerErr.message);
+      }
+    }
 
+    // 3. Notify Admin in-app if admin profiles exist
     try {
-      await Promise.race([sendMailPromise, timeoutPromise]);
-    } catch (emailErr) {
-      console.error('[submitContactForm] Email failed (likely Render SMTP block):', emailErr.message);
-      // We gracefully continue so the user still gets a success message in UI
+      const { data: adminProfiles } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'admin');
+
+      if (adminProfiles && adminProfiles.length > 0) {
+        for (const admin of adminProfiles) {
+          await sendInAppNotification({
+            recipientId: admin.id,
+            title: `Support Ticket: ${subject}`,
+            message: `New message from ${name} (${studentRollNo !== 'N/A' ? studentRollNo : email}): "${message.slice(0, 100)}${message.length > 100 ? '...' : ''}"`,
+            type: 'info'
+          });
+        }
+      }
+    } catch (inAppErr) {
+      console.warn('[submitContactForm] In-app admin notification error:', inAppErr.message);
     }
 
     res.json({ message: 'Your message has been sent successfully.' });
