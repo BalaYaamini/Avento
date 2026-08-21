@@ -34,8 +34,8 @@ router.post('/admin/approve-request/:registrationId', authMiddleware, adminMiddl
 router.get('/admin/event/:eventId/eligible-students', authMiddleware, adminMiddleware, registrationController.getNonOrganizerStudentsForEvent);
 
 // Admin & Organizer features (protected)
-router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);
-router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getConfirmedTeams);
+router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student']), registrationController.getEventRegistrations);
+router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student']), registrationController.getConfirmedTeams);
 
 // Student Photo Import Endpoints & Public Image Proxy
 router.get('/drive-proxy', registrationController.proxyDriveImage);

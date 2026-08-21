@@ -813,14 +813,12 @@ const StudentOrgEvents = () => {
                           </>
                         )}
 
-                        {['approved', 'published', 'active', 'completed'].includes(evt.status) && (
-                          <Link
-                            to={`/workspace/${evt._id || evt.id}`}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/20 transition-all duration-300"
-                          >
-                            Organizer Workspace
-                          </Link>
-                        )}
+                        <Link
+                          to={`/workspace/${evt._id || evt.id}`}
+                          className="px-5 py-2 text-xs font-bold rounded-xl bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/20 transition-all duration-300"
+                        >
+                          Organizer Workspace
+                        </Link>
                         
                         {['approved', 'published', 'active', 'completed'].includes(evt.status) && new Date(evt.date) >= new Date() && (
                           <button

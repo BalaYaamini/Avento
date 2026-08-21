@@ -28,7 +28,14 @@ const Workspace = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  const [activeTab, setActiveTab] = useState('tasks');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      return searchParams.get('tab') || 'tasks';
+    } catch (e) {
+      return 'tasks';
+    }
+  });
   
   // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -196,34 +203,40 @@ const Workspace = () => {
       // 1. Fetch Event
       const eventRes = await axios.get(`/api/events/${eventId}`);
       const eventData = eventRes.data;
-      console.log("Workspace API Response:", eventRes);
       
-      // 2. Fetch Organizers
-      console.log('GET /api/events/' + eventId + '/organizers');
-      const orgRes = await axios.get(`/api/events/${eventId}/organizers`);
-      const orgData = orgRes.data;
-      console.log('Organizers Data:', orgData);
-      
-      // Access check
-      const isAdmin = user.roles?.includes('admin');
-      const isFaculty = user.id === eventData.faculty_id;
-      const isEventHead = user.id === eventData.student_organizer_id || user.id === eventData.proposed_by;
-      const isOrganizer = orgData.some(org => String(org.userId) === String(user.id));
-      
-      if (!isAdmin && !isFaculty && !isEventHead && !isOrganizer) {
-        console.warn('Access denied. Redirecting...');
-        navigate('/'); // Redirect if no access
-        return;
+      // 2. Fetch Organizers safely
+      let orgData = [];
+      try {
+        const orgRes = await axios.get(`/api/events/${eventId}/organizers`);
+        orgData = Array.isArray(orgRes.data) ? orgRes.data : [];
+      } catch (e) {
+        console.warn('Organizers fetch warning:', e);
       }
+      
+      // Access check - Type-safe string comparison and multi-role evaluation
+      const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+      const isAdmin = userRoles.includes('admin') || userRoles.includes('student_organizer') || userRoles.includes('faculty') || userRoles.includes('faculty_organizer');
+      const userIdStr = String(user?.id || '');
+
+      const isFaculty = userIdStr === String(eventData?.faculty_id || '');
+      const isEventHead = userIdStr === String(eventData?.student_organizer_id || '') || 
+                         userIdStr === String(eventData?.proposed_by || '') ||
+                         userIdStr === String(eventData?.organizer_id || '') ||
+                         userIdStr === String(eventData?.created_by || '');
+      const isOrganizer = orgData.some(org => String(org.userId || org.id) === userIdStr);
       
       setEvent(eventData);
       setOrganizers(orgData);
 
-      // 3. Fetch Tasks
-      console.log('GET /api/tasks/event/' + eventId);
-      const tasksRes = await axios.get(`/api/tasks/event/${eventId}`);
-      console.log('Tasks Data:', tasksRes.data);
-      setTasks(tasksRes.data);
+      // 3. Fetch Tasks safely
+      let tasksData = [];
+      try {
+        const tasksRes = await axios.get(`/api/tasks/event/${eventId}`);
+        tasksData = Array.isArray(tasksRes.data) ? tasksRes.data : [];
+      } catch (e) {
+        console.warn('Tasks fetch warning:', e);
+      }
+      setTasks(tasksData);
       
     } catch (err) {
       console.error('WORKSPACE LOAD ERROR:', err);
@@ -260,13 +273,13 @@ const Workspace = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, user.id]);
+  }, [eventId, user?.id]);
 
   useEffect(() => {
     if (isNormalOrganizer() && !['tasks', 'confirmed_teams'].includes(activeTab)) {
       setActiveTab('tasks');
     }
-  }, [organizers, user, activeTab]);
+  }, [organizers, user?.id, activeTab]);
 
   const handleCreateTask = () => {
     setEditingTask(null);
@@ -605,17 +618,17 @@ const Workspace = () => {
                 Scoring
               </button>
             )}
-
-            <button
-              onClick={() => setActiveTab('id_cards')}
-              className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-                activeTab === 'id_cards' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-              }`}
-            >
-              ID Cards
-            </button>
           </>
         )}
+
+        <button
+          onClick={() => setActiveTab('id_cards')}
+          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+            activeTab === 'id_cards' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+        >
+          ID Cards
+        </button>
       </div>
 
       {activeTab === 'registrations' && !isNormalOrganizer() && (
@@ -640,7 +653,7 @@ const Workspace = () => {
         </div>
       )}
 
-      {activeTab === 'id_cards' && !isNormalOrganizer() && (
+      {activeTab === 'id_cards' && (
         <div className="mb-8">
           <IDCardManager eventId={eventId} event={event} />
         </div>

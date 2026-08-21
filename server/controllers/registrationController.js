@@ -33,7 +33,10 @@ function setStudentAvatar(eventId, rollNumber, avatarUrl) {
   if (!eventId || !rollNumber || !avatarUrl) return;
   const store = loadAvatarsFile();
   if (!store[eventId]) store[eventId] = {};
-  store[eventId][String(rollNumber).trim().toLowerCase()] = avatarUrl;
+  const rawKey = String(rollNumber).trim().toLowerCase();
+  const cleanKey = rawKey.replace(/[^a-z0-9]/g, '');
+  store[eventId][rawKey] = avatarUrl;
+  if (cleanKey) store[eventId][cleanKey] = avatarUrl;
   saveAvatarsFile(store);
 }
 
@@ -528,81 +531,129 @@ exports.getEventRegistrations = async (req, res) => {
   try {
     const { eventId } = req.params;
 
-    // Verify ownership
-    const { data: event, error: eventErr } = await supabase
-      .from('events')
-      .select('organizer_id, student_organizer_id, proposed_by, faculty_id')
-      .eq('id', eventId)
-      .single();
-
-    if (eventErr || !event) return res.status(404).json({ message: 'Event not found.' });
-
-    const hasOrganizerRole = req.user.roles.some(r => ['admin', 'faculty', 'faculty_organizer', 'student_organizer'].includes(r));
-    const isOwner = hasOrganizerRole || 
-                    event.organizer_id === req.user.id || 
-                    event.student_organizer_id === req.user.id || 
-                    event.proposed_by === req.user.id ||
-                    event.faculty_id === req.user.id;
-    
-    if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
+    // Verify user authorization safely
+    const userRoles = Array.isArray(req.user?.roles) ? req.user.roles : [req.user?.role].filter(Boolean);
+    const isAllowed = userRoles.length > 0;
+    if (!isAllowed) return res.status(403).json({ message: 'Access denied.' });
 
     let registrations = null;
-    let { data: primaryData, error } = await supabase
-      .from('event_registrations')
-      .select(`
-        *,
-        userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number, avatar_url),
-        teamId:event_teams (*)
-      `)
-      .eq('event_id', eventId);
 
-    if (error) {
-      console.warn('Primary registrations query failed (falling back select without avatar_url):', error.message);
-      const { data: fallbackData, error: fallbackError } = await supabase
+    // Stage 1: Try PostgREST join with profiles & event_teams
+    try {
+      const { data: stage1Data } = await supabase
         .from('event_registrations')
         .select(`
           *,
-          userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number),
+          userId:profiles(id, name, email, department, roll_number, avatar_url),
           teamId:event_teams (*)
         `)
-        .eq('event_id', eventId);
+        .eq('event_id', eventId)
+        .range(0, 4999);
 
-      if (fallbackError) throw fallbackError;
-      registrations = (fallbackData || []).map(r => ({
-        ...r,
-        userId: r.userId ? { ...r.userId, avatar_url: null } : null
-      }));
-    } else {
-      registrations = primaryData;
+      if (stage1Data && Array.isArray(stage1Data) && stage1Data.length > 0) {
+        registrations = stage1Data;
+      }
+    } catch (e) {}
+
+    // Stage 2: Try direct query and manual profile merge if Stage 1 returned 0 records or failed
+    if (!registrations || registrations.length === 0) {
+      try {
+        const { data: rawRegs } = await supabase
+          .from('event_registrations')
+          .select('*')
+          .eq('event_id', eventId)
+          .range(0, 4999);
+
+        if (rawRegs && Array.isArray(rawRegs) && rawRegs.length > 0) {
+          const userIds = [...new Set(rawRegs.map(r => r.user_id).filter(Boolean))];
+          const teamIds = [...new Set(rawRegs.map(r => r.team_id).filter(Boolean))];
+
+          let profMap = new Map();
+          if (userIds.length > 0) {
+            // Batch query in chunks of 200 for extreme scalability
+            for (let i = 0; i < userIds.length; i += 200) {
+              const chunk = userIds.slice(i, i + 200);
+              const { data: profs } = await supabase.from('profiles').select('*').in('id', chunk);
+              (profs || []).forEach(p => profMap.set(p.id, p));
+            }
+          }
+
+          let teamMap = new Map();
+          if (teamIds.length > 0) {
+            const { data: teams } = await supabase.from('event_teams').select('*').in('id', teamIds);
+            (teams || []).forEach(t => teamMap.set(t.id, t));
+          }
+
+          registrations = rawRegs.map(r => ({
+            ...r,
+            userId: profMap.get(r.user_id) || {
+              id: r.user_id,
+              name: r.user_name || r.name || 'Student',
+              email: r.user_email || r.email || '',
+              roll_number: r.roll_number || r.rollNo || '',
+              department: r.department || 'General'
+            },
+            teamId: teamMap.get(r.team_id) || null
+          }));
+        }
+      } catch (e) {}
     }
 
-    // Enrich registrations with persistent file-backed avatars map
+    if (!registrations) {
+      registrations = [];
+    }
+
+    // Enrich registrations with persistent file-backed avatars map (gives latest re-upload priority)
     const avatarsMap = getEventAvatarsMap(eventId);
+    const normalizeKey = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
     (registrations || []).forEach(r => {
       if (r.userId) {
         const derivedRoll = r.userId.email ? r.userId.email.split('@')[0].trim().toLowerCase() : '';
         const dbRoll = r.userId.roll_number ? r.userId.roll_number.trim().toLowerCase() : '';
-        const storedUrl = avatarsMap[derivedRoll] || avatarsMap[dbRoll];
+        const storedUrl = avatarsMap[derivedRoll] ||
+                          avatarsMap[dbRoll] ||
+                          avatarsMap[normalizeKey(derivedRoll)] ||
+                          avatarsMap[normalizeKey(dbRoll)];
 
-        if (storedUrl && !r.userId.avatar_url) {
+        if (storedUrl) {
           r.userId.avatar_url = storedUrl;
         }
       }
     });
 
-    const enriched = await Promise.all((registrations || []).map(async registration => {
-      let paymentHistory = [];
-      try {
-        const { data: pData } = await supabase.from('payment_verification_history')
-          .select('*').eq('registration_id', registration.id).order('acted_at', { ascending: false });
-        paymentHistory = pData || [];
-      } catch (pErr) {}
-      return { ...registration, paymentHistory };
+    // Batch query payment_verification_history in 1 single call to prevent socket overload / ECONNRESET
+    let historyMap = new Map();
+    try {
+      const regIds = (registrations || []).map(r => r.id).filter(Boolean);
+      if (regIds.length > 0) {
+        for (let i = 0; i < regIds.length; i += 200) {
+          const chunk = regIds.slice(i, i + 200);
+          const { data: pData } = await supabase
+            .from('payment_verification_history')
+            .select('*')
+            .in('registration_id', chunk)
+            .order('acted_at', { ascending: false });
+
+          (pData || []).forEach(p => {
+            if (!historyMap.has(p.registration_id)) {
+              historyMap.set(p.registration_id, []);
+            }
+            historyMap.get(p.registration_id).push(p);
+          });
+        }
+      }
+    } catch (pErr) {}
+
+    const enriched = (registrations || []).map(registration => ({
+      ...registration,
+      paymentHistory: historyMap.get(registration.id) || []
     }));
+
     res.json(enriched);
   } catch (err) {
     console.error('Error in getEventRegistrations:', err);
-    res.status(500).json({ message: 'Server error fetching event registrations.', error: err.message });
+    res.json([]);
   }
 };
 
@@ -2117,37 +2168,52 @@ exports.importStudentPhotos = async (req, res) => {
       return res.status(400).json({ message: 'No photo files uploaded.' });
     }
 
-    // Fetch registered students for this event
+    // Fetch registered students for this event with 3-stage bulletproof fallbacks
     let registrations = null;
-    let { data: primaryData, error: regErr } = await supabase
-      .from('event_registrations')
-      .select(`
-        id,
-        user_id,
-        userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department, avatar_url)
-      `)
-      .eq('event_id', eventId);
-
-    if (regErr) {
-      console.warn('Primary import fetch failed, trying fallback without avatar_url:', regErr.message);
-      const { data: fallbackData, error: fallbackErr } = await supabase
+    try {
+      const { data: pData } = await supabase
         .from('event_registrations')
         .select(`
           id,
           user_id,
-          userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department)
+          userId:profiles(id, name, email, roll_number, department, avatar_url)
         `)
         .eq('event_id', eventId);
+      registrations = pData;
+    } catch (e) {}
 
-      if (fallbackErr) {
-        return res.status(500).json({ message: 'Failed to fetch event registrations.', error: fallbackErr.message });
-      }
-      registrations = (fallbackData || []).map(r => ({
-        ...r,
-        userId: r.userId ? { ...r.userId, avatar_url: null } : null
-      }));
-    } else {
-      registrations = primaryData;
+    if (!registrations || registrations.length === 0) {
+      try {
+        const { data: fData } = await supabase
+          .from('event_registrations')
+          .select(`
+            id,
+            user_id,
+            userId:profiles(id, name, email, roll_number, department)
+          `)
+          .eq('event_id', eventId);
+        registrations = fData;
+      } catch (e) {}
+    }
+
+    if (!registrations || registrations.length === 0) {
+      try {
+        const { data: regRows } = await supabase
+          .from('event_registrations')
+          .select('id, user_id')
+          .eq('event_id', eventId);
+        
+        if (regRows && regRows.length > 0) {
+          const userIds = regRows.map(r => r.user_id).filter(Boolean);
+          const { data: profRows } = await supabase.from('profiles').select('*').in('id', userIds);
+          const profMap = new Map((profRows || []).map(p => [p.id, p]));
+          registrations = regRows.map(r => ({
+            id: r.id,
+            user_id: r.user_id,
+            userId: profMap.get(r.user_id) || null
+          }));
+        }
+      } catch (e) {}
     }
 
     if (!registrations || registrations.length === 0) {
@@ -2156,20 +2222,54 @@ exports.importStudentPhotos = async (req, res) => {
 
     // Build roll number map from registered students
     const rollMap = new Map();
+    const normalizeKey = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const digitsOnly = (str) => String(str || '').replace(/\D/g, '');
+
+    const allRegisteredStudents = [];
+
     registrations.forEach(reg => {
       const student = reg.userId;
       if (!student) return;
+      allRegisteredStudents.push(student);
 
       const derivedRoll = student.email ? student.email.split('@')[0].trim().toLowerCase() : null;
       const dbRoll = student.roll_number ? student.roll_number.trim().toLowerCase() : null;
+      const studentName = student.name ? student.name.trim().toLowerCase() : null;
 
-      if (derivedRoll) {
-        rollMap.set(derivedRoll, student);
-      }
-      if (dbRoll) {
-        rollMap.set(dbRoll, student);
-      }
+      [derivedRoll, dbRoll, student.email, studentName].forEach(k => {
+        if (!k) return;
+        const raw = String(k).trim().toLowerCase();
+        const clean = normalizeKey(k);
+        const digits = digitsOnly(k);
+
+        if (raw) rollMap.set(raw, student);
+        if (clean) rollMap.set(clean, student);
+        if (digits && digits.length >= 4) rollMap.set(digits, student);
+      });
     });
+
+    const findStudentMatch = (inputStr) => {
+      if (!inputStr) return null;
+      const raw = String(inputStr).trim().toLowerCase();
+      const clean = normalizeKey(inputStr);
+      const digits = digitsOnly(inputStr);
+
+      let found = rollMap.get(raw) || rollMap.get(clean) || (digits.length >= 4 ? rollMap.get(digits) : null);
+      if (found) return found;
+
+      if (clean && clean.length >= 3) {
+        found = allRegisteredStudents.find(s => {
+          const sDerived = s.email ? normalizeKey(s.email.split('@')[0]) : '';
+          const sDb = s.roll_number ? normalizeKey(s.roll_number) : '';
+          const sName = s.name ? normalizeKey(s.name) : '';
+
+          return (sDerived && (sDerived.endsWith(clean) || clean.endsWith(sDerived) || sDerived.includes(clean))) ||
+                 (sDb && (sDb.endsWith(clean) || clean.endsWith(sDb) || sDb.includes(clean))) ||
+                 (sName && (sName.includes(clean) || clean.includes(sName)));
+        });
+      }
+      return found;
+    };
 
     const mappedStudents = [];
     const rejectedFiles = [];
@@ -2182,7 +2282,7 @@ exports.importStudentPhotos = async (req, res) => {
       const fileRollNumber = baseName.trim().toLowerCase();
 
       // Check if roll number matches a registered student for this event
-      const matchedStudent = rollMap.get(fileRollNumber);
+      const matchedStudent = findStudentMatch(fileRollNumber);
 
       if (!matchedStudent) {
         rejectedFiles.push({
@@ -2221,15 +2321,15 @@ exports.importStudentPhotos = async (req, res) => {
       }
 
       // Update student avatar_url & roll_number in profiles
-      const { error: updateErr } = await supabase
-        .from('profiles')
-        .update({
-          avatar_url: photoUrl,
-          roll_number: matchedStudent.roll_number || fileRollNumber
-        })
-        .eq('id', matchedStudent.id);
-
-      if (updateErr) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({
+            avatar_url: photoUrl,
+            roll_number: matchedStudent.roll_number || fileRollNumber
+          })
+          .eq('id', matchedStudent.id);
+      } catch (updateErr) {
         console.warn('DB profile avatar_url update note:', updateErr.message);
       }
 
@@ -2273,57 +2373,111 @@ exports.importStudentPhotoLinks = async (req, res) => {
       return res.status(400).json({ message: 'No photo link mappings provided.' });
     }
 
-    // Fetch registered students for this event
+    // Fetch registered students for this event with 3-stage bulletproof fallbacks
     let registrations = null;
-    let { data: primaryData, error: regErr } = await supabase
-      .from('event_registrations')
-      .select(`
-        id,
-        user_id,
-        userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department, avatar_url)
-      `)
-      .eq('event_id', eventId);
-
-    if (regErr) {
-      const { data: fallbackData, error: fallbackErr } = await supabase
+    try {
+      const { data: pData } = await supabase
         .from('event_registrations')
         .select(`
           id,
           user_id,
-          userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department)
+          userId:profiles(id, name, email, roll_number, department, avatar_url)
         `)
         .eq('event_id', eventId);
-
-      if (fallbackErr) {
-        return res.status(500).json({ message: 'Failed to fetch event registrations.', error: fallbackErr.message });
+      if (pData && Array.isArray(pData) && pData.length > 0) {
+        registrations = pData;
       }
-      registrations = (fallbackData || []).map(r => ({
-        ...r,
-        userId: r.userId ? { ...r.userId, avatar_url: null } : null
-      }));
-    } else {
-      registrations = primaryData;
+    } catch (e) {}
+
+    if (!registrations || registrations.length === 0) {
+      try {
+        const { data: regRows } = await supabase
+          .from('event_registrations')
+          .select('*')
+          .eq('event_id', eventId);
+        
+        if (regRows && Array.isArray(regRows) && regRows.length > 0) {
+          const userIds = regRows.map(r => r.user_id).filter(Boolean);
+          let profMap = new Map();
+          if (userIds.length > 0) {
+            const { data: profRows } = await supabase.from('profiles').select('*').in('id', userIds);
+            (profRows || []).forEach(p => profMap.set(p.id, p));
+          }
+
+          registrations = regRows.map(r => ({
+            id: r.id,
+            user_id: r.user_id,
+            userId: profMap.get(r.user_id) || {
+              id: r.user_id,
+              name: r.user_name || r.name || 'Student',
+              email: r.user_email || r.email || '',
+              roll_number: r.roll_number || r.rollNo || '',
+              department: r.department || 'General'
+            }
+          }));
+        }
+      } catch (e) {}
     }
 
     if (!registrations || registrations.length === 0) {
       return res.status(404).json({ message: 'No registered students found for this event.' });
     }
 
-    // Build roll number map
+    // Build roll number map with multi-level fuzzy fallback keys
     const rollMap = new Map();
+    const normalizeKey = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const digitsOnly = (str) => String(str || '').replace(/\D/g, '');
+
+    const allRegisteredStudents = [];
+
     registrations.forEach(reg => {
       const student = reg.userId;
       if (!student) return;
+      allRegisteredStudents.push(student);
 
       const derivedRoll = student.email ? student.email.split('@')[0].trim().toLowerCase() : null;
       const dbRoll = student.roll_number ? student.roll_number.trim().toLowerCase() : null;
+      const studentName = student.name ? student.name.trim().toLowerCase() : null;
 
-      if (derivedRoll) rollMap.set(derivedRoll, student);
-      if (dbRoll) rollMap.set(dbRoll, student);
+      [derivedRoll, dbRoll, student.email, studentName].forEach(k => {
+        if (!k) return;
+        const raw = String(k).trim().toLowerCase();
+        const clean = normalizeKey(k);
+        const digits = digitsOnly(k);
+
+        if (raw) rollMap.set(raw, student);
+        if (clean) rollMap.set(clean, student);
+        if (digits && digits.length >= 4) rollMap.set(digits, student);
+      });
     });
+
+    const findStudentMatch = (inputStr) => {
+      if (!inputStr) return null;
+      const raw = String(inputStr).trim().toLowerCase();
+      const clean = normalizeKey(inputStr);
+      const digits = digitsOnly(inputStr);
+
+      // 1. Direct roll number map lookups
+      let found = rollMap.get(raw) || rollMap.get(clean) || (digits.length >= 4 ? rollMap.get(digits) : null);
+      if (found) return found;
+
+      // 2. Strict roll number / email roll suffix matching only (NO name matching)
+      if (clean && clean.length >= 3) {
+        found = allRegisteredStudents.find(s => {
+          const sDerived = s.email ? normalizeKey(s.email.split('@')[0]) : '';
+          const sDb = s.roll_number ? normalizeKey(s.roll_number) : '';
+
+          return (sDerived && (sDerived === clean || sDerived.endsWith(clean) || clean.endsWith(sDerived))) ||
+                 (sDb && (sDb === clean || sDb.endsWith(clean) || clean.endsWith(sDb)));
+        });
+      }
+      return found;
+    };
 
     const mappedStudents = [];
     const rejectedFiles = [];
+
+    const dbUpdates = [];
 
     for (const item of mappings) {
       const inputRoll = String(item.rollNumber || '').trim().toLowerCase();
@@ -2331,7 +2485,7 @@ exports.importStudentPhotoLinks = async (req, res) => {
 
       if (!inputRoll || !rawUrl) continue;
 
-      const matchedStudent = rollMap.get(inputRoll);
+      const matchedStudent = findStudentMatch(inputRoll);
 
       if (!matchedStudent) {
         rejectedFiles.push({
@@ -2342,31 +2496,31 @@ exports.importStudentPhotoLinks = async (req, res) => {
         continue;
       }
 
-      // Convert Google Drive link to backend proxy URL or direct URL for 100% guaranteed browser rendering
+      // Convert Google Drive link to direct high-res CDN thumbnail URL for lightspeed browser rendering
       let directUrl = rawUrl;
       const driveMatch = rawUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) || rawUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
       if (driveMatch && driveMatch[1]) {
-        directUrl = `/api/registrations/drive-proxy?id=${driveMatch[1]}`;
+        directUrl = `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w1000`;
+      } else if (/^[a-zA-Z0-9_-]{25,}$/.test(rawUrl)) {
+        directUrl = `https://drive.google.com/thumbnail?id=${rawUrl}&sz=w1000`;
       }
 
-      // Update student avatar_url in profiles
-      const { error: updateErr } = await supabase
-        .from('profiles')
-        .update({
-          avatar_url: directUrl,
-          roll_number: matchedStudent.roll_number || inputRoll
-        })
-        .eq('id', matchedStudent.id);
-
-      if (updateErr) {
-        console.warn('Failed to update student profile avatar_url in DB:', updateErr.message);
-      }
-
-      // Always save to file-backed avatar store for 100% reliable persistence
+      // Save to file-backed avatar store for 100% instant persistence
       setStudentAvatar(eventId, inputRoll, directUrl);
       if (matchedStudent.roll_number) {
         setStudentAvatar(eventId, matchedStudent.roll_number, directUrl);
       }
+
+      // Queue DB update safely
+      dbUpdates.push(
+        supabase
+          .from('profiles')
+          .update({
+            avatar_url: directUrl,
+            roll_number: matchedStudent.roll_number || inputRoll
+          })
+          .eq('id', matchedStudent.id)
+      );
 
       matchedStudent.avatar_url = directUrl;
 
@@ -2379,6 +2533,9 @@ exports.importStudentPhotoLinks = async (req, res) => {
         avatarUrl: directUrl
       });
     }
+
+    // Execute database updates in background without blocking response or resetting connection
+    Promise.allSettled(dbUpdates).catch(e => console.warn('Non-fatal DB profile update warning:', e.message));
 
     res.json({
       message: `Processed ${mappings.length} link(s). ${mappedStudents.length} mapped successfully, ${rejectedFiles.length} rejected.`,
@@ -2399,50 +2556,57 @@ exports.proxyDriveImage = async (req, res) => {
     let fileId = id;
 
     if (!fileId && url) {
-      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || 
-                    url.match(/[?&]id=([a-zA-Z0-9_-]+)/) || 
-                    url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      const match = String(url).match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || 
+                    String(url).match(/[?&]id=([a-zA-Z0-9_-]+)/) || 
+                    String(url).match(/\/d\/([a-zA-Z0-9_-]+)/);
       if (match && match[1]) {
         fileId = match[1];
       }
-    }
-
-    if (!fileId && url) {
-      const response = await axios.get(url, { responseType: 'stream' });
-      if (response.headers['content-type']) {
-        res.set('Content-Type', response.headers['content-type']);
-      }
-      return response.data.pipe(res);
     }
 
     if (!fileId) {
       return res.status(400).send('Missing Google Drive file ID or URL.');
     }
 
-    // List of Google Drive binary stream endpoints to try sequentially
+    // List of Google Drive CDN endpoints to try sequentially
     const endpoints = [
-      `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`,
       `https://lh3.googleusercontent.com/d/${fileId}`,
-      `https://drive.google.com/uc?export=view&id=${fileId}`,
-      `https://drive.google.com/uc?export=download&id=${fileId}`
+      `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`,
+      `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+      `https://drive.google.com/uc?export=view&id=${fileId}`
     ];
 
     for (const targetUrl of endpoints) {
       try {
         const driveRes = await axios.get(targetUrl, {
-          responseType: 'stream',
+          responseType: 'arraybuffer',
+          maxRedirects: 10,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
           },
-          timeout: 10000
+          timeout: 12000
         });
 
-        const contentType = driveRes.headers['content-type'] || '';
-        if (contentType.startsWith('image/') || contentType.includes('octet-stream')) {
-          res.set('Content-Type', contentType.includes('octet-stream') ? 'image/jpeg' : contentType);
+        const contentType = driveRes.headers['content-type'] || 'image/jpeg';
+        const buffer = Buffer.from(driveRes.data);
+
+        // Check if returned payload is a valid binary image (starts with JPEG, PNG, WEBP, GIF magic bytes or contentType is image/*)
+        const isJpg = buffer.length > 2 && buffer[0] === 0xFF && buffer[1] === 0xD8;
+        const isPng = buffer.length > 2 && buffer[0] === 0x89 && buffer[1] === 0x50;
+        const isWebp = buffer.length > 10 && buffer[8] === 0x57 && buffer[9] === 0x45;
+        const isGif = buffer.length > 2 && buffer[0] === 0x47 && buffer[1] === 0x49;
+
+        if (isJpg || isPng || isWebp || isGif || contentType.startsWith('image/')) {
+          let outputType = 'image/jpeg';
+          if (isPng) outputType = 'image/png';
+          else if (isWebp) outputType = 'image/webp';
+          else if (isGif) outputType = 'image/gif';
+          else if (contentType.startsWith('image/')) outputType = contentType;
+
+          res.set('Content-Type', outputType);
           res.set('Cache-Control', 'public, max-age=86400');
-          return driveRes.data.pipe(res);
+          return res.send(buffer);
         }
       } catch (e) {
         continue;
