@@ -26,6 +26,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminEvents from './pages/AdminEvents';
 import AdminRegistrations from './pages/AdminRegistrations';
 import AdminUsers from './pages/AdminUsers';
+import AdminAnnouncements from './pages/AdminAnnouncements';
+import Announcements from './pages/Announcements';
 
 // Protected Faculty Organizer views
 import FacultyOrgDashboard from './pages/FacultyOrgDashboard';
@@ -133,6 +135,22 @@ const AnimatedRoutes = () => {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/announcements"
+          element={
+            <ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'student_organizer', 'admin']}>
+              <Announcements />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/announcements/:announcementId"
+          element={
+            <ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'student_organizer', 'admin']}>
+              <Announcements />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Administrator Only Paths */}
         <Route
@@ -164,6 +182,14 @@ const AnimatedRoutes = () => {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <AdminUsers />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/announcements"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminAnnouncements />
             </ProtectedRoute>
           }
         />

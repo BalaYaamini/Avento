@@ -63,6 +63,22 @@ const Navbar = () => {
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
+  // Announcement unread count
+  const [announcementUnread, setAnnouncementUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnread = async () => {
+      try {
+        const res = await axios.get('/api/announcements/unread-summary');
+        setAnnouncementUnread(res.data?.totalUnread || 0);
+      } catch {}
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   const handleMarkAsRead = async (id) => {
     try {
       await axios.patch(`/api/notifications/${id}/read`);
@@ -178,7 +194,7 @@ const Navbar = () => {
             <NavLink to="/contact" className={navLinkClass}>Contact</NavLink>
 
             {/* Student Navigation (unified) */}
-            {user && user.roles?.includes('student') && (
+              {user && user.roles?.includes('student') && (
               <>
                 {/* My Workspace Dropdown */}
                 <div 
@@ -227,6 +243,7 @@ const Navbar = () => {
                 </div>
 
                 <NavLink to="/profile" className={navLinkClass}>Profile</NavLink>
+                <NavLink to="/announcements" className={navLinkClass}>Announcements{announcementUnread > 0 && <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold text-white bg-red-500 rounded-full">{announcementUnread}</span>}</NavLink>
               </>
             )}
 
@@ -235,6 +252,7 @@ const Navbar = () => {
                <>
                  <NavLink to="/faculty-organizer/events" className={navLinkClass}>Proposals</NavLink>
                  <NavLink to="/profile" className={navLinkClass}>Profile</NavLink>
+                  <NavLink to="/announcements" className={navLinkClass}>Announcements{announcementUnread > 0 && <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold text-white bg-red-500 rounded-full">{announcementUnread}</span>}</NavLink>
                </>
              )}
 
@@ -243,7 +261,8 @@ const Navbar = () => {
                <>
                  <NavLink to="/admin" end className={navLinkClass}>Dashboard</NavLink>
                  <NavLink to="/admin/events" className={navLinkClass}>Events</NavLink>
-                 <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
+                  <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
+                  <NavLink to="/admin/announcements" className={navLinkClass}>Announcements</NavLink>
                </>
              )}
            </div>
@@ -429,14 +448,16 @@ const Navbar = () => {
                  </div>
                </div>
                
-               <NavLink to="/profile" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Profile</NavLink>
+                <NavLink to="/profile" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Profile</NavLink>
+                 <NavLink to="/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements{announcementUnread > 0 && <span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold text-white bg-red-500 rounded-full">{announcementUnread}</span>}</NavLink>
              </>
            )}
 
            {user && (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) && (
              <>
                <NavLink to="/faculty-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Proposals</NavLink>
-               <NavLink to="/profile" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Profile</NavLink>
+                <NavLink to="/profile" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Profile</NavLink>
+                 <NavLink to="/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements{announcementUnread > 0 && <span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold text-white bg-red-500 rounded-full">{announcementUnread}</span>}</NavLink>
              </>
            )}
 
@@ -444,7 +465,8 @@ const Navbar = () => {
             <>
               <NavLink to="/admin" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
               <NavLink to="/admin/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Events</NavLink>
-              <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
+               <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
+               <NavLink to="/admin/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements</NavLink>
             </>
           )}
 
