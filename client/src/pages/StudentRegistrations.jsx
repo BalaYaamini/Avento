@@ -188,22 +188,32 @@ const StudentRegistrations = () => {
     fetchRegistrations();
     fetchFeedbackStatuses();
 
-    // Set up realtime subscription for team membership changes
-    const subscription = supabase
+    // Set up realtime subscription for team membership & problem statement slot changes
+    const regSubscription = supabase
       .channel('public:event_registrations')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'event_registrations' },
-        (payload) => {
-          // Whenever there's any change in registrations, just refetch
-          // This keeps the UI in sync when teammates leave/join
+        () => {
+          fetchRegistrations();
+        }
+      )
+      .subscribe();
+
+    const psSubscription = supabase
+      .channel('public:event_problem_statements')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_problem_statements' },
+        () => {
           fetchRegistrations();
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(regSubscription);
+      supabase.removeChannel(psSubscription);
     };
   }, []);
 
@@ -1024,13 +1034,23 @@ const StudentRegistrations = () => {
                                   const isSelected = selectedPsToConfirm?.ps?.id === ps.id;
                                   const psCode = ps.code || `PS${String(idx + 1).padStart(2, '0')}`;
 
+                                  const rawCap = ps.maxCapacity ?? ps.max_capacity;
+                                  const maxCapacity = (rawCap !== undefined && rawCap !== null && !isNaN(Number(rawCap)) && Number(rawCap) > 0) ? Number(rawCap) : 5;
+                                  const allocatedCount = Number(ps.allocatedCount || ps.allocated_count || 0);
+                                  const slotsRemaining = ps.slotsRemaining !== undefined 
+                                    ? Number(ps.slotsRemaining) 
+                                    : Math.max(0, maxCapacity - allocatedCount);
+                                  const isFull = slotsRemaining <= 0;
+
                                   return (
                                     <div 
                                       key={ps.id || idx}
                                       className={`group rounded-2xl p-5 border-2 transition-all flex flex-col justify-between shadow-sm relative ${
-                                        isSelected
-                                          ? 'bg-violet-500/10 dark:bg-violet-950/40 border-violet-500 shadow-md ring-2 ring-violet-500/20'
-                                          : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-violet-500/40 hover:shadow-soft'
+                                        isFull
+                                          ? 'bg-gray-100/50 dark:bg-slate-900/40 border-gray-300/40 dark:border-slate-800 opacity-85'
+                                          : isSelected
+                                            ? 'bg-violet-500/10 dark:bg-violet-950/40 border-violet-500 shadow-md ring-2 ring-violet-500/20'
+                                            : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-violet-500/40 hover:shadow-soft'
                                       }`}
                                     >
                                       {/* Card Top Info */}
@@ -1039,11 +1059,22 @@ const StudentRegistrations = () => {
                                           <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400">
                                             {psCode}
                                           </span>
-                                          {isSelected && (
-                                            <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20">
-                                              ✓ Selected
-                                            </span>
-                                          )}
+                                          <div className="flex items-center gap-1.5">
+                                            {isFull ? (
+                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20">
+                                                🔴 Full (0 Slots Left)
+                                              </span>
+                                            ) : (
+                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+                                                ⚡ {slotsRemaining} / {maxCapacity} Slots Left
+                                              </span>
+                                            )}
+                                            {isSelected && (
+                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20">
+                                                ✓ Selected
+                                              </span>
+                                            )}
+                                          </div>
                                         </div>
 
                                         <div className="space-y-1.5">
@@ -1060,16 +1091,22 @@ const StudentRegistrations = () => {
 
                                       {/* Card Bottom Actions */}
                                       <div className="pt-4 mt-4 border-t border-pastel-lavender/10">
-                                        <div className="flex justify-end">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-[11px] font-bold text-text-secondary">
+                                            {isFull ? 'No slots remaining' : `${slotsRemaining} slot(s) open`}
+                                          </span>
                                           <button
-                                            onClick={() => setSelectedPsToConfirm({ eventId, ps })}
+                                            disabled={isFull}
+                                            onClick={() => !isFull && setSelectedPsToConfirm({ eventId, ps })}
                                             className={`px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                                              isSelected
-                                                ? 'bg-violet-600 text-white ring-2 ring-violet-500/40'
-                                                : 'btn-primary text-white hover:shadow-md'
+                                              isFull
+                                                ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-300/30'
+                                                : isSelected
+                                                  ? 'bg-violet-600 text-white ring-2 ring-violet-500/40'
+                                                  : 'btn-primary text-white hover:shadow-md'
                                             }`}
                                           >
-                                            {isSelected ? '✓ Selected' : 'Select'}
+                                            {isFull ? 'Fully Booked' : isSelected ? '✓ Selected' : 'Select'}
                                           </button>
                                         </div>
                                       </div>

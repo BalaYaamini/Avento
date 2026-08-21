@@ -1,5 +1,14 @@
 const supabase = require('../config/supabaseClient');
 
+const DEFAULT_FEEDBACK_QUESTIONS = [
+  { id: 'q_content', label: 'Event Content', type: 'rating', required: true },
+  { id: 'q_speaker', label: 'Speaker / Presenter', type: 'rating', required: true },
+  { id: 'q_org', label: 'Organization', type: 'rating', required: true },
+  { id: 'q_engagement', label: 'Engagement', type: 'rating', required: true },
+  { id: 'q_overall', label: 'Overall Satisfaction', type: 'rating', required: true },
+  { id: 'q_suggestions', label: 'Suggestions for Improvement', type: 'text', required: false }
+];
+
 /**
  * Submit feedback for an event
  * POST /api/feedbacks
@@ -8,6 +17,7 @@ const submitFeedback = async (req, res) => {
   try {
     const { 
       eventId, 
+      responses,
       contentRating, 
       speakerRating, 
       organizationRating, 
@@ -17,14 +27,14 @@ const submitFeedback = async (req, res) => {
     } = req.body;
     const userId = req.user.id;
 
-    if (!eventId || !contentRating || !speakerRating || !organizationRating || !engagementRating || !overallRating) {
-      return res.status(400).json({ message: 'All ratings are required.' });
+    if (!eventId) {
+      return res.status(400).json({ message: 'Event ID is required.' });
     }
 
     // Check if event exists and is completed
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('id, status')
+      .select('id, status, feedback_questions')
       .eq('id', eventId)
       .maybeSingle();
 
@@ -48,18 +58,43 @@ const submitFeedback = async (req, res) => {
       return res.status(403).json({ message: 'Only registered participants can submit feedback.' });
     }
 
+    let finalResponses = responses || {};
+    let finalContentRating = contentRating || finalResponses.contentRating || finalResponses['q_content'] || null;
+    let finalSpeakerRating = speakerRating || finalResponses.speakerRating || finalResponses['q_speaker'] || null;
+    let finalOrgRating = organizationRating || finalResponses.organizationRating || finalResponses['q_org'] || null;
+    let finalEngagementRating = engagementRating || finalResponses.engagementRating || finalResponses['q_engagement'] || null;
+    let finalOverallRating = overallRating || finalResponses.overallRating || finalResponses['q_overall'] || null;
+    let finalSuggestions = suggestions || finalResponses.suggestions || finalResponses['q_suggestions'] || null;
+
+    if (!responses) {
+      finalResponses = {
+        q_content: finalContentRating,
+        q_speaker: finalSpeakerRating,
+        q_org: finalOrgRating,
+        q_engagement: finalEngagementRating,
+        q_overall: finalOverallRating,
+        q_suggestions: finalSuggestions
+      };
+    } else {
+      const ratingVals = Object.values(responses).filter(v => typeof v === 'number');
+      if (ratingVals.length > 0 && !finalOverallRating) {
+        finalOverallRating = Math.round(ratingVals.reduce((a, b) => a + b, 0) / ratingVals.length);
+      }
+    }
+
     // Insert feedback (UNIQUE constraint will prevent duplicate submissions)
     const { data: feedback, error: insertError } = await supabase
       .from('feedbacks')
       .insert({
         event_id: eventId,
         user_id: userId,
-        content_rating: contentRating,
-        speaker_rating: speakerRating,
-        organization_rating: organizationRating,
-        engagement_rating: engagementRating,
-        overall_rating: overallRating,
-        suggestions: suggestions || null
+        content_rating: finalContentRating,
+        speaker_rating: finalSpeakerRating,
+        organization_rating: finalOrgRating,
+        engagement_rating: finalEngagementRating,
+        overall_rating: finalOverallRating,
+        suggestions: finalSuggestions,
+        responses: finalResponses
       })
       .select()
       .single();
@@ -86,11 +121,22 @@ const getEventFeedbacks = async (req, res) => {
   try {
     const { eventId } = req.params;
     
-    // Authorization check is usually done via middleware or in controller
-    // but here we just need to ensure the user has access.
-    // Assuming frontend only shows this if authorized, but let's be safe.
-    
-    // 1. Get total registrations
+    // 1. Get event configuration
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('id, title, feedback_questions')
+      .eq('id', eventId)
+      .maybeSingle();
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const questions = (event.feedback_questions && Array.isArray(event.feedback_questions) && event.feedback_questions.length > 0)
+      ? event.feedback_questions
+      : DEFAULT_FEEDBACK_QUESTIONS;
+
+    // 2. Get total registrations
     const { count: registeredCount, error: regError } = await supabase
       .from('event_registrations')
       .select('*', { count: 'exact', head: true })
@@ -98,7 +144,7 @@ const getEventFeedbacks = async (req, res) => {
       
     if (regError) throw regError;
 
-    // 2. Get all feedbacks
+    // 3. Get all feedbacks
     const { data: feedbacks, error: fbError } = await supabase
       .from('feedbacks')
       .select('*')
@@ -110,26 +156,46 @@ const getEventFeedbacks = async (req, res) => {
     const pendingCount = (registeredCount || 0) - submittedCount;
     const responseRate = registeredCount > 0 ? Math.round((submittedCount / registeredCount) * 100) : 0;
 
-    // Calculate averages and distribution
-    let contentTotal = 0;
-    let speakerTotal = 0;
-    let orgTotal = 0;
-    let engagementTotal = 0;
-    let overallTotal = 0;
-
+    // Standard fallback aggregations
+    let contentTotal = 0, speakerTotal = 0, orgTotal = 0, engagementTotal = 0, overallTotal = 0;
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     const suggestions = [];
 
+    // Dynamic per-question analytics
+    const questionAnalytics = {};
+    questions.forEach(q => {
+      if (q.type === 'rating') {
+        questionAnalytics[q.id] = {
+          id: q.id,
+          label: q.label,
+          type: 'rating',
+          totalScore: 0,
+          count: 0,
+          average: '0.0',
+          distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+        };
+      } else if (q.type === 'text') {
+        questionAnalytics[q.id] = {
+          id: q.id,
+          label: q.label,
+          type: 'text',
+          responses: []
+        };
+      }
+    });
+
     feedbacks.forEach(fb => {
+      const fbResp = fb.responses || {};
+
       contentTotal += Number(fb.content_rating) || 0;
       speakerTotal += Number(fb.speaker_rating) || 0;
       orgTotal += Number(fb.organization_rating) || 0;
       engagementTotal += Number(fb.engagement_rating) || 0;
       overallTotal += Number(fb.overall_rating) || 0;
 
-      const rating = Number(fb.overall_rating) || 0;
-      if (rating >= 1 && rating <= 5) {
-        distribution[rating] += 1;
+      const overallVal = Number(fb.overall_rating) || 0;
+      if (overallVal >= 1 && overallVal <= 5) {
+        distribution[overallVal] += 1;
       }
 
       if (fb.suggestions && fb.suggestions.trim() !== '') {
@@ -139,11 +205,51 @@ const getEventFeedbacks = async (req, res) => {
           date: fb.created_at
         });
       }
+
+      // Process dynamic answers
+      questions.forEach(q => {
+        let val = fbResp[q.id];
+        
+        // Fallbacks for standard question IDs
+        if (val === undefined || val === null) {
+          if (q.id === 'q_content') val = fb.content_rating;
+          else if (q.id === 'q_speaker') val = fb.speaker_rating;
+          else if (q.id === 'q_org') val = fb.organization_rating;
+          else if (q.id === 'q_engagement') val = fb.engagement_rating;
+          else if (q.id === 'q_overall') val = fb.overall_rating;
+          else if (q.id === 'q_suggestions') val = fb.suggestions;
+        }
+
+        if (q.type === 'rating' && val !== undefined && val !== null) {
+          const numVal = Number(val);
+          if (numVal >= 1 && numVal <= 5) {
+            questionAnalytics[q.id].totalScore += numVal;
+            questionAnalytics[q.id].count += 1;
+            questionAnalytics[q.id].distribution[numVal] += 1;
+          }
+        } else if (q.type === 'text' && val && String(val).trim() !== '') {
+          questionAnalytics[q.id].responses.push({
+            id: fb.id,
+            text: String(val).trim(),
+            date: fb.created_at
+          });
+        }
+      });
+    });
+
+    // Finalize question averages
+    Object.keys(questionAnalytics).forEach(qId => {
+      const qData = questionAnalytics[qId];
+      if (qData.type === 'rating') {
+        qData.average = qData.count > 0 ? (qData.totalScore / qData.count).toFixed(1) : '0.0';
+      }
     });
 
     const calculateAvg = (total) => submittedCount > 0 ? (total / submittedCount).toFixed(1) : '0.0';
 
     const analytics = {
+      questions,
+      questionAnalytics,
       averages: {
         content: calculateAvg(contentTotal),
         speaker: calculateAvg(speakerTotal),
@@ -158,13 +264,42 @@ const getEventFeedbacks = async (req, res) => {
         pending: pendingCount > 0 ? pendingCount : 0,
         responseRate
       },
-      suggestions: suggestions.sort((a, b) => new Date(b.date) - new Date(a.date)) // Newest first
+      suggestions: suggestions.sort((a, b) => new Date(b.date) - new Date(a.date))
     };
 
     res.json(analytics);
   } catch (err) {
     console.error('Get event feedbacks error:', err);
     res.status(500).json({ message: 'Server error fetching feedback analytics', error: err.message });
+  }
+};
+
+/**
+ * Update feedback questions schema for an event
+ * PUT /api/feedbacks/event/:eventId/questions
+ */
+const updateFeedbackQuestions = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({ message: 'Questions must be an array.' });
+    }
+
+    const { data: updatedEvent, error } = await supabase
+      .from('events')
+      .update({ feedback_questions: questions })
+      .eq('id', eventId)
+      .select('id, title, feedback_questions')
+      .single();
+
+    if (error) throw error;
+
+    res.json({ message: 'Feedback questions updated successfully.', event: updatedEvent });
+  } catch (err) {
+    console.error('Update feedback questions error:', err);
+    res.status(500).json({ message: 'Failed to update feedback questions', error: err.message });
   }
 };
 
@@ -176,7 +311,6 @@ const getUserFeedbackStatus = async (req, res) => {
   try {
     const { eventId, userId } = req.params;
     
-    // Only allow users to check their own status, unless admin
     if (req.user.id !== userId && !req.user.roles.includes('admin')) {
       return res.status(403).json({ message: 'Unauthorized' });
     }
@@ -226,6 +360,8 @@ const getMyFeedbackStatuses = async (req, res) => {
 module.exports = {
   submitFeedback,
   getEventFeedbacks,
+  updateFeedbackQuestions,
   getUserFeedbackStatus,
   getMyFeedbackStatuses
 };
+

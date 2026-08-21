@@ -43,6 +43,7 @@ const StudentOrgEvents = () => {
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [paymentQrFile, setPaymentQrFile] = useState(null);
   const [scoringEnabled, setScoringEnabled] = useState(false);
+  const [feedbackQuestions, setFeedbackQuestions] = useState([]);
 
   const getTomorrowISO = () => {
     const d = new Date();
@@ -185,7 +186,8 @@ const StudentOrgEvents = () => {
     setFacultySearchTerm('');
     setIsFacultyDropdownOpen(false);
     setFeedback(null);
-    setScoringEnabled(!!event.scoring_enabled);
+    setScoringEnabled(!!event?.scoring_enabled);
+    setFeedbackQuestions([]);
     setIsModalOpen(true);
   };
 
@@ -230,6 +232,7 @@ const StudentOrgEvents = () => {
     }
     setIsFacultyDropdownOpen(false);
     
+    setFeedbackQuestions(event.feedback_questions || event.feedbackQuestions || []);
     setFeedback(null);
     setIsModalOpen(true);
   };
@@ -327,6 +330,7 @@ const StudentOrgEvents = () => {
         , paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined
         , scoringEnabled
+        , feedbackQuestions
       };
 
       if (modalMode === 'create') {

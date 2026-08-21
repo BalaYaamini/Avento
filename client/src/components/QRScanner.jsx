@@ -5,6 +5,8 @@ const QRScanner = ({ onScanSuccess, onScanFailure }) => {
   const scannerRef = useRef(null);
   const onScanSuccessRef = useRef(onScanSuccess);
   const onScanFailureRef = useRef(onScanFailure);
+  const lastScannedTextRef = useRef('');
+  const lastScanTimeRef = useRef(0);
 
   useEffect(() => {
     onScanSuccessRef.current = onScanSuccess;
@@ -57,17 +59,25 @@ const QRScanner = ({ onScanSuccess, onScanFailure }) => {
           { facingMode: 'environment' },
           config,
           (decodedText) => {
-            if (isMounted && html5QrCode && html5QrCode.isScanning) {
-              html5QrCode
-                .stop()
-                .then(() => {
-                  stopMediaTracks();
-                  html5QrCode.clear();
-                  if (onScanSuccessRef.current) {
-                    onScanSuccessRef.current(decodedText);
-                  }
-                })
-                .catch((err) => console.error('Failed to stop scanner on scan:', err));
+            if (isMounted) {
+              const now = Date.now();
+              // Prevent rapid duplicate scans for the exact same QR within 2.5 seconds, or consecutive scans within 1.5 seconds
+              if (
+                decodedText === lastScannedTextRef.current &&
+                now - lastScanTimeRef.current < 2500
+              ) {
+                return;
+              }
+              if (now - lastScanTimeRef.current < 1500) {
+                return;
+              }
+
+              lastScannedTextRef.current = decodedText;
+              lastScanTimeRef.current = now;
+
+              if (onScanSuccessRef.current) {
+                onScanSuccessRef.current(decodedText);
+              }
             }
           },
           (errorMessage) => {

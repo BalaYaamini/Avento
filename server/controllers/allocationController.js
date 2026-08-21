@@ -341,8 +341,13 @@ async function fetchProblemStatementsForEvent(eventId) {
           .catch(() => {});
       }
 
+      const rawCap = ps.max_capacity ?? ps.maxCapacity;
+      const validCap = (rawCap !== undefined && rawCap !== null && !isNaN(Number(rawCap)) && Number(rawCap) > 0) ? Number(rawCap) : 5;
+
       return {
         ...ps,
+        max_capacity: validCap,
+        maxCapacity: validCap,
         allocated_count: liveCount
       };
     });
@@ -356,11 +361,15 @@ async function fetchProblemStatementsForEvent(eventId) {
           problemStatements = parsed.map((p, i) => {
             const normTitle = String(p.title || p.name || '').trim().toLowerCase();
             const countByTitle = allocCountsByTitle.get(normTitle) || 0;
+            const cap = (p.max_capacity ?? p.maxCapacity) ? Number(p.max_capacity ?? p.maxCapacity) : 5;
             return {
               id: p.id || `ps_${i + 1}`,
               event_id: eventId,
+              code: p.code || `PS${String(i + 1).padStart(2, '0')}`,
               title: p.title || p.name || `Problem Statement ${i + 1}`,
               description: p.description || '',
+              max_capacity: cap,
+              maxCapacity: cap,
               allocated_count: countByTitle
             };
           });
@@ -460,6 +469,7 @@ exports.saveProblemStatements = async (req, res) => {
       const code = (ps.code && String(ps.code).trim()) ? String(ps.code).trim() : `PS${String(i + 1).padStart(2, '0')}`;
       const title = String(ps.title || ps.name || '').trim();
       const description = String(ps.description || '').trim();
+      const maxCapacity = Math.max(1, parseInt(ps.maxCapacity || ps.max_capacity || ps.slots) || 5);
 
       if (!title) {
         return res.status(400).json({ message: `Problem statement title at position ${i + 1} cannot be empty.` });
@@ -470,18 +480,20 @@ exports.saveProblemStatements = async (req, res) => {
         existingRecordsToUpdate.push({
           id: String(ps.id).trim(),
           event_id: eventId,
+          code,
           title,
           description,
-          max_capacity: 99999,
+          max_capacity: maxCapacity,
           updated_at: new Date().toISOString()
         });
       } else {
         // NEW record: OMIT id property completely so PostgreSQL DEFAULT gen_random_uuid() triggers
         newRecordsToInsert.push({
           event_id: eventId,
+          code,
           title,
           description,
-          max_capacity: 99999,
+          max_capacity: maxCapacity,
           updated_at: new Date().toISOString()
         });
       }
@@ -523,8 +535,11 @@ exports.saveProblemStatements = async (req, res) => {
       const allRecords = [...existingRecordsToUpdate, ...newRecordsToInsert];
       const fallbackJSON = JSON.stringify(allRecords.map((r, i) => ({
         id: r.id || `ps_${i + 1}`,
+        code: r.code || `PS${String(i + 1).padStart(2, '0')}`,
         title: r.title,
-        description: r.description
+        description: r.description,
+        max_capacity: r.max_capacity,
+        maxCapacity: r.max_capacity
       })));
 
       const { error: eventErr } = await supabase
@@ -683,6 +698,13 @@ exports.selectProblemStatement = async (req, res) => {
 
     if (!targetPS) {
       return res.status(404).json({ message: 'Problem statement not found.' });
+    }
+
+    // Explicit Slot Capacity Check
+    const maxCapacity = Math.max(1, parseInt(targetPS.max_capacity || targetPS.maxCapacity) || 5);
+    const currentAllocated = Number(targetPS.allocated_count || 0);
+    if (currentAllocated >= maxCapacity) {
+      return res.status(400).json({ message: 'This problem statement has reached full capacity. Please select another.' });
     }
 
     // Preserve existing team preassigned venue if present; otherwise default to ''
@@ -1575,13 +1597,20 @@ exports.getMyTeamAllocation = async (req, res) => {
 
     const availableProblemStatements = (problemStatements || []).map((ps, i) => {
       const allocCount = Number(ps.allocated_count || 0);
+      const rawCap = ps.max_capacity ?? ps.maxCapacity;
+      const maxCap = (rawCap !== undefined && rawCap !== null && !isNaN(Number(rawCap)) && Number(rawCap) > 0) ? Number(rawCap) : 5;
+      const slotsRem = Math.max(0, maxCap - allocCount);
 
       return {
         id: ps.id,
         code: ps.code || `PS${String(i + 1).padStart(2, '0')}`,
         title: ps.title,
         description: ps.description || '',
+        maxCapacity: maxCap,
+        max_capacity: maxCap,
         allocatedCount: allocCount,
+        allocated_count: allocCount,
+        slotsRemaining: slotsRem
       };
     });
 

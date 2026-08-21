@@ -48,6 +48,7 @@ const AdminEvents = () => {
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [paymentQrFile, setPaymentQrFile] = useState(null);
   const [scoringEnabled, setScoringEnabled] = useState(false);
+  const [feedbackQuestions, setFeedbackQuestions] = useState([]);
 
   // Organizers States
   const [candidatesList, setCandidatesList] = useState([]);
@@ -203,8 +204,8 @@ const AdminEvents = () => {
     setRegistrationDeadline('');
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
+    setFeedbackQuestions([]);
     setFeedback(null);
-    setScoringEnabled(!!event.scoring_enabled);
     setIsModalOpen(true);
   };
 
@@ -239,6 +240,7 @@ const AdminEvents = () => {
     setPaymentQrFile(null);
 
     setScoringEnabled(!!event.scoring_enabled);
+    setFeedbackQuestions(event.feedback_questions || event.feedbackQuestions || []);
 
     setFeedback(null);
     setIsModalOpen(true);
@@ -338,6 +340,7 @@ const AdminEvents = () => {
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
         scoringEnabled,
+        feedbackQuestions,
       };
 
       if (modalMode === 'create') {

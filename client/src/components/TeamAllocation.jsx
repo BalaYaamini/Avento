@@ -63,6 +63,10 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             code: p.code || `PS${String(i + 1).padStart(2, '0')}`,
             title: p.title || '',
             description: p.description || '',
+            maxCapacity: (() => {
+              const cap = p.max_capacity ?? p.maxCapacity;
+              return (cap !== undefined && cap !== null && !isNaN(Number(cap)) && Number(cap) > 0) ? Number(cap) : 5;
+            })(),
             allocatedCount: p.allocated_count || 0
           })));
         } else {
@@ -72,6 +76,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             code: `PS${String(i + 1).padStart(2, '0')}`,
             title: `Problem Statement ${i + 1}`,
             description: '',
+            maxCapacity: 5,
             allocatedCount: 0
           }));
           setPsList(defaults);
@@ -134,6 +139,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         code: `PS${String(prev.length + 1).padStart(2, '0')}`,
         title: `Problem Statement ${prev.length + 1}`,
         description: '',
+        maxCapacity: 5,
         allocatedCount: 0
       }
     ]);
@@ -710,9 +716,14 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               {psList.map((ps, idx) => (
                 <div key={ps.id || idx} className="bg-white/60 dark:bg-slate-900/60 p-4 rounded-xl border border-pastel-lavender/20 space-y-3 relative group transition-all hover:border-violet-500/30 shadow-sm">
                   <div className="flex justify-between items-center pb-2 border-b border-pastel-lavender/10">
-                    <span className="text-xs font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
-                      Problem Statement #{idx + 1} ({ps.code || `PS${String(idx + 1).padStart(2, '0')}`})
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                        Problem Statement #{idx + 1} ({ps.code || `PS${String(idx + 1).padStart(2, '0')}`})
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                        {ps.allocatedCount || 0} / {ps.maxCapacity || 5} Slots Allocated
+                      </span>
+                    </div>
                     <button
                       onClick={() => handleRemoveProblemStatement(idx)}
                       className="px-2.5 py-1 text-red-500 hover:bg-red-500/10 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
@@ -724,9 +735,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                     
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-2">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
-                        PS Code / ID
+                        PS Code
                       </label>
                       <input
                         type="text"
@@ -737,7 +748,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                       />
                     </div>
 
-                    <div className="md:col-span-9">
+                    <div className="md:col-span-7">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
                         Title / Name
                       </label>
@@ -747,6 +758,21 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         onChange={(e) => handlePsChange(idx, 'title', e.target.value)}
                         placeholder="e.g. AI-Based Traffic Optimization"
                         className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
+                        Slots / Capacity
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        value={ps.maxCapacity ?? 5}
+                        onChange={(e) => handlePsChange(idx, 'maxCapacity', Math.max(1, parseInt(e.target.value) || 1))}
+                        placeholder="e.g. 5"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-bold focus:outline-none focus:border-violet-500"
                       />
                     </div>
 

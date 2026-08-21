@@ -1,21 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Modal from './Modal';
+
+const DEFAULT_QUESTIONS = [
+  { id: 'q_content', label: 'Event Content', type: 'rating', required: true },
+  { id: 'q_speaker', label: 'Speaker / Presenter', type: 'rating', required: true },
+  { id: 'q_org', label: 'Organization', type: 'rating', required: true },
+  { id: 'q_engagement', label: 'Engagement', type: 'rating', required: true },
+  { id: 'q_overall', label: 'Overall Satisfaction', type: 'rating', required: true },
+  { id: 'q_suggestions', label: 'Suggestions for Improvement', type: 'text', required: false }
+];
 
 const StarRating = ({ rating, setRating, label }) => {
   return (
     <div className="mb-4">
-      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">{label}</label>
-      <div className="flex gap-1">
+      <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-2">{label}</label>
+      <div className="flex gap-1.5">
         {[1, 2, 3, 4, 5].map((star) => (
           <button
             key={star}
             type="button"
             onClick={() => setRating(star)}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
-              star <= rating 
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${
+              star <= (rating || 0)
                 ? 'bg-amber-400 text-white shadow-lg shadow-amber-400/30 transform scale-110' 
-                : 'bg-slate-100 text-slate-400 hover:bg-amber-100 hover:text-amber-300'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-amber-100 hover:text-amber-400'
             }`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -29,49 +38,47 @@ const StarRating = ({ rating, setRating, label }) => {
 };
 
 const FeedbackModal = ({ isOpen, onClose, event, onSubmitSuccess }) => {
-  const [contentRating, setContentRating] = useState(0);
-  const [speakerRating, setSpeakerRating] = useState(0);
-  const [organizationRating, setOrganizationRating] = useState(0);
-  const [engagementRating, setEngagementRating] = useState(0);
-  const [overallRating, setOverallRating] = useState(0);
-  const [suggestions, setSuggestions] = useState('');
-  
+  const [answers, setAnswers] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
-  React.useEffect(() => {
+  const questions = (event?.feedback_questions && Array.isArray(event.feedback_questions) && event.feedback_questions.length > 0)
+    ? event.feedback_questions
+    : DEFAULT_QUESTIONS;
+
+  useEffect(() => {
     if (isOpen) {
-      setContentRating(0);
-      setSpeakerRating(0);
-      setOrganizationRating(0);
-      setEngagementRating(0);
-      setOverallRating(0);
-      setSuggestions('');
+      setAnswers({});
       setError(null);
     }
   }, [isOpen]);
 
   if (!event) return null;
 
+  const handleAnswerChange = (qId, val) => {
+    setAnswers(prev => ({ ...prev, [qId]: val }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     
-    if (!contentRating || !speakerRating || !organizationRating || !engagementRating || !overallRating) {
-      setError("Please provide a rating for all categories.");
-      return;
+    // Check required questions
+    for (const q of questions) {
+      if (q.required !== false) {
+        const val = answers[q.id];
+        if (val === undefined || val === null || String(val).trim() === '' || (q.type === 'rating' && Number(val) === 0)) {
+          setError(`Please complete required field: "${q.label}"`);
+          return;
+        }
+      }
     }
 
     try {
       setIsSubmitting(true);
       await axios.post('/api/feedbacks', {
         eventId: event.id || event._id,
-        contentRating,
-        speakerRating,
-        organizationRating,
-        engagementRating,
-        overallRating,
-        suggestions
+        responses: answers
       });
       onSubmitSuccess();
     } catch (err) {
@@ -81,13 +88,16 @@ const FeedbackModal = ({ isOpen, onClose, event, onSubmitSuccess }) => {
     }
   };
 
+  const ratingQuestions = questions.filter(q => q.type === 'rating');
+  const textQuestions = questions.filter(q => q.type === 'text');
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Event Feedback">
       <form onSubmit={handleSubmit} className="space-y-4">
         
-        <div className="bg-violet-50/50 p-4 rounded-xl border border-violet-100 mb-6">
-          <h3 className="font-display font-bold text-slate-800 text-lg mb-1">{event.title}</h3>
-          <p className="text-xs text-slate-500">We value your feedback. Please rate your experience.</p>
+        <div className="bg-violet-50/70 dark:bg-violet-950/30 p-4 rounded-xl border border-violet-100 dark:border-violet-800/40 mb-6">
+          <h3 className="font-display font-bold text-slate-800 dark:text-slate-100 text-lg mb-1">{event.title}</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">We value your feedback. Please complete the questions below.</p>
         </div>
 
         {error && (
@@ -96,35 +106,45 @@ const FeedbackModal = ({ isOpen, onClose, event, onSubmitSuccess }) => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <StarRating label="Event Content" rating={contentRating} setRating={setContentRating} />
-          <StarRating label="Speaker / Presenter" rating={speakerRating} setRating={setSpeakerRating} />
-          <StarRating label="Organization" rating={organizationRating} setRating={setOrganizationRating} />
-          <StarRating label="Engagement" rating={engagementRating} setRating={setEngagementRating} />
-        </div>
-        
-        <div className="pt-2 border-t border-slate-100">
-          <StarRating label="Overall Satisfaction" rating={overallRating} setRating={setOverallRating} />
-        </div>
+        {/* Rating Questions Grid */}
+        {ratingQuestions.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {ratingQuestions.map(q => (
+              <StarRating
+                key={q.id}
+                label={`${q.label}${q.required !== false ? ' *' : ''}`}
+                rating={answers[q.id] || 0}
+                setRating={(val) => handleAnswerChange(q.id, val)}
+              />
+            ))}
+          </div>
+        )}
 
-        <div>
-          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-            Suggestions for Improvement (Optional)
-          </label>
-          <textarea
-            value={suggestions}
-            onChange={(e) => setSuggestions(e.target.value)}
-            rows="3"
-            placeholder="Tell us what you liked or what could be better..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-all"
-          ></textarea>
-        </div>
+        {/* Text Questions List */}
+        {textQuestions.length > 0 && (
+          <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
+            {textQuestions.map(q => (
+              <div key={q.id}>
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-2">
+                  {q.label}{q.required !== false ? ' *' : ''}
+                </label>
+                <textarea
+                  value={answers[q.id] || ''}
+                  onChange={(e) => handleAnswerChange(q.id, e.target.value)}
+                  rows="3"
+                  placeholder="Type your response here..."
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-sm focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-all text-slate-800 dark:text-slate-100"
+                ></textarea>
+              </div>
+            ))}
+          </div>
+        )}
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-6">
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800 mt-6">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 text-xs font-bold rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+            className="px-5 py-2.5 text-xs font-bold rounded-xl text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
           >
             Cancel
           </button>

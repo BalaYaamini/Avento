@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const RatingCard = ({ title, value, max = 5 }) => {
-  const numericValue = parseFloat(value);
+  const numericValue = parseFloat(value) || 0;
   const percentage = (numericValue / max) * 100;
   
   return (
-    <div className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200">
-      <h4 className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-2">{title}</h4>
+    <div className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+      <h4 className="text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-2 line-clamp-1" title={title}>{title}</h4>
       <div className="flex items-end gap-2 mb-2">
         <span className="text-3xl font-black text-text-primary">{value}</span>
         <span className="text-sm font-bold text-text-secondary mb-1">/ {max}</span>
@@ -19,7 +19,7 @@ const RatingCard = ({ title, value, max = 5 }) => {
           <svg 
             key={star} 
             xmlns="http://www.w3.org/2000/svg" 
-            className={`h-4 w-4 ${star <= Math.round(numericValue) ? 'text-amber-400' : 'text-slate-200'}`} 
+            className={`h-4 w-4 ${star <= Math.round(numericValue) ? 'text-amber-400' : 'text-slate-200 dark:text-slate-700'}`} 
             viewBox="0 0 20 20" 
             fill="currentColor"
           >
@@ -28,7 +28,7 @@ const RatingCard = ({ title, value, max = 5 }) => {
         ))}
       </div>
 
-      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
         <div 
           className="bg-violet-500 h-1.5 rounded-full transition-all duration-1000" 
           style={{ width: `${percentage}%` }}
@@ -76,34 +76,37 @@ const FeedbackAnalytics = ({ eventId }) => {
 
   if (!data) return null;
 
-  const { averages, distribution, participation, suggestions } = data;
+  const { questions = [], questionAnalytics = {}, participation = {}, suggestions = [], distribution = {} } = data;
   const totalSubmissions = participation.submitted || 0;
+
+  const ratingQuestions = (questions || []).filter(q => q.type === 'rating');
+  const textQuestions = (questions || []).filter(q => q.type === 'text');
 
   return (
     <div className="space-y-8 animate-fade-in-up">
       
       {/* Participation Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="glass-panel p-4 rounded-xl border border-slate-200">
+        <div className="glass-panel p-4 rounded-xl border border-slate-200 dark:border-slate-800">
           <div className="text-xs font-bold text-text-secondary uppercase">Registered</div>
-          <div className="text-2xl font-black text-text-primary mt-1">{participation.registered}</div>
+          <div className="text-2xl font-black text-text-primary mt-1">{participation.registered || 0}</div>
         </div>
-        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-emerald-400 border-slate-200">
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-emerald-400 border-slate-200 dark:border-slate-800">
           <div className="text-xs font-bold text-emerald-500 uppercase">Submitted</div>
-          <div className="text-2xl font-black text-emerald-500 mt-1">{participation.submitted}</div>
+          <div className="text-2xl font-black text-emerald-500 mt-1">{participation.submitted || 0}</div>
         </div>
-        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-amber-400 border-slate-200">
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-amber-400 border-slate-200 dark:border-slate-800">
           <div className="text-xs font-bold text-amber-500 uppercase">Pending</div>
-          <div className="text-2xl font-black text-amber-500 mt-1">{participation.pending}</div>
+          <div className="text-2xl font-black text-amber-500 mt-1">{participation.pending || 0}</div>
         </div>
-        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-violet-400 border-slate-200">
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-violet-400 border-slate-200 dark:border-slate-800">
           <div className="text-xs font-bold text-violet-500 uppercase">Response Rate</div>
-          <div className="text-2xl font-black text-violet-500 mt-1">{participation.responseRate}%</div>
+          <div className="text-2xl font-black text-violet-500 mt-1">{participation.responseRate || 0}%</div>
         </div>
       </div>
 
       {totalSubmissions === 0 ? (
-        <div className="glass-panel p-10 rounded-xl border border-slate-200 text-center">
+        <div className="glass-panel p-10 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
           <div className="text-text-secondary mb-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -114,19 +117,27 @@ const FeedbackAnalytics = ({ eventId }) => {
         </div>
       ) : (
         <>
-          {/* Averages Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <RatingCard title="Overall" value={averages.overall} />
-            <RatingCard title="Content" value={averages.content} />
-            <RatingCard title="Speaker" value={averages.speaker} />
-            <RatingCard title="Organization" value={averages.organization} />
-            <RatingCard title="Engagement" value={averages.engagement} />
-          </div>
+          {/* Dynamic Rating Cards */}
+          {ratingQuestions.length > 0 && (
+            <div>
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+                Rating Question Averages
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {ratingQuestions.map(q => {
+                  const qStat = questionAnalytics[q.id] || {};
+                  return (
+                    <RatingCard key={q.id} title={q.label} value={qStat.average || '0.0'} />
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Distribution Chart */}
-            <div className="lg:col-span-1 glass-panel p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="text-sm font-bold text-text-primary mb-6">Rating Distribution (Overall)</h3>
+            {/* Rating Distribution Chart */}
+            <div className="lg:col-span-1 glass-panel p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <h3 className="text-sm font-bold text-text-primary mb-6">Overall Rating Distribution</h3>
               <div className="space-y-4">
                 {[5, 4, 3, 2, 1].map(star => {
                   const count = distribution[star] || 0;
@@ -136,7 +147,7 @@ const FeedbackAnalytics = ({ eventId }) => {
                       <div className="w-12 text-xs font-bold text-text-secondary flex items-center gap-1">
                         {star} <span className="text-amber-400">★</span>
                       </div>
-                      <div className="flex-grow bg-slate-100 dark:bg-[#0F172A] border border-slate-200 rounded-full h-3 overflow-hidden">
+                      <div className="flex-grow bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full h-3 overflow-hidden">
                         <div 
                           className="bg-amber-400 h-3 rounded-full" 
                           style={{ width: `${percentage}%` }}
@@ -149,29 +160,59 @@ const FeedbackAnalytics = ({ eventId }) => {
               </div>
             </div>
 
-            {/* Suggestions List */}
-            <div className="lg:col-span-2 glass-panel p-6 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-sm font-bold text-text-primary">Participant Suggestions</h3>
-                <span className="text-xs font-bold bg-violet-500/10 text-violet-500 border border-violet-500/20 px-2 py-1 rounded-md">
-                  {suggestions.length} Comments
-                </span>
-              </div>
+            {/* Written Responses / Comments */}
+            <div className="lg:col-span-2 glass-panel p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <h3 className="text-sm font-bold text-text-primary mb-6">Participant Comments & Feedback</h3>
               
-              {suggestions.length === 0 ? (
-                <div className="text-center py-8 text-text-secondary text-sm italic">
-                  No written suggestions provided yet.
+              {textQuestions.length > 0 ? (
+                <div className="space-y-6">
+                  {textQuestions.map(tq => {
+                    const resps = questionAnalytics[tq.id]?.responses || [];
+                    return (
+                      <div key={tq.id} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                            {tq.label}
+                          </h4>
+                          <span className="text-[10px] font-bold bg-violet-500/10 text-violet-500 border border-violet-500/20 px-2 py-0.5 rounded-md">
+                            {resps.length} Responses
+                          </span>
+                        </div>
+
+                        {resps.length === 0 ? (
+                          <div className="text-xs text-text-secondary italic bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                            No responses for this question yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                            {resps.map((resp, idx) => (
+                              <div key={resp.id || idx} className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
+                                <p className="text-xs text-text-primary leading-relaxed">"{resp.text}"</p>
+                                <div className="text-[9px] text-text-secondary mt-1.5 font-medium">
+                                  Submitted on {new Date(resp.date).toLocaleDateString()}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+              ) : suggestions.length > 0 ? (
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                   {suggestions.map((suggestion, idx) => (
-                    <div key={suggestion.id || idx} className="glass-panel p-4 rounded-lg border border-slate-200">
-                      <p className="text-sm text-text-primary leading-relaxed">"{suggestion.text}"</p>
-                      <div className="text-[10px] text-text-secondary mt-2 font-medium">
+                    <div key={suggestion.id || idx} className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
+                      <p className="text-xs text-text-primary leading-relaxed">"{suggestion.text}"</p>
+                      <div className="text-[9px] text-text-secondary mt-1.5 font-medium">
                         Submitted on {new Date(suggestion.date).toLocaleDateString()}
                       </div>
                     </div>
                   ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-text-secondary text-sm italic">
+                  No written comments provided yet.
                 </div>
               )}
             </div>

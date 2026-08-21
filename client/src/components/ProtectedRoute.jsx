@@ -19,12 +19,16 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !user.roles?.some(role => allowedRoles.includes(role))) {
+  const userRoles = Array.isArray(user.roles)
+    ? user.roles
+    : (user.role ? [user.role] : []);
+
+  if (allowedRoles && !userRoles.some(role => allowedRoles.includes(role))) {
     return <Navigate to="/" replace />;
   }
 
   // Enforce first-login password change for non-admin users
-  if (user.first_login && !user.roles?.includes('admin')) {
+  if (user.first_login && !userRoles.includes('admin')) {
     return <Navigate to="/change-password" replace />;
   }
 
