@@ -1706,6 +1706,13 @@ exports.uploadProblemStatementPdf = async (req, res) => {
     const fileName = req.file.originalname || `Problem_Statements_${eventId}.pdf`;
     const storagePath = `problem_statements/${eventId}_${Date.now()}.pdf`;
 
+    // Auto-ensure storage bucket 'documents' exists
+    try {
+      await supabase.storage.createBucket('documents', { public: true });
+    } catch (e) {
+      // Bucket already exists or auto-create suppressed
+    }
+
     // Upload file to Supabase storage bucket 'documents'
     const { data: uploadData, error: uploadErr } = await supabase.storage
       .from('documents')
