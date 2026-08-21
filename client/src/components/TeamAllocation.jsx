@@ -108,9 +108,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       const formData = new FormData();
       formData.append('pdf', file);
 
-      const res = await axios.post(`/api/allocations/event/${eventId}/problem-statement-pdf`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await axios.post(`/api/allocations/event/${eventId}/problem-statement-pdf`, formData);
 
       setPdfInfo({ pdfUrl: res.data.pdfUrl || null, fileName: file.name });
       setStatusMessage({

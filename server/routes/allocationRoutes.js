@@ -25,9 +25,19 @@ router.get('/event/:eventId/problem-statements', authMiddleware, allocationContr
 router.post('/event/:eventId/problem-statements', authMiddleware, allocationController.saveProblemStatements);
 router.delete('/event/:eventId/target/:targetId', authMiddleware, allocationController.deleteAllocation);
 
+const uploadPdfMiddleware = (req, res, next) => {
+  upload.single('pdf')(req, res, (err) => {
+    if (err) {
+      console.error('Multer upload error:', err.message);
+      return res.status(400).json({ message: err.message || 'Only PDF files are allowed for Problem Statement document.' });
+    }
+    next();
+  });
+};
+
 // Problem Statement PDF routes
 router.get('/event/:eventId/problem-statement-pdf', authMiddleware, allocationController.getProblemStatementPdf);
-router.post('/event/:eventId/problem-statement-pdf', authMiddleware, upload.single('pdf'), allocationController.uploadProblemStatementPdf);
+router.post('/event/:eventId/problem-statement-pdf', authMiddleware, uploadPdfMiddleware, allocationController.uploadProblemStatementPdf);
 
 // Participant routes
 router.get('/event/:eventId/my-allocation', authMiddleware, allocationController.getMyTeamAllocation);
