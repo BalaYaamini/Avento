@@ -55,6 +55,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         const psArr = psRes.data.problemStatements || [];
         setProblemStatements(psArr);
         setTotalTeams(psRes.data.totalTeams || 0);
+        if (psRes.data.pdfUrl) {
+          setPdfInfo({ pdfUrl: psRes.data.pdfUrl, fileName: 'Problem_Statement.pdf' });
+        }
 
         // Initialize local config form
         if (psArr.length > 0) {
@@ -105,7 +108,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       const formData = new FormData();
       formData.append('pdf', file);
 
-      const res = await axios.post(`/api/allocations/event/${eventId}/problem-statement-pdf`, formData);
+      const res = await axios.post(`/api/allocations/event/${eventId}/problem-statement-pdf`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
       setPdfInfo({ pdfUrl: res.data.pdfUrl || null, fileName: file.name });
       setStatusMessage({

@@ -418,6 +418,7 @@ exports.getProblemStatements = async (req, res) => {
       problemStatements,
       totalTeams,
       totalAllocated: totalCapacity,
+      pdfUrl: event.problem_statement_pdf_url || null
     });
   } catch (err) {
     console.error('getProblemStatements error:', err.message);
@@ -1689,7 +1690,7 @@ exports.uploadProblemStatementPdf = async (req, res) => {
   try {
     const { eventId } = req.params;
 
-    const { data: event } = await supabase.from('events').select('id, title').eq('id', eventId).maybeSingle();
+    const { data: event } = await supabase.from('events').select('id, title, faculty_id, proposed_by, student_organizer_id, organizer_id, created_by').eq('id', eventId).maybeSingle();
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
     const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
@@ -1764,7 +1765,7 @@ exports.getProblemStatementPdf = async (req, res) => {
 
     const { data: event } = await supabase
       .from('events')
-      .select('id, title, problem_statement_pdf_url')
+      .select('id, title, faculty_id, proposed_by, student_organizer_id, organizer_id, created_by, problem_statement_pdf_url')
       .eq('id', eventId)
       .maybeSingle();
 
