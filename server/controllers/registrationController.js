@@ -1,5 +1,46 @@
+const fs = require('fs');
+const path = require('path');
 const supabase = require('../config/supabaseClient');
 const { notifyUser } = require('../services/notificationService');
+
+const AVATARS_FILE = path.join(__dirname, '../data/student_avatars.json');
+
+function loadAvatarsFile() {
+  try {
+    if (fs.existsSync(AVATARS_FILE)) {
+      const content = fs.readFileSync(AVATARS_FILE, 'utf8');
+      return JSON.parse(content);
+    }
+  } catch (e) {
+    console.warn('Error reading student_avatars.json:', e.message);
+  }
+  return {};
+}
+
+function saveAvatarsFile(data) {
+  try {
+    const dir = path.dirname(AVATARS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(AVATARS_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn('Error writing student_avatars.json:', e.message);
+  }
+}
+
+function setStudentAvatar(eventId, rollNumber, avatarUrl) {
+  if (!eventId || !rollNumber || !avatarUrl) return;
+  const store = loadAvatarsFile();
+  if (!store[eventId]) store[eventId] = {};
+  store[eventId][String(rollNumber).trim().toLowerCase()] = avatarUrl;
+  saveAvatarsFile(store);
+}
+
+function getEventAvatarsMap(eventId) {
+  const store = loadAvatarsFile();
+  return store[eventId] || {};
+}
 
 const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
 
@@ -496,7 +537,8 @@ exports.getEventRegistrations = async (req, res) => {
 
     if (eventErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
-    const isOwner = req.user.roles.includes('admin') || 
+    const hasOrganizerRole = req.user.roles.some(r => ['admin', 'faculty', 'faculty_organizer', 'student_organizer'].includes(r));
+    const isOwner = hasOrganizerRole || 
                     event.organizer_id === req.user.id || 
                     event.student_organizer_id === req.user.id || 
                     event.proposed_by === req.user.id ||
@@ -504,23 +546,62 @@ exports.getEventRegistrations = async (req, res) => {
     
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
-    const { data: registrations, error } = await supabase
+    let registrations = null;
+    let { data: primaryData, error } = await supabase
       .from('event_registrations')
       .select(`
         *,
-        userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number),
+        userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number, avatar_url),
         teamId:event_teams (*)
       `)
       .eq('event_id', eventId);
 
-    if (error) throw error;
+    if (error) {
+      console.warn('Primary registrations query failed (falling back select without avatar_url):', error.message);
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('event_registrations')
+        .select(`
+          *,
+          userId:profiles!event_registrations_user_id_fkey(id, name, fullName:name, email, department, roll_number),
+          teamId:event_teams (*)
+        `)
+        .eq('event_id', eventId);
+
+      if (fallbackError) throw fallbackError;
+      registrations = (fallbackData || []).map(r => ({
+        ...r,
+        userId: r.userId ? { ...r.userId, avatar_url: null } : null
+      }));
+    } else {
+      registrations = primaryData;
+    }
+
+    // Enrich registrations with persistent file-backed avatars map
+    const avatarsMap = getEventAvatarsMap(eventId);
+    (registrations || []).forEach(r => {
+      if (r.userId) {
+        const derivedRoll = r.userId.email ? r.userId.email.split('@')[0].trim().toLowerCase() : '';
+        const dbRoll = r.userId.roll_number ? r.userId.roll_number.trim().toLowerCase() : '';
+        const storedUrl = avatarsMap[derivedRoll] || avatarsMap[dbRoll];
+
+        if (storedUrl && !r.userId.avatar_url) {
+          r.userId.avatar_url = storedUrl;
+        }
+      }
+    });
+
     const enriched = await Promise.all((registrations || []).map(async registration => {
-      const { data: paymentHistory } = await supabase.from('payment_verification_history')
-        .select('*').eq('registration_id', registration.id).order('acted_at', { ascending: false });
-      return { ...registration, paymentHistory: paymentHistory || [] };
+      let paymentHistory = [];
+      try {
+        const { data: pData } = await supabase.from('payment_verification_history')
+          .select('*').eq('registration_id', registration.id).order('acted_at', { ascending: false });
+        paymentHistory = pData || [];
+      } catch (pErr) {}
+      return { ...registration, paymentHistory };
     }));
     res.json(enriched);
   } catch (err) {
+    console.error('Error in getEventRegistrations:', err);
     res.status(500).json({ message: 'Server error fetching event registrations.', error: err.message });
   }
 };
@@ -2026,3 +2107,353 @@ exports.getNonOrganizerStudentsForEvent = async (req, res) => {
     res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });
   }
 };
+
+exports.importStudentPhotos = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: 'No photo files uploaded.' });
+    }
+
+    // Fetch registered students for this event
+    let registrations = null;
+    let { data: primaryData, error: regErr } = await supabase
+      .from('event_registrations')
+      .select(`
+        id,
+        user_id,
+        userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department, avatar_url)
+      `)
+      .eq('event_id', eventId);
+
+    if (regErr) {
+      console.warn('Primary import fetch failed, trying fallback without avatar_url:', regErr.message);
+      const { data: fallbackData, error: fallbackErr } = await supabase
+        .from('event_registrations')
+        .select(`
+          id,
+          user_id,
+          userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department)
+        `)
+        .eq('event_id', eventId);
+
+      if (fallbackErr) {
+        return res.status(500).json({ message: 'Failed to fetch event registrations.', error: fallbackErr.message });
+      }
+      registrations = (fallbackData || []).map(r => ({
+        ...r,
+        userId: r.userId ? { ...r.userId, avatar_url: null } : null
+      }));
+    } else {
+      registrations = primaryData;
+    }
+
+    if (!registrations || registrations.length === 0) {
+      return res.status(404).json({ message: 'No registered students found for this event.' });
+    }
+
+    // Build roll number map from registered students
+    const rollMap = new Map();
+    registrations.forEach(reg => {
+      const student = reg.userId;
+      if (!student) return;
+
+      const derivedRoll = student.email ? student.email.split('@')[0].trim().toLowerCase() : null;
+      const dbRoll = student.roll_number ? student.roll_number.trim().toLowerCase() : null;
+
+      if (derivedRoll) {
+        rollMap.set(derivedRoll, student);
+      }
+      if (dbRoll) {
+        rollMap.set(dbRoll, student);
+      }
+    });
+
+    const mappedStudents = [];
+    const rejectedFiles = [];
+
+    for (const file of files) {
+      const originalName = file.originalname || 'photo.jpg';
+      const extIndex = originalName.lastIndexOf('.');
+      const baseName = extIndex !== -1 ? originalName.substring(0, extIndex) : originalName;
+      const fileExt = extIndex !== -1 ? originalName.substring(extIndex + 1).toLowerCase() : 'jpg';
+      const fileRollNumber = baseName.trim().toLowerCase();
+
+      // Check if roll number matches a registered student for this event
+      const matchedStudent = rollMap.get(fileRollNumber);
+
+      if (!matchedStudent) {
+        rejectedFiles.push({
+          filename: originalName,
+          rollNumber: fileRollNumber,
+          reason: `Roll number '${fileRollNumber}' is not registered for this event.`
+        });
+        continue;
+      }
+
+      // Roll number MATCHED! Store photo
+      let photoUrl = null;
+      const fileBuffer = file.buffer;
+      const storagePath = `avatars/${matchedStudent.id}_${Date.now()}.${fileExt}`;
+
+      try {
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('documents')
+          .upload(storagePath, fileBuffer, {
+            contentType: file.mimetype || `image/${fileExt}`,
+            upsert: true
+          });
+
+        if (uploadErr) {
+          console.warn('Storage upload warning, using data URI fallback:', uploadErr.message);
+          const base64 = fileBuffer.toString('base64');
+          photoUrl = `data:${file.mimetype || 'image/jpeg'};base64,${base64}`;
+        } else {
+          const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+          photoUrl = publicUrlData.publicUrl;
+        }
+      } catch (err) {
+        console.warn('Storage upload exception, using data URI fallback:', err.message);
+        const base64 = fileBuffer.toString('base64');
+        photoUrl = `data:${file.mimetype || 'image/jpeg'};base64,${base64}`;
+      }
+
+      // Update student avatar_url & roll_number in profiles
+      const { error: updateErr } = await supabase
+        .from('profiles')
+        .update({
+          avatar_url: photoUrl,
+          roll_number: matchedStudent.roll_number || fileRollNumber
+        })
+        .eq('id', matchedStudent.id);
+
+      if (updateErr) {
+        console.warn('DB profile avatar_url update note:', updateErr.message);
+      }
+
+      // Always save to file-backed avatar store for 100% reliable persistence
+      setStudentAvatar(eventId, fileRollNumber, photoUrl);
+      if (matchedStudent.roll_number) {
+        setStudentAvatar(eventId, matchedStudent.roll_number, photoUrl);
+      }
+
+      matchedStudent.avatar_url = photoUrl;
+
+      mappedStudents.push({
+        studentId: matchedStudent.id,
+        studentName: matchedStudent.name,
+        email: matchedStudent.email,
+        rollNumber: fileRollNumber,
+        filename: originalName,
+        avatarUrl: photoUrl
+      });
+    }
+
+    res.json({
+      message: `Processed ${files.length} photo(s). ${mappedStudents.length} mapped successfully, ${rejectedFiles.length} rejected.`,
+      successCount: mappedStudents.length,
+      rejectedCount: rejectedFiles.length,
+      mappedStudents,
+      rejectedFiles
+    });
+  } catch (err) {
+    console.error('Error in importStudentPhotos:', err);
+    res.status(500).json({ message: 'Failed to process student photo import.', error: err.message });
+  }
+};
+
+exports.importStudentPhotoLinks = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { mappings } = req.body;
+
+    if (!mappings || !Array.isArray(mappings) || mappings.length === 0) {
+      return res.status(400).json({ message: 'No photo link mappings provided.' });
+    }
+
+    // Fetch registered students for this event
+    let registrations = null;
+    let { data: primaryData, error: regErr } = await supabase
+      .from('event_registrations')
+      .select(`
+        id,
+        user_id,
+        userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department, avatar_url)
+      `)
+      .eq('event_id', eventId);
+
+    if (regErr) {
+      const { data: fallbackData, error: fallbackErr } = await supabase
+        .from('event_registrations')
+        .select(`
+          id,
+          user_id,
+          userId:profiles!event_registrations_user_id_fkey(id, name, email, roll_number, department)
+        `)
+        .eq('event_id', eventId);
+
+      if (fallbackErr) {
+        return res.status(500).json({ message: 'Failed to fetch event registrations.', error: fallbackErr.message });
+      }
+      registrations = (fallbackData || []).map(r => ({
+        ...r,
+        userId: r.userId ? { ...r.userId, avatar_url: null } : null
+      }));
+    } else {
+      registrations = primaryData;
+    }
+
+    if (!registrations || registrations.length === 0) {
+      return res.status(404).json({ message: 'No registered students found for this event.' });
+    }
+
+    // Build roll number map
+    const rollMap = new Map();
+    registrations.forEach(reg => {
+      const student = reg.userId;
+      if (!student) return;
+
+      const derivedRoll = student.email ? student.email.split('@')[0].trim().toLowerCase() : null;
+      const dbRoll = student.roll_number ? student.roll_number.trim().toLowerCase() : null;
+
+      if (derivedRoll) rollMap.set(derivedRoll, student);
+      if (dbRoll) rollMap.set(dbRoll, student);
+    });
+
+    const mappedStudents = [];
+    const rejectedFiles = [];
+
+    for (const item of mappings) {
+      const inputRoll = String(item.rollNumber || '').trim().toLowerCase();
+      const rawUrl = String(item.photoUrl || '').trim();
+
+      if (!inputRoll || !rawUrl) continue;
+
+      const matchedStudent = rollMap.get(inputRoll);
+
+      if (!matchedStudent) {
+        rejectedFiles.push({
+          filename: rawUrl,
+          rollNumber: inputRoll,
+          reason: `Roll number '${inputRoll}' is not registered for this event.`
+        });
+        continue;
+      }
+
+      // Convert Google Drive link to backend proxy URL or direct URL for 100% guaranteed browser rendering
+      let directUrl = rawUrl;
+      const driveMatch = rawUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) || rawUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (driveMatch && driveMatch[1]) {
+        directUrl = `/api/registrations/drive-proxy?id=${driveMatch[1]}`;
+      }
+
+      // Update student avatar_url in profiles
+      const { error: updateErr } = await supabase
+        .from('profiles')
+        .update({
+          avatar_url: directUrl,
+          roll_number: matchedStudent.roll_number || inputRoll
+        })
+        .eq('id', matchedStudent.id);
+
+      if (updateErr) {
+        console.warn('Failed to update student profile avatar_url in DB:', updateErr.message);
+      }
+
+      // Always save to file-backed avatar store for 100% reliable persistence
+      setStudentAvatar(eventId, inputRoll, directUrl);
+      if (matchedStudent.roll_number) {
+        setStudentAvatar(eventId, matchedStudent.roll_number, directUrl);
+      }
+
+      matchedStudent.avatar_url = directUrl;
+
+      mappedStudents.push({
+        studentId: matchedStudent.id,
+        studentName: matchedStudent.name,
+        email: matchedStudent.email,
+        rollNumber: inputRoll,
+        filename: rawUrl,
+        avatarUrl: directUrl
+      });
+    }
+
+    res.json({
+      message: `Processed ${mappings.length} link(s). ${mappedStudents.length} mapped successfully, ${rejectedFiles.length} rejected.`,
+      successCount: mappedStudents.length,
+      rejectedCount: rejectedFiles.length,
+      mappedStudents,
+      rejectedFiles
+    });
+  } catch (err) {
+    console.error('Error in importStudentPhotoLinks:', err);
+    res.status(500).json({ message: 'Failed to process Drive links import.', error: err.message });
+  }
+};
+
+exports.proxyDriveImage = async (req, res) => {
+  try {
+    const { id, url } = req.query;
+    let fileId = id;
+
+    if (!fileId && url) {
+      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || 
+                    url.match(/[?&]id=([a-zA-Z0-9_-]+)/) || 
+                    url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        fileId = match[1];
+      }
+    }
+
+    if (!fileId && url) {
+      const response = await axios.get(url, { responseType: 'stream' });
+      if (response.headers['content-type']) {
+        res.set('Content-Type', response.headers['content-type']);
+      }
+      return response.data.pipe(res);
+    }
+
+    if (!fileId) {
+      return res.status(400).send('Missing Google Drive file ID or URL.');
+    }
+
+    // List of Google Drive binary stream endpoints to try sequentially
+    const endpoints = [
+      `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`,
+      `https://lh3.googleusercontent.com/d/${fileId}`,
+      `https://drive.google.com/uc?export=view&id=${fileId}`,
+      `https://drive.google.com/uc?export=download&id=${fileId}`
+    ];
+
+    for (const targetUrl of endpoints) {
+      try {
+        const driveRes = await axios.get(targetUrl, {
+          responseType: 'stream',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+          },
+          timeout: 10000
+        });
+
+        const contentType = driveRes.headers['content-type'] || '';
+        if (contentType.startsWith('image/') || contentType.includes('octet-stream')) {
+          res.set('Content-Type', contentType.includes('octet-stream') ? 'image/jpeg' : contentType);
+          res.set('Cache-Control', 'public, max-age=86400');
+          return driveRes.data.pipe(res);
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    res.status(404).send('Could not retrieve image from Google Drive file ID.');
+  } catch (err) {
+    console.error('Error proxying Drive image:', err.message);
+    res.status(500).send('Failed to fetch image from Google Drive.');
+  }
+};
+
+

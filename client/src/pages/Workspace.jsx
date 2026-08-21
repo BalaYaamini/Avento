@@ -15,6 +15,7 @@ import TeamAllocation from '../components/TeamAllocation';
 import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
 import ScoringBoard from '../components/ScoringBoard';
 import ConfirmationEmailModal from '../components/ConfirmationEmailModal';
+import IDCardManager from '../components/IDCardManager';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -404,6 +405,21 @@ const Workspace = () => {
                     type="button"
                     onClick={() => {
                       setIsActionsDropdownOpen(false);
+                      setActiveTab('id_cards');
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-fuchsia-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V4a2 2 0 012-2h2a2 2 0 012 2v2m-4 0h4" />
+                    </svg>
+                    <span>Import Photos & ID Cards</span>
+                  </button>
+                )}
+                {hasFullAccess() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
                       setIsConfirmationEmailModalOpen(true);
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -589,6 +605,15 @@ const Workspace = () => {
                 Scoring
               </button>
             )}
+
+            <button
+              onClick={() => setActiveTab('id_cards')}
+              className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+                activeTab === 'id_cards' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              ID Cards
+            </button>
           </>
         )}
       </div>
@@ -612,6 +637,12 @@ const Workspace = () => {
       {activeTab === 'allocation' && event?.registration_type === 'team' && !isNormalOrganizer() && (
         <div className="mb-8">
           <TeamAllocation eventId={eventId} eventTitle={event.title} />
+        </div>
+      )}
+
+      {activeTab === 'id_cards' && !isNormalOrganizer() && (
+        <div className="mb-8">
+          <IDCardManager eventId={eventId} event={event} />
         </div>
       )}
 
