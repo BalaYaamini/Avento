@@ -119,7 +119,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       console.error('PDF Upload Error:', err);
       setStatusMessage({
         type: 'error',
-        text: err.response?.data?.message || 'Failed to upload Problem Statement PDF.'
+        text: err.response?.data?.message || err.message || 'Failed to upload Problem Statement PDF.'
       });
     } finally {
       setUploadingPdf(false);

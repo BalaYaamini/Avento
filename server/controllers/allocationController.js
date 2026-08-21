@@ -3,6 +3,7 @@ const { checkCoreOrganizerAccess } = require('./eventController');
 const { sendEmailNotification } = require('../services/notificationService');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const User = require('../models/User');
+const ProblemStatementDocument = require('../models/ProblemStatementDocument');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (str) => typeof str === 'string' && UUID_REGEX.test(str.trim());
@@ -1706,37 +1707,37 @@ exports.uploadProblemStatementPdf = async (req, res) => {
     const fileName = req.file.originalname || `Problem_Statements_${eventId}.pdf`;
     const storagePath = `problem_statements/${eventId}_${Date.now()}.pdf`;
 
-    // Auto-ensure storage bucket 'documents' exists
-    try {
-      await supabase.storage.createBucket('documents', { public: true });
-    } catch (e) {
-      // Bucket already exists or auto-create suppressed
-    }
-
-    // Upload file to Supabase storage bucket 'documents'
-    const { data: uploadData, error: uploadErr } = await supabase.storage
+    // Upload file to Supabase storage bucket 'documents'.
+    let { error: uploadErr } = await supabase.storage
       .from('documents')
       .upload(storagePath, fileBuffer, {
         contentType: 'application/pdf',
         upsert: true
       });
 
+    if (uploadErr && /bucket.*not found|not found.*bucket/i.test(uploadErr.message || '')) {
+      const { error: bucketErr } = await supabase.storage.createBucket('documents', { public: true });
+      if (!bucketErr || /already exists/i.test(bucketErr.message || '')) {
+        ({ error: uploadErr } = await supabase.storage.from('documents').upload(storagePath, fileBuffer, {
+          contentType: 'application/pdf',
+          upsert: true
+        }));
+      }
+    }
+
+    let pdfUrlWithName;
     if (uploadErr) {
-      console.error('Supabase storage upload error:', uploadErr);
-      throw uploadErr;
+      console.error('Supabase storage upload error; using MongoDB fallback:', uploadErr.message);
+      if (fileBuffer.length > 10 * 1024 * 1024) {
+        throw new Error(`Storage upload failed (${uploadErr.message}). Fallback supports PDFs up to 10 MB.`);
+      }
+      pdfUrlWithName = `data:application/pdf;base64,${fileBuffer.toString('base64')}`;
+    } else {
+      const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+      const pdfUrl = publicUrlData ? publicUrlData.publicUrl : null;
+      if (!pdfUrl) throw new Error('Failed to retrieve public URL for uploaded PDF.');
+      pdfUrlWithName = `${pdfUrl}?filename=${encodeURIComponent(fileName)}`;
     }
-
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from('documents')
-      .getPublicUrl(storagePath);
-
-    const pdfUrl = publicUrlData ? publicUrlData.publicUrl : null;
-    if (!pdfUrl) {
-      throw new Error('Failed to retrieve public URL for uploaded PDF.');
-    }
-
-    const pdfUrlWithName = `${pdfUrl}?filename=${encodeURIComponent(fileName)}`;
 
     // Update events table
     const { error: updateErr } = await supabase
@@ -1747,7 +1748,14 @@ exports.uploadProblemStatementPdf = async (req, res) => {
       })
       .eq('id', eventId);
 
-    if (updateErr) throw updateErr;
+    if (updateErr) {
+      console.warn('Saving PDF reference in MongoDB because the Supabase event column is unavailable:', updateErr.message);
+      await ProblemStatementDocument.findOneAndUpdate(
+        { eventId: String(eventId) },
+        { eventId: String(eventId), pdfUrl: pdfUrlWithName, fileName, updatedAt: new Date() },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    }
 
     res.json({
       message: 'Problem Statement PDF uploaded successfully!',
@@ -1770,11 +1778,17 @@ exports.getProblemStatementPdf = async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user.id;
 
-    const { data: event } = await supabase
+    let { data: event, error: eventFetchErr } = await supabase
       .from('events')
       .select('id, title, faculty_id, proposed_by, student_organizer_id, organizer_id, created_by, problem_statement_pdf_url')
       .eq('id', eventId)
       .maybeSingle();
+
+    if (eventFetchErr && /problem_statement_pdf_url|column/i.test(eventFetchErr.message || '')) {
+      const fallbackEvent = await supabase.from('events').select('id, title').eq('id', eventId).maybeSingle();
+      event = fallbackEvent.data;
+      eventFetchErr = fallbackEvent.error;
+    }
 
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
@@ -1801,13 +1815,19 @@ exports.getProblemStatementPdf = async (req, res) => {
       }
     }
 
-    if (!event.problem_statement_pdf_url || event.problem_statement_pdf_url.trim() === '') {
+    let storedPdfUrl = event.problem_statement_pdf_url;
+    if (!storedPdfUrl) {
+      const fallbackDocument = await ProblemStatementDocument.findOne({ eventId: String(eventId) }).lean();
+      storedPdfUrl = fallbackDocument?.pdfUrl || null;
+    }
+
+    if (!storedPdfUrl || storedPdfUrl.trim() === '') {
       return res.status(404).json({
         message: 'No Problem Statement PDF has been uploaded for this event by the organizer yet.'
       });
     }
 
-    const pdfUrl = event.problem_statement_pdf_url.trim();
+    const pdfUrl = storedPdfUrl.trim();
 
     // Extract filename from URL query param or fallback to event title
     let downloadFilename = `${(event.title || 'Problem_Statement').replace(/[^a-zA-Z0-9_\- ]/g, '_').replace(/\s+/g, '_')}.pdf`;
@@ -1817,12 +1837,16 @@ exports.getProblemStatementPdf = async (req, res) => {
       if (fnParam) downloadFilename = fnParam;
     } catch (e) {}
 
-    // Stream uploaded PDF via axios or redirect
-    const axios = require('axios');
-    const pdfResponse = await axios.get(pdfUrl.split('?')[0], { responseType: 'arraybuffer' });
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
+    if (pdfUrl.startsWith('data:application/pdf;base64,')) {
+      const pdfBuffer = Buffer.from(pdfUrl.slice('data:application/pdf;base64,'.length), 'base64');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.send(pdfBuffer);
+    }
+
+    const axios = require('axios');
+    const pdfResponse = await axios.get(pdfUrl.split('?')[0], { responseType: 'arraybuffer' });
     res.setHeader('Content-Length', pdfResponse.data.length);
     res.send(Buffer.from(pdfResponse.data));
   } catch (err) {
