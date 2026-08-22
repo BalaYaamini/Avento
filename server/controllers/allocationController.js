@@ -664,8 +664,10 @@ exports.selectProblemStatement = async (req, res) => {
         .maybeSingle();
 
       if (existingAlloc && existingAlloc.problem_statement) {
-        return res.status(400).json({
-          message: 'Your team has already selected a problem statement. Selection is locked.',
+        return res.json({
+          success: true,
+          alreadySelected: true,
+          message: 'Problem statement already selected for your team.',
           allocation: {
             teamName: team.name,
             problemStatement: existingAlloc.problem_statement,
@@ -683,8 +685,10 @@ exports.selectProblemStatement = async (req, res) => {
         .maybeSingle();
 
       if (existingAlloc && existingAlloc.problem_statement) {
-        return res.status(400).json({
-          message: 'You have already selected a problem statement. Selection is locked.',
+        return res.json({
+          success: true,
+          alreadySelected: true,
+          message: 'Problem statement already selected.',
           allocation: {
             teamName: 'Individual Participant',
             problemStatement: existingAlloc.problem_statement,
