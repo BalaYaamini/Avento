@@ -1,7 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
+
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in server/.env');
+}
+
 const supabase = createClient(
-  'https://joekmqnkpfjuptcgzpmh.supabase.co',
-  'sb_secret_nA0uD7UiBe_3ZbTfa2nImg_NqDXdnA4'
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 async function test() {
