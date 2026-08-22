@@ -909,8 +909,8 @@ exports.getEventAllocations = async (req, res) => {
       .eq('event_id', eventId);
     if (allocData) allocations = allocData;
 
-    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
-    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [String(a.team_id).trim(), a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [String(a.user_id).trim(), a]));
 
     // Fetch configured problem statements
     const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
@@ -935,7 +935,7 @@ exports.getEventAllocations = async (req, res) => {
     };
 
     const teamList = (teams || []).map(t => {
-      const alloc = teamAllocMap.get(t.id);
+      const alloc = teamAllocMap.get(String(t.id).trim());
       return {
         teamId: t.id,
         teamName: t.name || 'Unnamed Team',
@@ -949,7 +949,7 @@ exports.getEventAllocations = async (req, res) => {
     });
 
     const indivList = (indivRegs || []).map(r => {
-      const alloc = userAllocMap.get(r.user_id);
+      const alloc = userAllocMap.get(String(r.user_id).trim());
       const profile = indivProfileMap.get(r.user_id);
       const name = profile ? profile.name : 'Individual Participant';
       return {
@@ -1022,11 +1022,11 @@ exports.getAllocationTemplateData = async (req, res) => {
     const { data: allocData } = await supabase.from('team_allocations').select('*').eq('event_id', eventId);
     if (allocData) allocations = allocData;
 
-    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
-    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [String(a.team_id).trim(), a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [String(a.user_id).trim(), a]));
 
     const teamRows = (teams || []).map(t => {
-      const alloc = teamAllocMap.get(t.id);
+      const alloc = teamAllocMap.get(String(t.id).trim());
       return {
         'Team ID': t.id,
         'Team Name': t.name || 'Unnamed Team',
@@ -1036,7 +1036,7 @@ exports.getAllocationTemplateData = async (req, res) => {
     });
 
     const indivRows = (indivRegs || []).map(r => {
-      const alloc = userAllocMap.get(r.user_id);
+      const alloc = userAllocMap.get(String(r.user_id).trim());
       const profile = indivProfileMap.get(r.user_id);
       const name = profile ? profile.name : 'Individual Participant';
       return {
@@ -1114,8 +1114,8 @@ exports.getEventAllocations = async (req, res) => {
       .eq('event_id', eventId);
     if (allocData) allocations = allocData;
 
-    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
-    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [String(a.team_id).trim(), a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [String(a.user_id).trim(), a]));
 
     // Fetch configured problem statements
     const { problemStatements } = await fetchProblemStatementsForEvent(eventId);
@@ -1140,7 +1140,7 @@ exports.getEventAllocations = async (req, res) => {
     };
 
     const teamList = (teams || []).map(t => {
-      const alloc = teamAllocMap.get(t.id);
+      const alloc = teamAllocMap.get(String(t.id).trim());
       return {
         teamId: t.id,
         teamName: t.name || 'Unnamed Team',
@@ -1154,7 +1154,7 @@ exports.getEventAllocations = async (req, res) => {
     });
 
     const indivList = (indivRegs || []).map(r => {
-      const alloc = userAllocMap.get(r.user_id);
+      const alloc = userAllocMap.get(String(r.user_id).trim());
       const profile = indivProfileMap.get(r.user_id);
       const name = profile ? profile.name : 'Individual Participant';
       return {
@@ -1227,11 +1227,11 @@ exports.getAllocationTemplateData = async (req, res) => {
     const { data: allocData } = await supabase.from('team_allocations').select('*').eq('event_id', eventId);
     if (allocData) allocations = allocData;
 
-    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [a.team_id, a]));
-    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [a.user_id, a]));
+    const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [String(a.team_id).trim(), a]));
+    const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [String(a.user_id).trim(), a]));
 
     const teamRows = (teams || []).map(t => {
-      const alloc = teamAllocMap.get(t.id);
+      const alloc = teamAllocMap.get(String(t.id).trim());
       return {
         'Team ID': t.id,
         'Team Name': t.name || 'Unnamed Team',
@@ -1241,7 +1241,7 @@ exports.getAllocationTemplateData = async (req, res) => {
     });
 
     const indivRows = (indivRegs || []).map(r => {
-      const alloc = userAllocMap.get(r.user_id);
+      const alloc = userAllocMap.get(String(r.user_id).trim());
       const profile = indivProfileMap.get(r.user_id);
       const name = profile ? profile.name : 'Individual Participant';
       return {
