@@ -762,9 +762,11 @@ exports.selectProblemStatement = async (req, res) => {
         });
       }
 
-      const isRpcMissing = rpcErr && (rpcErr.code === 'PGRST202' || rpcErr.code === '42883' || /function/i.test(rpcErr.message || ''));
-      if (rpcErr && !isRpcMissing) {
-        throw rpcErr;
+      if (rpcErr) {
+        // Production databases can have an older/mismatched RPC definition.
+        // The validated fallback below still enforces the same owner and
+        // capacity checks, so do not make confirmation depend on the RPC.
+        console.warn('Atomic problem-statement RPC unavailable; using validated upsert fallback:', rpcErr.message);
       }
     }
 
