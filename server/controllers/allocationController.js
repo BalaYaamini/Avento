@@ -636,6 +636,7 @@ exports.selectProblemStatement = async (req, res) => {
 
     const isTeamReg = !!registration.team_id;
     let team = null;
+    let existingAlloc = null;
 
     if (isTeamReg) {
       // Step 3: Fetch team and verify Team Leader authorization for team registration
@@ -656,46 +657,22 @@ exports.selectProblemStatement = async (req, res) => {
       team = fetchedTeam;
 
       // Step 4: Check if team has ALREADY selected a problem statement
-      const { data: existingAlloc } = await supabase
+      const { data: teamExistingAlloc } = await supabase
         .from('team_allocations')
-        .select('id, problem_statement, venue_room')
+        .select('id, problem_statement, problem_statement_id, venue_room')
         .eq('event_id', eventId)
         .eq('team_id', team.id)
         .maybeSingle();
-
-      if (existingAlloc && existingAlloc.problem_statement) {
-        return res.json({
-          success: true,
-          alreadySelected: true,
-          message: 'Problem statement already selected for your team.',
-          allocation: {
-            teamName: team.name,
-            problemStatement: existingAlloc.problem_statement,
-            venueRoom: existingAlloc.venue_room && existingAlloc.venue_room.trim() ? existingAlloc.venue_room.trim() : 'Yet to assign'
-          }
-        });
-      }
+      existingAlloc = teamExistingAlloc;
     } else {
       // Individual registration check
-      const { data: existingAlloc } = await supabase
+      const { data: individualExistingAlloc } = await supabase
         .from('team_allocations')
-        .select('id, problem_statement, venue_room')
+        .select('id, problem_statement, problem_statement_id, venue_room')
         .eq('event_id', eventId)
         .eq('user_id', userId)
         .maybeSingle();
-
-      if (existingAlloc && existingAlloc.problem_statement) {
-        return res.json({
-          success: true,
-          alreadySelected: true,
-          message: 'Problem statement already selected.',
-          allocation: {
-            teamName: 'Individual Participant',
-            problemStatement: existingAlloc.problem_statement,
-            venueRoom: existingAlloc.venue_room && existingAlloc.venue_room.trim() ? existingAlloc.venue_room.trim() : 'Yet to assign'
-          }
-        });
-      }
+      existingAlloc = individualExistingAlloc;
     }
 
     // Step 5: ATOMIC ALLOCATION & CAPACITY RESERVATION
@@ -704,6 +681,20 @@ exports.selectProblemStatement = async (req, res) => {
 
     if (!targetPS) {
       return res.status(404).json({ message: 'Problem statement not found.' });
+    }
+
+    // Treat a repeated confirmation as successful without creating another row.
+    if (existingAlloc && existingAlloc.problem_statement === targetPS.title) {
+      return res.json({
+        success: true,
+        alreadySelected: true,
+        message: 'Problem statement already selected.',
+        allocation: {
+          teamName: isTeamReg ? team.name : 'Individual Participant',
+          problemStatement: targetPS.title,
+          venueRoom: existingAlloc.venue_room && existingAlloc.venue_room.trim() ? existingAlloc.venue_room.trim() : 'Yet to assign'
+        }
+      });
     }
 
     // Explicit Slot Capacity Check
@@ -740,30 +731,33 @@ exports.selectProblemStatement = async (req, res) => {
 
       if (!rpcErr && rpcRes) {
         if (!rpcRes.success) {
-          return res.status(400).json({ message: rpcRes.message || 'This problem statement has reached full capacity. Please select another.' });
-        }
-
-        const allocatedTitle = rpcRes.problem_statement || targetPS.title;
-        const allocatedVenue = rpcRes.venue_room || venue;
-
-        sendAllocationEmailToTeam({
-          eventId,
-          teamId: isTeamReg ? team.id : null,
-          userId: isTeamReg ? null : userId,
-          problemStatement: allocatedTitle,
-          description: targetPS.description || '',
-          venueRoom: allocatedVenue
-        }).catch(e => console.error('Failed to trigger allocation email:', e.message));
-
-        return res.json({
-          success: true,
-          message: rpcRes.message || 'Problem statement successfully allocated!',
-          allocation: {
-            teamName: isTeamReg ? team.name : 'Individual Participant',
-            problemStatement: allocatedTitle,
-            venueRoom: allocatedVenue && allocatedVenue.trim() ? allocatedVenue.trim() : 'Yet to assign'
+          if (!existingAlloc || !/already selected/i.test(rpcRes.message || '')) {
+            return res.status(400).json({ message: rpcRes.message || 'This problem statement has reached full capacity. Please select another.' });
           }
-        });
+          console.warn('RPC found an existing allocation; updating it through the fallback path.');
+        } else {
+          const allocatedTitle = rpcRes.problem_statement || targetPS.title;
+          const allocatedVenue = rpcRes.venue_room || venue;
+
+          sendAllocationEmailToTeam({
+            eventId,
+            teamId: isTeamReg ? team.id : null,
+            userId: isTeamReg ? null : userId,
+            problemStatement: allocatedTitle,
+            description: targetPS.description || '',
+            venueRoom: allocatedVenue
+          }).catch(e => console.error('Failed to trigger allocation email:', e.message));
+
+          return res.json({
+            success: true,
+            message: rpcRes.message || 'Problem statement successfully allocated!',
+            allocation: {
+              teamName: isTeamReg ? team.name : 'Individual Participant',
+              problemStatement: allocatedTitle,
+              venueRoom: allocatedVenue && allocatedVenue.trim() ? allocatedVenue.trim() : 'Yet to assign'
+            }
+          });
+        }
       }
 
       if (rpcErr) {
