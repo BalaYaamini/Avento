@@ -785,11 +785,39 @@ exports.selectProblemStatement = async (req, res) => {
     }
 
     const onConflictStr = isTeamReg ? 'event_id,team_id' : 'event_id,user_id';
-    const { error: allocErr } = await supabase
+    let { error: allocErr } = await supabase
       .from('team_allocations')
       .upsert(upsertObj, { onConflict: onConflictStr });
 
-    if (allocErr) throw allocErr;
+    if (allocErr) {
+      // Some production schemas do not have the expected unique constraint.
+      // Resolve the owner row explicitly, then update or insert without relying
+      // on a particular conflict-target definition.
+      let existingQuery = supabase
+        .from('team_allocations')
+        .select('id')
+        .eq('event_id', eventId);
+      existingQuery = isTeamReg
+        ? existingQuery.eq('team_id', team.id)
+        : existingQuery.eq('user_id', userId);
+
+      const { data: existingRow, error: existingErr } = await existingQuery.maybeSingle();
+      if (existingErr) throw allocErr;
+
+      if (existingRow?.id) {
+        const { error: updateAllocErr } = await supabase
+          .from('team_allocations')
+          .update(upsertObj)
+          .eq('id', existingRow.id);
+        if (updateAllocErr) throw updateAllocErr;
+      } else {
+        const { error: insertAllocErr } = await supabase
+          .from('team_allocations')
+          .insert(upsertObj);
+        if (insertAllocErr) throw insertAllocErr;
+      }
+      allocErr = null;
+    }
 
     const newCount = Number(targetPS.allocated_count) + 1;
     await supabase
