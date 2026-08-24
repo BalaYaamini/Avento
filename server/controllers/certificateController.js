@@ -632,12 +632,25 @@ exports.generateAllOrganizerCertificates = async (req, res) => {
 
     // Batch-check existing organizer certificates
     const organizerIds = organizers.map(o => o.id);
-    const { data: existingCerts } = await supabase
+    let { data: existingCerts, error: existingCertsError } = await supabase
       .from('certificates')
       .select('user_id')
       .eq('event_id', eventId)
       .eq('certificate_type', 'organizer')
       .in('user_id', organizerIds);
+
+    // Older production schemas do not have certificate_type. In that case,
+    // avoid failing generation and use all certificates for this event/user.
+    if (existingCertsError && /certificate_type|column/i.test(existingCertsError.message || '')) {
+      const fallback = await supabase
+        .from('certificates')
+        .select('user_id')
+        .eq('event_id', eventId)
+        .in('user_id', organizerIds);
+      existingCerts = fallback.data;
+      existingCertsError = fallback.error;
+    }
+    if (existingCertsError) throw existingCertsError;
 
     const existingUserIds = new Set((existingCerts || []).map(c => c.user_id));
     const pendingOrgs = organizers.filter(o => !existingUserIds.has(o.id));
@@ -667,7 +680,11 @@ exports.generateAllOrganizerCertificates = async (req, res) => {
 
       if (succeeded.length > 0) {
         const insertRows = succeeded.map(({ profile, ...rest }) => rest);
-        const { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        let { error: batchInsertErr } = await supabase.from('certificates').insert(insertRows);
+        if (batchInsertErr && /certificate_type|column/i.test(batchInsertErr.message || '')) {
+          const legacyRows = insertRows.map(({ certificate_type, ...row }) => row);
+          ({ error: batchInsertErr } = await supabase.from('certificates').insert(legacyRows));
+        }
         if (batchInsertErr) {
           console.error('[Org Certs] Batch insert error:', batchInsertErr.message);
           allFailed.push(...insertRows.map(r => ({ userId: r.user_id, error: batchInsertErr.message })));
