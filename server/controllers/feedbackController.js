@@ -9,6 +9,25 @@ const DEFAULT_FEEDBACK_QUESTIONS = [
   { id: 'q_suggestions', label: 'Suggestions for Improvement', type: 'text', required: false }
 ];
 
+const isEventOrganizer = async (event, eventId, userId) => {
+  const directOrganizerIds = [
+    event.faculty_id,
+    event.student_organizer_id,
+    event.proposed_by,
+    event.organizer_id,
+    event.created_by
+  ].filter(Boolean).map(String);
+
+  if (directOrganizerIds.includes(String(userId))) return true;
+
+  const [{ data: organizer }, { data: member }] = await Promise.all([
+    supabase.from('event_organizers').select('id').eq('event_id', eventId).eq('student_id', userId).maybeSingle(),
+    supabase.from('event_members').select('id').eq('event_id', eventId).eq('user_id', userId).maybeSingle()
+  ]);
+
+  return Boolean(organizer || member);
+};
+
 /**
  * Submit feedback for an event
  * POST /api/feedbacks
@@ -34,7 +53,7 @@ const submitFeedback = async (req, res) => {
     // Check if event exists and is completed
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('id, status, feedback_questions')
+      .select('id, status, feedback_questions, faculty_id, student_organizer_id, proposed_by, organizer_id, created_by')
       .eq('id', eventId)
       .maybeSingle();
 
@@ -54,8 +73,10 @@ const submitFeedback = async (req, res) => {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (regError || !registration) {
-      return res.status(403).json({ message: 'Only registered participants can submit feedback.' });
+    const organizerAccess = await isEventOrganizer(event, eventId, userId);
+    if (regError && !/no rows|multiple rows/i.test(regError.message || '')) throw regError;
+    if (!registration && !organizerAccess) {
+      return res.status(403).json({ message: 'Only registered participants or event organizers can submit feedback.' });
     }
 
     let finalResponses = responses || {};
@@ -364,4 +385,3 @@ module.exports = {
   getUserFeedbackStatus,
   getMyFeedbackStatuses
 };
-
