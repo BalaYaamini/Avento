@@ -59,10 +59,10 @@ exports.register = async (req, res) => {
       return res.status(403).json({ message: 'Registration not allowed for this email domain.' });
     }
 
-    // Verify OTP from Supabase table
+    // Verify OTP from Supabase table (with 5-min TTL check)
     const { data: otpRecord, error: otpFetchErr } = await supabase
       .from('otps')
-      .select('otp')
+      .select('otp, created_at')
       .eq('email', emailLower)
       .maybeSingle();
 
@@ -70,6 +70,14 @@ exports.register = async (req, res) => {
     if (!otpRecord) {
       return res.status(400).json({ message: 'OTP expired or not requested. Please request a new OTP.' });
     }
+
+    // Check 5-minute TTL
+    const otpAge = (new Date() - new Date(otpRecord.created_at)) / 1000;
+    if (otpAge > 300) {
+      await supabase.from('otps').delete().eq('email', emailLower);
+      return res.status(400).json({ message: 'OTP expired. Please request a new OTP.' });
+    }
+
     if (otpRecord.otp !== otp) {
       return res.status(400).json({ message: 'Invalid OTP. Please try again.' });
     }

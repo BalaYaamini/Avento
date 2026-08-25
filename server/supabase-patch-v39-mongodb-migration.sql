@@ -12,12 +12,7 @@ CREATE TABLE IF NOT EXISTS public.otps (
 
 CREATE INDEX IF NOT EXISTS idx_otps_email ON public.otps(email);
 
--- Auto-delete expired OTPs every minute (5-minute TTL)
-SELECT cron.schedule(
-  'delete-expired-otps',
-  '* * * * *',
-  $$ DELETE FROM public.otps WHERE created_at < NOW() - INTERVAL '5 minutes' $$
-);
+-- OTP TTL is handled in application code (cleanup on read + periodic delete)
 
 -- 2. Announcements table (replaces MongoDB announcements collection)
 CREATE TABLE IF NOT EXISTS public.announcements (
