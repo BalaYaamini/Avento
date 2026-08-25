@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 const registrationController = require('../controllers/registrationController');
 const authMiddleware = require('../middleware/authMiddleware');
 const adminMiddleware = require('../middleware/adminMiddleware');
@@ -31,7 +34,13 @@ router.post('/admin/approve-request/:registrationId', authMiddleware, adminMiddl
 router.get('/admin/event/:eventId/eligible-students', authMiddleware, adminMiddleware, registrationController.getNonOrganizerStudentsForEvent);
 
 // Admin & Organizer features (protected)
-router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getEventRegistrations);
-router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']), registrationController.getConfirmedTeams);
+router.get('/event/:eventId', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student']), registrationController.getEventRegistrations);
+router.get('/event/:eventId/confirmed-teams', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student']), registrationController.getConfirmedTeams);
+
+// Student Photo Import Endpoints & Public Image Proxy
+router.get('/drive-proxy', registrationController.proxyDriveImage);
+router.post('/event/:eventId/import-photos', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student']), upload.array('photos', 200), registrationController.importStudentPhotos);
+router.post('/event/:eventId/import-drive-links', authMiddleware, roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student']), registrationController.importStudentPhotoLinks);
 
 module.exports = router;
+

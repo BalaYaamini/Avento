@@ -16,6 +16,7 @@ import TeamAllocation from '../components/TeamAllocation';
 import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
 import ScoringBoard from '../components/ScoringBoard';
 import ConfirmationEmailModal from '../components/ConfirmationEmailModal';
+import IDCardManager from '../components/IDCardManager';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -28,7 +29,14 @@ const Workspace = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  const [activeTab, setActiveTab] = useState('tasks');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      return searchParams.get('tab') || 'tasks';
+    } catch (e) {
+      return 'tasks';
+    }
+  });
   
   // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -211,34 +219,40 @@ const Workspace = () => {
       // 1. Fetch Event
       const eventRes = await axios.get(`/api/events/${eventId}`);
       const eventData = eventRes.data;
-      console.log("Workspace API Response:", eventRes);
       
-      // 2. Fetch Organizers
-      console.log('GET /api/events/' + eventId + '/organizers');
-      const orgRes = await axios.get(`/api/events/${eventId}/organizers`);
-      const orgData = orgRes.data;
-      console.log('Organizers Data:', orgData);
-      
-      // Access check
-      const isAdmin = user.roles?.includes('admin');
-      const isFaculty = user.id === eventData.faculty_id;
-      const isEventHead = user.id === eventData.student_organizer_id || user.id === eventData.proposed_by;
-      const isOrganizer = orgData.some(org => String(org.userId) === String(user.id));
-      
-      if (!isAdmin && !isFaculty && !isEventHead && !isOrganizer) {
-        console.warn('Access denied. Redirecting...');
-        navigate('/'); // Redirect if no access
-        return;
+      // 2. Fetch Organizers safely
+      let orgData = [];
+      try {
+        const orgRes = await axios.get(`/api/events/${eventId}/organizers`);
+        orgData = Array.isArray(orgRes.data) ? orgRes.data : [];
+      } catch (e) {
+        console.warn('Organizers fetch warning:', e);
       }
+      
+      // Access check - Type-safe string comparison and multi-role evaluation
+      const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+      const isAdmin = userRoles.includes('admin') || userRoles.includes('student_organizer') || userRoles.includes('faculty') || userRoles.includes('faculty_organizer');
+      const userIdStr = String(user?.id || '');
+
+      const isFaculty = userIdStr === String(eventData?.faculty_id || '');
+      const isEventHead = userIdStr === String(eventData?.student_organizer_id || '') || 
+                         userIdStr === String(eventData?.proposed_by || '') ||
+                         userIdStr === String(eventData?.organizer_id || '') ||
+                         userIdStr === String(eventData?.created_by || '');
+      const isOrganizer = orgData.some(org => String(org.userId || org.id) === userIdStr);
       
       setEvent(eventData);
       setOrganizers(orgData);
 
-      // 3. Fetch Tasks
-      console.log('GET /api/tasks/event/' + eventId);
-      const tasksRes = await axios.get(`/api/tasks/event/${eventId}`);
-      console.log('Tasks Data:', tasksRes.data);
-      setTasks(tasksRes.data);
+      // 3. Fetch Tasks safely
+      let tasksData = [];
+      try {
+        const tasksRes = await axios.get(`/api/tasks/event/${eventId}`);
+        tasksData = Array.isArray(tasksRes.data) ? tasksRes.data : [];
+      } catch (e) {
+        console.warn('Tasks fetch warning:', e);
+      }
+      setTasks(tasksData);
       
     } catch (err) {
       console.error('WORKSPACE LOAD ERROR:', err);
@@ -275,13 +289,13 @@ const Workspace = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [eventId, user.id]);
+  }, [eventId, user?.id]);
 
   useEffect(() => {
     if (isNormalOrganizer() && !['tasks', 'confirmed_teams'].includes(activeTab)) {
       setActiveTab('tasks');
     }
-  }, [organizers, user, activeTab]);
+  }, [organizers, user?.id, activeTab]);
 
   const handleCreateTask = () => {
     setEditingTask(null);
@@ -415,6 +429,21 @@ const Workspace = () => {
 
             {isActionsDropdownOpen && (
               <div className="origin-top-right absolute right-0 mt-2 w-60 rounded-2xl shadow-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 z-50 p-1.5 space-y-1 animate-fade-in-scale">
+                {hasFullAccess() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      setActiveTab('id_cards');
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-fuchsia-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V4a2 2 0 012-2h2a2 2 0 012 2v2m-4 0h4" />
+                    </svg>
+                    <span>Import Photos & ID Cards</span>
+                  </button>
+                )}
                 {hasFullAccess() && (
                   <button
                     type="button"
@@ -624,6 +653,15 @@ const Workspace = () => {
             )}
           </>
         )}
+
+        <button
+          onClick={() => setActiveTab('id_cards')}
+          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
+            activeTab === 'id_cards' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+        >
+          ID Cards
+        </button>
       </div>
 
       {activeTab === 'registrations' && !isNormalOrganizer() && (
@@ -645,6 +683,12 @@ const Workspace = () => {
       {activeTab === 'allocation' && event?.registration_type === 'team' && !isNormalOrganizer() && (
         <div className="mb-8">
           <TeamAllocation eventId={eventId} eventTitle={event.title} />
+        </div>
+      )}
+
+      {activeTab === 'id_cards' && (
+        <div className="mb-8">
+          <IDCardManager eventId={eventId} event={event} />
         </div>
       )}
 
