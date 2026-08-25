@@ -9,10 +9,6 @@ const dotenv = require('dotenv');
 // Load env variables
 dotenv.config();
 
-// Connect to MongoDB
-const connectDB = require('./config/db');
-connectDB();
-
 // Initialize Background Jobs
 const startEventCompletionJob = require('./jobs/eventCompletionJob');
 startEventCompletionJob();

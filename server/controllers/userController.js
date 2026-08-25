@@ -1,10 +1,8 @@
 const supabase = require('../config/supabaseClient');
-const User = require('../models/User');
 const nodemailer = require('nodemailer');
 
 exports.getUsers = async (req, res) => {
   try {
-    // Paginate to fetch ALL profiles (Supabase default limit is 1000)
     let users = [];
     let page = 0;
     const PAGE_SIZE = 1000;
@@ -15,21 +13,15 @@ exports.getUsers = async (req, res) => {
       if (!data || data.length < PAGE_SIZE) break;
       page++;
     }
-    
-    // Fetch all registrations to compute registration count per user
+
     const { data: registrations, error: regErr } = await supabase.from('event_registrations').select('user_id');
     if (regErr) throw regErr;
 
-    // Fetch all events to compute proposed count per user
     const { data: events, error: evErr } = await supabase.from('events').select('proposed_by');
     if (evErr) throw evErr;
 
-    // Fetch all event organizers to compute organizer count per user
     const { data: organizers, error: orgErr } = await supabase.from('event_organizers').select('student_id');
     if (orgErr) throw orgErr;
-
-    // Fetch MongoDB users
-    const mongoUsers = await User.find({});
 
     const usersWithStats = users.map(user => {
       const pCount = (events || []).filter(e => e.proposed_by && String(e.proposed_by) === String(user.id)).length;
@@ -41,11 +33,11 @@ exports.getUsers = async (req, res) => {
         _id: user.id,
         fullName: user.name || user.fullName,
         email: user.email,
-        roles: [user.role], // or parse if stored as array/json
+        roles: [user.role],
         department: user.department,
         employeeId: user.employee_id,
         rollNumber: user.roll_number,
-        isVerified: true, // Supabase auth handles verification
+        isVerified: true,
         proposedCount: pCount,
         organizedCount: oCount,
         registrationCount: rCount,
@@ -55,44 +47,12 @@ exports.getUsers = async (req, res) => {
       };
     });
 
-    const mappedMongoUsers = mongoUsers.map(user => {
-      const pCount = (events || []).filter(e => e.proposed_by && String(e.proposed_by) === String(user._id)).length;
-      const oCount = (organizers || []).filter(o => o.student_id && String(o.student_id) === String(user._id)).length;
-      const rCount = (registrations || []).filter(reg => String(reg.user_id) === String(user._id)).length;
-      
-      const supUser = usersWithStats.find(u => u.email.toLowerCase() === user.email.toLowerCase());
-
-      return {
-        id: user._id,
-        _id: user._id,
-        fullName: user.name,
-        email: user.email,
-        roles: [user.role],
-        department: supUser ? supUser.department : '',
-        employeeId: supUser ? supUser.employeeId : '',
-        rollNumber: supUser ? supUser.rollNumber : '',
-        isVerified: user.isVerified,
-        proposedCount: pCount,
-        organizedCount: oCount,
-        registrationCount: rCount,
-        createdAt: user.createdAt,
-        status: supUser ? supUser.status : 'active',
-        first_login: supUser ? supUser.first_login : false
-      };
-    });
-
-    // Deduplicate: Keep MongoDB user if email exists in both
-    const mongoEmails = new Set(mappedMongoUsers.map(u => u.email.toLowerCase()));
-    const filteredSupabaseUsers = usersWithStats.filter(u => !mongoEmails.has(u.email.toLowerCase()));
-
-    res.json([...filteredSupabaseUsers, ...mappedMongoUsers]);
+    res.json(usersWithStats);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching user list.', error: err.message });
   }
 };
 
-// Returns all Faculty Coordinators for the student proposal form dropdown
-// Format: { id, fullName, email, employeeId, displayLabel: "Dr. XYZ (EMP001)" }
 exports.getFacultyCoordinators = async (req, res) => {
   try {
     let faculty = [];
@@ -105,7 +65,7 @@ exports.getFacultyCoordinators = async (req, res) => {
       if (!data || data.length < PAGE_SIZE) break;
       page++;
     }
-    
+
     const result = faculty.map(f => ({
       id: f.id,
       fullName: f.name || f.fullName,
@@ -130,9 +90,8 @@ exports.searchUsers = async (req, res) => {
       .select('id, name, email, department, role, roll_number, employee_id, status')
       .or(`name.ilike.%${query}%,email.ilike.%${query}%,department.ilike.%${query}%`)
       .limit(20);
-    
+
     if (error) throw error;
-    // Exclude inactive users as requested
     const activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
     res.json(activeProfiles);
   } catch (err) {
@@ -140,8 +99,6 @@ exports.searchUsers = async (req, res) => {
   }
 };
 
-// Returns all Students for the team member picker in organizer view
-// Format: { id, fullName, email, rollNumber, displayLabel: "Bala Yaamini (2203A51001)" }
 exports.getStudents = async (req, res) => {
   try {
     let students = [];
@@ -154,7 +111,7 @@ exports.getStudents = async (req, res) => {
       if (!data || data.length < PAGE_SIZE) break;
       page++;
     }
-    
+
     const result = students.map(s => ({
       id: s.id,
       fullName: s.name || s.fullName,
@@ -169,7 +126,6 @@ exports.getStudents = async (req, res) => {
   }
 };
 
-// Update only the display name for the authenticated user
 exports.updateDisplayName = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -181,14 +137,7 @@ exports.updateDisplayName = async (req, res) => {
 
     const trimmedName = name.trim();
 
-    // 1. Update MongoDB
-    const mongoUser = await User.findById(userId);
-    if (mongoUser) {
-      mongoUser.name = trimmedName;
-      await mongoUser.save();
-    }
-
-    // 2. Update Supabase profiles table
+    // Update Supabase profiles table
     const { error: profileErr } = await supabase
       .from('profiles')
       .update({ name: trimmedName })
@@ -198,7 +147,7 @@ exports.updateDisplayName = async (req, res) => {
       console.warn('Profile update warning:', profileErr.message);
     }
 
-    // 3. Update Supabase Auth user_metadata
+    // Update Supabase Auth user_metadata
     try {
       await supabase.auth.admin.updateUserById(String(userId), {
         user_metadata: { full_name: trimmedName },
@@ -207,7 +156,6 @@ exports.updateDisplayName = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
-    // Return the updated user object (same shape as authMiddleware sets)
     res.json({
       message: 'Display name updated successfully.',
       user: {
@@ -232,7 +180,6 @@ exports.submitContactForm = async (req, res) => {
 
     const { sendEmailNotification, sendInAppNotification } = require('../services/notificationService');
 
-    // Automatically derive roll number from email prefix (everything before @)
     const studentRollNo = email.trim().split('@')[0];
 
     const adminEmail = process.env.ADMIN_EMAIL || process.env.BREVO_SENDER_EMAIL || 'admin.avento@gmail.com';
@@ -261,14 +208,12 @@ exports.submitContactForm = async (req, res) => {
 
     const textContent = `New Contact Support Ticket:\n\nFrom: ${name}\nEmail: ${email}\nRoll Number: ${studentRollNo}\nSubject: ${subject}\n\nMessage:\n${message}`;
 
-    // 1. Send via Brevo / Notification Service
     await sendEmailNotification({
       recipientEmail: adminEmail,
       subject: emailSubject,
       htmlBody: htmlContent
     });
 
-    // 2. Also attempt Nodemailer fallback if EMAIL_USER and EMAIL_PASS are set
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       try {
         const transporter = nodemailer.createTransport({
@@ -292,7 +237,6 @@ exports.submitContactForm = async (req, res) => {
       }
     }
 
-    // 3. Notify Admin in-app if admin profiles exist
     try {
       const { data: adminProfiles } = await supabase
         .from('profiles')
@@ -326,7 +270,7 @@ exports.importUsers = async (req, res) => {
     if (!users || !Array.isArray(users)) {
       return res.status(400).json({ message: 'Invalid users array provided.' });
     }
-    
+
     let successful = 0;
     let failed = 0;
     let skipped = 0;
@@ -338,7 +282,7 @@ exports.importUsers = async (req, res) => {
     for (const user of users) {
       try {
         const emailLower = user.email.toLowerCase().trim();
-        
+
         let role = user.role;
         if (!role) {
           if (studentDomains.some(domain => emailLower.endsWith(domain))) {
@@ -360,7 +304,7 @@ exports.importUsers = async (req, res) => {
         } else if (role === 'student' || role === 'student_organizer') {
           defaultPassword = 'Student@123';
         }
-        
+
         let derivedDepartment = user.department || null;
         let derivedRollNumber = user.rollNumber || null;
 
@@ -377,10 +321,10 @@ exports.importUsers = async (req, res) => {
             else if (emailLower.endsWith('@ds.suh.edu.in')) derivedDepartment = 'DS';
           }
         }
-        
+
         const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
         if (listErr) throw listErr;
-        
+
         const existingAuth = usersData.users.find((u) => u.email.toLowerCase() === emailLower);
         if (existingAuth) {
           skipped++;
@@ -408,37 +352,23 @@ exports.importUsers = async (req, res) => {
           first_login: true,
           status: 'active'
         };
-        
+
         if (role === 'faculty') profile.employee_id = user.employeeId || null;
         if (role === 'student' || role === 'student_organizer') profile.roll_number = derivedRollNumber;
 
         await supabase.from('profiles').upsert(profile);
-        
-        const bcrypt = require('bcryptjs');
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(defaultPassword, salt);
-        const User = require('../models/User');
-        const mongoUser = new User({
-          _id: userId,
-          name: user.fullName,
-          email: emailLower,
-          password: hashedPassword,
-          role: role,
-          isVerified: true,
-        });
-        await mongoUser.save().catch(e => console.error('Mongo save error (dup):', e.message));
 
         successful++;
       } catch (e) {
         console.error(`Import failed for ${user.email}:`, e.message);
         failed++;
-        errors.push({ 
-          email: user.email ? user.email.toLowerCase().trim() : 'Unknown', 
-          reason: e.message 
+        errors.push({
+          email: user.email ? user.email.toLowerCase().trim() : 'Unknown',
+          reason: e.message
         });
       }
     }
-    
+
     res.json({
       success: true,
       summary: { total: users.length, successful, skipped, failed },
@@ -454,12 +384,11 @@ exports.completeFirstLogin = async (req, res) => {
   try {
     const userId = req.user.id;
     const { password } = req.body;
-    
+
     if (!password) {
       return res.status(400).json({ message: 'New password is required.' });
     }
 
-    // Update password in Supabase Auth
     const { error } = await supabase.auth.admin.updateUserById(String(userId), {
       password: password
     });
@@ -468,15 +397,7 @@ exports.completeFirstLogin = async (req, res) => {
       throw error;
     }
 
-    // Update profiles table to clear first_login flag
     await supabase.from('profiles').update({ first_login: false }).eq('id', String(userId));
-    
-    // Also update MongoDB password
-    const bcrypt = require('bcryptjs');
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    const User = require('../models/User');
-    await User.findByIdAndUpdate(userId, { password: hashedPassword });
 
     res.json({ success: true, message: 'Password updated successfully.' });
   } catch (err) {
@@ -488,17 +409,21 @@ exports.completeFirstLogin = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const userId = req.params.id;
-    const User = require('../models/User');
-    const userRecord = await User.findById(userId);
 
-    if (!userRecord) {
+    const { data: profile, error: profErr } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', String(userId))
+      .single();
+
+    if (profErr || !profile) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     let tempPassword = 'Student@123';
-    if (userRecord.role === 'faculty' || userRecord.role === 'faculty_organizer') {
+    if (profile.role === 'faculty' || profile.role === 'faculty_organizer') {
       tempPassword = 'Faculty@123';
-    } else if (userRecord.role === 'admin') {
+    } else if (profile.role === 'admin') {
       tempPassword = 'Admin@123';
     }
 
@@ -508,11 +433,6 @@ exports.resetPassword = async (req, res) => {
     if (error) throw error;
 
     await supabase.from('profiles').update({ first_login: true }).eq('id', String(userId));
-    
-    const bcrypt = require('bcryptjs');
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(tempPassword, salt);
-    await User.findByIdAndUpdate(userId, { password: hashedPassword });
 
     res.json({ message: 'Password reset successfully.', tempPassword });
   } catch (err) {
@@ -524,7 +444,7 @@ exports.resetPassword = async (req, res) => {
 exports.deactivateUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    
+
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
     if (profile && profile.role === 'admin') {
       return res.status(403).json({ message: 'Action restricted: Cannot deactivate an administrator account.' });
@@ -542,7 +462,7 @@ exports.deactivateUser = async (req, res) => {
 exports.activateUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    
+
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
     if (profile && profile.role === 'admin') {
       return res.status(403).json({ message: 'Action restricted: Cannot modify administrator account status.' });
@@ -572,9 +492,6 @@ exports.updateUserDetails = async (req, res) => {
       await supabase.auth.admin.updateUserById(String(userId), {
         user_metadata: { full_name: updates.name },
       });
-      const User = require('../models/User');
-      // Only update name in MongoDB. Role is immutable.
-      await User.findByIdAndUpdate(userId, { name: updates.name });
     }
 
     res.json({ message: 'User details updated successfully.' });
@@ -587,26 +504,19 @@ exports.updateUserDetails = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
-    
-    // Protect Admin Accounts
+
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
     if (profile && profile.role === 'admin') {
       return res.status(403).json({ message: 'Action restricted: Cannot delete an administrator account.' });
     }
-    
-    // Delete from Supabase Auth (this usually cascades to profiles)
+
     const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
     if (authErr) {
       console.warn('Supabase Auth delete warning:', authErr.message);
     }
-    
-    // Explicitly delete from profiles just in case
+
     await supabase.from('profiles').delete().eq('id', String(userId));
-    
-    // Delete from MongoDB
-    const User = require('../models/User');
-    await User.findByIdAndDelete(userId);
-    
+
     res.json({ message: 'User deleted successfully.' });
   } catch (err) {
     console.error('deleteUser error:', err.message);
@@ -621,7 +531,6 @@ exports.bulkDeleteUsers = async (req, res) => {
       return res.status(400).json({ message: 'No user IDs provided for bulk deletion.' });
     }
 
-    // Fetch target profiles to strictly protect Admin accounts
     const { data: targetProfiles, error: profErr } = await supabase
       .from('profiles')
       .select('id, role')
@@ -629,7 +538,6 @@ exports.bulkDeleteUsers = async (req, res) => {
 
     if (profErr) throw profErr;
 
-    // Filter out any admin accounts
     const eligibleUserIds = (targetProfiles || [])
       .filter(p => p.role !== 'admin')
       .map(p => p.id);
@@ -638,28 +546,18 @@ exports.bulkDeleteUsers = async (req, res) => {
       return res.status(400).json({ message: 'No eligible non-admin users found for deletion.' });
     }
 
-    const User = require('../models/User');
     let deletedCount = 0;
 
     for (const uId of eligibleUserIds) {
       const idStr = String(uId);
 
-      // Supabase Auth deletion
       try {
         await supabase.auth.admin.deleteUser(idStr);
       } catch (authErr) {
         console.warn(`Supabase Auth bulk delete warning for ${idStr}:`, authErr.message);
       }
 
-      // Supabase profiles deletion
       await supabase.from('profiles').delete().eq('id', idStr);
-
-      // MongoDB deletion
-      try {
-        await User.findByIdAndDelete(idStr);
-      } catch (mongoErr) {
-        console.warn(`MongoDB bulk delete warning for ${idStr}:`, mongoErr.message);
-      }
 
       deletedCount++;
     }

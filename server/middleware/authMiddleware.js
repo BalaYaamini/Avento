@@ -1,7 +1,6 @@
 // server/middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const supabase = require('../config/supabaseClient'); // Keep for events check if needed
+const supabase = require('../config/supabaseClient');
 
 module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -13,46 +12,44 @@ module.exports = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'avento_super_secret_key_12345');
-    
-    // Fetch authoritative role from MongoDB
-    const user = await User.findById(decoded.id);
-    if (!user) {
+
+    // Fetch user profile from Supabase (single source of truth)
+    const { data: profileData, error: profileErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', decoded.id)
+      .single();
+
+    if (profileErr || !profileData) {
       return res.status(401).json({ message: 'User not found.' });
     }
 
-    let roles = [user.role];
-    if (user.role === 'organizer') {
+    let roles = [profileData.role];
+    if (profileData.role === 'organizer') {
       roles.push('student');
     }
 
     // Ensure admin role for specific email
-    if (user.email === 'admin.avento@gmail.com' && !roles.includes('admin')) {
+    if (profileData.email === 'admin.avento@gmail.com' && !roles.includes('admin')) {
       roles = ['admin'];
     }
 
-    // Check status in Supabase profiles
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('status, first_login')
-      .eq('id', user._id)
-      .single();
-
-    if (profileData && profileData.status === 'inactive') {
+    if (profileData.status === 'inactive') {
       return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
     }
 
     req.user = {
-      id: user._id,
-      email: user.email,
-      fullName: user.name,
+      id: profileData.id,
+      email: profileData.email,
+      fullName: profileData.name,
       roles: roles,
-      employeeId: null,
-      rollNumber: null,
-      first_login: profileData ? profileData.first_login : false,
+      employeeId: profileData.employee_id || null,
+      rollNumber: profileData.roll_number || null,
+      first_login: profileData.first_login !== false,
     };
 
     // Enforce first_login on backend for all protected routes except profile and change-password
-    if (profileData && profileData.first_login && !roles.includes('admin')) {
+    if (profileData.first_login && !roles.includes('admin')) {
       const allowedWhileFirstLogin = ['/api/auth/profile', '/api/auth/change-password'];
       const isAllowed = allowedWhileFirstLogin.some((route) => req.originalUrl.startsWith(route));
       if (!isAllowed) {
