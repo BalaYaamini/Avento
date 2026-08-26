@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase client (kept ONLY for events data fetching in other parts of the app if needed)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -11,14 +10,14 @@ const AuthContext = createContext();
 
 export const inferRole = (email) => {
   const e = (email || '').toLowerCase();
+  if (e === 'admin.avento@gmail.com') return 'admin';
   if (e.endsWith('@cse.suh.edu.in') || e.endsWith('@aiml.suh.edu.in')) return 'student';
   if (e.endsWith('@suh.edu.in')) return 'faculty';
-  if (e === 'admin.avento@gmail.com') return 'admin';
-  return null;
+  return 'student';
 };
 
 export const getRedirectPath = (roles = []) => {
-  return '/'; // All authenticated roles redirect to Homepage
+  return '/';
 };
 
 export const AuthProvider = ({ children }) => {
@@ -27,7 +26,6 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Listen for Supabase password recovery events
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         if (window.location.pathname !== '/change-password') {
@@ -64,13 +62,10 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
-      // Sign in with Supabase Auth to establish the client-side session
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password
       });
-      // We don't throw authError here to allow the backend logic to be the final decider,
-      // but it establishes the session if successful!
 
       const res = await axios.post('/api/auth/login', { email: email.trim(), password });
       
@@ -78,9 +73,58 @@ export const AuthProvider = ({ children }) => {
       
       localStorage.setItem('token', token);
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      // Trust the backend response completely, no client-side overrides
       setUser(userData); 
       
+      return { success: true };
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message;
+      setError(msg);
+      return { success: false, message: msg };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
+      if (error) throw error;
+      return { success: true };
+    } catch (e) {
+      const msg = e.message || 'Google sign-in failed.';
+      setError(msg);
+      setLoading(false);
+      return { success: false, message: msg };
+    }
+  };
+
+  const completeGoogleLogin = async () => {
+    try {
+      setLoading(true);
+      const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr || !session?.access_token) {
+        throw new Error('Could not establish Google session.');
+      }
+
+      const res = await axios.post('/api/auth/google-login', {
+        access_token: session.access_token
+      });
+
+      const { token, user: userData } = res.data;
+      localStorage.setItem('token', token);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      setUser(userData);
+
       return { success: true };
     } catch (e) {
       const msg = e.response?.data?.message || e.message;
@@ -126,6 +170,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
     setUser(null);
@@ -134,7 +179,6 @@ export const AuthProvider = ({ children }) => {
   const updateProfile = async (newName) => {
     try {
       const res = await axios.put('/api/users/profile/name', { name: newName });
-      // Immediately update the local user state so changes propagate app-wide
       if (res.data?.user) {
         setUser(prev => ({ ...prev, fullName: res.data.user.fullName }));
       }
@@ -149,10 +193,12 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
-    session: null, // Stub for backward compatibility
+    session: null,
     loading,
     error,
     login,
+    loginWithGoogle,
+    completeGoogleLogin,
     register,
     logout,
     sendOtp,

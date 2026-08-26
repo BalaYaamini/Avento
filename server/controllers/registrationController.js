@@ -33,12 +33,6 @@ const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds
 
 const resolveUserProfile = async (userId) => {
   try {
-    const mongoUser = await User.findById(userId).select('name email');
-    if (mongoUser && mongoUser.email) {
-      return { id: userId, name: mongoUser.name, email: mongoUser.email };
-    }
-  } catch (e) {}
-  try {
     const { data } = await supabase.from('profiles').select('id, name, email').eq('id', userId).maybeSingle();
     if (data && data.email) return data;
   } catch (e) {}

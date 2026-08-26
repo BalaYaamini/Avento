@@ -13,6 +13,9 @@ router.post('/register', authController.register);
 // Email/password login
 router.post('/login', authController.login);
 
+// Google OAuth login (receives Supabase access token after Google sign-in)
+router.post('/google-login', authController.googleLogin);
+
 // Generate a Supabase recovery link and deliver it through Brevo.
 router.post('/send-password-reset', authController.sendPasswordReset);
 
