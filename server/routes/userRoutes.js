@@ -1,8 +1,16 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const userController = require('../controllers/userController');
 const authMiddleware = require('../middleware/authMiddleware');
 const adminMiddleware = require('../middleware/adminMiddleware');
+
+// Configure multer for profile photo uploads (memory storage for Supabase)
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5 MB
+});
 
 // Protected lookup routes for dropdowns
 router.get('/faculty-coordinators', authMiddleware, userController.getFacultyCoordinators);
@@ -23,6 +31,9 @@ router.delete('/:id', authMiddleware, adminMiddleware, userController.deleteUser
 
 // Authenticated user: update display name only
 router.put('/profile/name', authMiddleware, userController.updateDisplayName);
+
+// Authenticated user: upload profile photo
+router.put('/profile/photo', authMiddleware, upload.single('photo'), userController.uploadProfilePhoto);
 
 // Public route for contact form
 router.post('/contact', userController.submitContactForm);

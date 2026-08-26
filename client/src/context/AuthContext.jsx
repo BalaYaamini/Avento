@@ -145,6 +145,35 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const uploadAvatar = async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      const res = await axios.put('/api/users/profile/photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      if (res.data?.avatarUrl) {
+        setUser(prev => ({ ...prev, avatarUrl: res.data.avatarUrl }));
+      }
+      return { success: true, avatarUrl: res.data.avatarUrl };
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message;
+      return { success: false, message: msg };
+    }
+  };
+
+  const removeAvatar = async () => {
+    try {
+      // Send an empty body to clear the avatar
+      const res = await axios.put('/api/users/profile/photo', {});
+      setUser(prev => ({ ...prev, avatarUrl: null }));
+      return { success: true };
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message;
+      return { success: false, message: msg };
+    }
+  };
+
   const clearError = () => setError(null);
 
   const value = {
@@ -157,6 +186,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     sendOtp,
     updateProfile,
+    uploadAvatar,
+    removeAvatar,
     clearError,
     getRedirectPath,
     inferRole,

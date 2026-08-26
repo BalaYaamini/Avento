@@ -33,7 +33,7 @@ module.exports = async (req, res, next) => {
     // Check status in Supabase profiles
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('status, first_login')
+      .select('status, first_login, avatar_url')
       .eq('id', user._id)
       .single();
 
@@ -49,6 +49,7 @@ module.exports = async (req, res, next) => {
       employeeId: null,
       rollNumber: null,
       first_login: profileData ? profileData.first_login : false,
+      avatarUrl: profileData ? profileData.avatar_url : null,
     };
 
     // Enforce first_login on backend for all protected routes except profile and change-password

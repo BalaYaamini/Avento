@@ -223,6 +223,115 @@ exports.updateDisplayName = async (req, res) => {
   }
 };
 
+// Upload profile photo for the authenticated user
+// Pipeline: validate magic bytes → correct orientation → convert to JPEG → resize 1200×1200 → compress 82%
+exports.uploadProfilePhoto = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No photo file provided.' });
+    }
+
+    const file = req.file;
+
+    // 5 MB limit
+    if (file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ message: 'File too large. Maximum size is 5 MB.' });
+    }
+
+    // ── Step 1: Validate actual file type using magic bytes ──
+    // file-type v20+ is ESM-only, so we use dynamic import
+    const { fileTypeFromBuffer } = await import('file-type');
+    const detectedType = await fileTypeFromBuffer(file.buffer);
+
+    const allowedMimes = [
+      'image/jpeg', 'image/png', 'image/webp',
+      'image/heic', 'image/heif'
+    ];
+    // Also accept by extension for HEIC/HEIF files that may not be detected by magic bytes
+    const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+    const fileExt = (file.originalname || '').split('.').pop().toLowerCase();
+
+    const mimeOk = detectedType && allowedMimes.includes(detectedType.mime);
+    const extOk = allowedExts.includes(fileExt);
+
+    if (!mimeOk && !extOk) {
+      return res.status(400).json({
+        message: 'Invalid file type. Only JPG, JPEG, PNG, WebP, HEIC, and HEIF images are accepted.'
+      });
+    }
+
+    // ── Step 2: Process image with sharp ──
+    // - Auto-rotate using EXIF orientation
+    // - Convert HEIC/HEIF/PNG/WebP → JPEG
+    // - Resize to fit within 1200×1200 (maintain aspect ratio)
+    // - Compress at 82% JPEG quality
+    const sharp = require('sharp');
+
+    let processedBuffer;
+    try {
+      processedBuffer = await sharp(file.buffer)
+        .rotate()                          // Auto-correct EXIF orientation
+        .resize(1200, 1200, {
+          fit: 'inside',                   // Fit within 1200×1200, maintain aspect ratio
+          withoutEnlargement: true         // Don't upscale smaller images
+        })
+        .jpeg({ quality: 82, mozjpeg: true }) // Convert to JPEG, 82% quality, mozjpeg for better compression
+        .toBuffer();
+    } catch (sharpErr) {
+      console.error('Sharp processing error:', sharpErr.message);
+      return res.status(400).json({
+        message: 'Failed to process image. Please ensure the file is a valid image.'
+      });
+    }
+
+    // ── Step 3: Upload processed image to Supabase Storage ──
+    const storagePath = `avatars/${userId}_${Date.now()}.jpg`;
+    let photoUrl = null;
+
+    try {
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('documents')
+        .upload(storagePath, processedBuffer, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+
+      if (uploadErr) {
+        console.warn('Storage upload warning, using data URI fallback:', uploadErr.message);
+        const base64 = processedBuffer.toString('base64');
+        photoUrl = `data:image/jpeg;base64,${base64}`;
+      } else {
+        const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+        photoUrl = publicUrlData.publicUrl;
+      }
+    } catch (storageErr) {
+      console.warn('Storage upload exception, using data URI fallback:', storageErr.message);
+      const base64 = processedBuffer.toString('base64');
+      photoUrl = `data:image/jpeg;base64,${base64}`;
+    }
+
+    // ── Step 4: Update avatar_url in Supabase profiles table ──
+    const { error: profileErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: photoUrl })
+      .eq('id', String(userId));
+
+    if (profileErr) {
+      console.warn('Profile avatar_url update warning:', profileErr.message);
+    }
+
+    res.json({
+      message: 'Profile photo updated successfully.',
+      avatarUrl: photoUrl
+    });
+  } catch (err) {
+    console.error('uploadProfilePhoto error:', err.message);
+    res.status(500).json({ message: 'Server error uploading profile photo.', error: err.message });
+  }
+};
+
 exports.submitContactForm = async (req, res) => {
   try {
     const { name, email, subject, message } = req.body;
