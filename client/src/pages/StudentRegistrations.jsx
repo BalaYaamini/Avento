@@ -354,12 +354,6 @@ const StudentRegistrations = () => {
   const handleConfirmTeamSubmit = async () => {
     if (!confirmTeamReg) return;
     
-    // Validate contact number
-    const isValidPhone = /^[6-9]\d{9}$/.test(leaderContactNumber);
-    if (!isValidPhone) {
-      setContactNumberError('Please enter a valid 10-digit Indian mobile number.');
-      return;
-    }
     if (confirmTeamReg.eventId?.payment_enabled && !isValidUtr(teamUtr)) {
       setContactNumberError('Enter a valid 12-22 character UTR before confirming payment.');
       return;
@@ -370,13 +364,16 @@ const StudentRegistrations = () => {
     setFeedback(null);
     try {
       await axios.post(`/api/registrations/team/${teamId}/confirm`, {
-        leaderContactNumber
-        , utrNumber: teamUtr
+        utrNumber: teamUtr
       });
       const isAwaitingVerification = confirmTeamReg.eventId?.payment_enabled;
       setFeedback({ type: 'success', message: isAwaitingVerification ? 'UTR submitted. Awaiting payment verification.' : 'Team registration confirmed successfully!' });
       if (!isAwaitingVerification) {
-        setRegistrations(prev => prev.map(r => r.team_id === teamId ? { ...r, status: 'registered' } : r));
+        setRegistrations(prev => prev.map(r => r.team_id === teamId ? { 
+          ...r, 
+          status: 'registered',
+          teamDetails: { ...(r.teamDetails || {}), teamStatus: 'registered' }
+        } : r));
       }
     } catch (err) {
       setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to confirm team.' });
@@ -622,7 +619,7 @@ const StudentRegistrations = () => {
                             
                             {/* Status Badge */}
                             <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-                              {reg.teamId && reg.teamDetails?.teamStatus === 'pending' ? (
+                              {reg.teamId && (reg.teamDetails?.teamStatus === 'pending' && reg.teamId?.status !== 'registered' && reg.status !== 'registered') ? (
                                 (() => {
                                   const leaderId = reg.teamDetails?.leader_id || reg.teamId?.leader_id || reg.user_id;
                                   const members = reg.teamDetails?.members || [];
@@ -701,7 +698,7 @@ const StudentRegistrations = () => {
                           <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
                             Event Completed – Pass unavailable.
                           </span>
-                        ) : (!reg.teamId || reg.teamDetails?.teamStatus === 'registered') ? (
+                        ) : (!reg.teamId || reg.teamDetails?.teamStatus === 'registered' || reg.teamId?.status === 'registered' || reg.status === 'registered') ? (
                           <button
                             onClick={() => setQrModalData(reg)}
                             className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/20 transition-all duration-300"
@@ -710,12 +707,14 @@ const StudentRegistrations = () => {
                           </button>
                         ) : null}
                         {(() => {
-                          const isConfirmedReg = reg.status === 'registered' && (!reg.teamDetails || reg.teamDetails.teamStatus === 'registered');
+                          const isConfirmedReg = reg.status === 'registered' || reg.teamId?.status === 'registered' || reg.teamDetails?.teamStatus === 'registered';
                           const currentCount = evt.confirmed_teams_count || evt.registered_count || 0;
-                          const isSlotsFull = (evt.registration_type === 'team' && evt.max_teams && currentCount >= evt.max_teams) ||
-                                              (evt.capacity && currentCount >= evt.capacity);
+                          const isTeamEvt = evt.registration_type === 'team';
+                          const isSlotsFull = isTeamEvt
+                            ? (evt.max_teams ? currentCount >= evt.max_teams : false)
+                            : (evt.capacity ? currentCount >= evt.capacity : false);
 
-                          if (!isConfirmedReg && isSlotsFull) {
+                          if (!isConfirmedReg && !reg.teamId && isSlotsFull) {
                             return (
                               <span className="px-5 py-2 text-xs font-bold rounded-xl bg-amber-500/10 text-amber-600 border border-amber-500/20 flex items-center text-center">
                                 SLOTS FULL — No more team slots are available.
@@ -1673,37 +1672,7 @@ const StudentRegistrations = () => {
                   </ul>
                 </div>
               </div>
-              
-              <div className="mt-6 mb-2">
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  Team Leader's Primary Contact Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 9876543210"
-                  value={leaderContactNumber}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '');
-                    setLeaderContactNumber(val);
-                    setContactNumberError('');
-                  }}
-                  className={`w-full px-4 py-2.5 rounded-xl border bg-white focus:outline-none focus:ring-2 transition-all ${
-                    contactNumberError 
-                      ? 'border-red-300 focus:border-red-400 focus:ring-red-100/50' 
-                      : 'border-slate-200 focus:border-fuchsia-500/50 focus:ring-fuchsia-500/20'
-                  }`}
-                  maxLength={10}
-                />
-                {contactNumberError && (
-                  <p className="mt-1.5 text-xs font-bold text-red-500 flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-red-500"></span>
-                    {contactNumberError}
-                  </p>
-                )}
-                <p className="mt-2 text-[10px] font-medium text-slate-500 leading-relaxed">
-                  This number will be used as the primary contact for the team regarding this event.
-                </p>
-              </div>
+
               <PaymentSection event={confirmTeamReg.eventId} utr={teamUtr} onUtrChange={setTeamUtr} rejectionReason={confirmTeamReg.payment_rejection_reason} />
               
               <div className="flex gap-3 justify-end pt-4 mt-2 border-t border-slate-200/20">
@@ -2069,7 +2038,7 @@ const StudentRegistrations = () => {
                 <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
               </div>
               <div className="bg-[#FFFFFF] dark:bg-[#FFFFFF] !bg-[#FFFFFF] p-4 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center">
-                <QRCodeSVG value={qrModalData.id} size={200} />
+                <QRCodeSVG value={String(qrModalData.id || '')} size={200} level="H" includeMargin={false} />
               </div>
               <div className="text-center">
                 <p className="text-xs text-slate-600 font-medium">Show this QR code at the venue for attendance verification.</p>

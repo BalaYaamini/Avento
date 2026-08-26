@@ -18,8 +18,10 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
     return new Date(dateString).toLocaleDateString('en-US', options);
   };
 
-  const isFull = (event.capacity && (event.registeredCount || 0) >= event.capacity) ||
-    (event.registration_type === 'team' && event.max_teams && (event.registeredCount || 0) >= event.max_teams);
+  const isTeam = event.registration_type === 'team';
+  const isFull = isTeam 
+    ? (event.max_teams ? (event.registeredCount || 0) >= event.max_teams : false)
+    : (event.capacity ? (event.registeredCount || 0) >= event.capacity : false);
   const isActive = event.status === 'published' || event.status === 'active';
 
   // Category styling map — vibrant pastel colors

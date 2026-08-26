@@ -178,7 +178,7 @@ export const AuthProvider = ({ children }) => {
 
   const updateProfile = async (profileData) => {
     try {
-      const res = await axios.put('/api/users/profile/name', { name: newName });
+      const res = await axios.put('/api/users/profile/details', profileData);
       // Immediately update the local user state so changes propagate app-wide
       if (res.data?.user) {
         setUser(prev => ({ ...prev, ...res.data.user }));

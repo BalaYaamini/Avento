@@ -200,28 +200,17 @@ exports.updateProfileDetails = async (req, res) => {
     if (rollNumber !== undefined) profileUpdate.roll_number = finalRollNumber;
     if (department !== undefined) profileUpdate.department = department ? department.trim() : null;
 
-    // 1. Update MongoDB
-    const mongoUser = await User.findById(userId);
-    if (mongoUser) {
-      mongoUser.name = trimmedName;
-      if (phone !== undefined) mongoUser.phone = cleanPhone;
-      if (gender !== undefined) mongoUser.gender = gender || null;
-      if (degreeProgram !== undefined) mongoUser.degreeProgram = degreeProgram ? degreeProgram.trim() : null;
-      if (yearOfStudy !== undefined) mongoUser.yearOfStudy = yearOfStudy || null;
-      if (collegeName !== undefined) mongoUser.collegeName = trimmedCollege;
-      if (rollNumber !== undefined) mongoUser.rollNumber = finalRollNumber;
-      if (department !== undefined) mongoUser.department = department ? department.trim() : null;
-      await mongoUser.save();
-    }
-
-    // 2. Update Supabase profiles table
+    // 1. Update Supabase profiles table (by ID, fallback to Email)
     const { error: profileErr } = await supabase
       .from('profiles')
       .update(profileUpdate)
       .eq('id', String(userId));
 
-    if (profileErr) {
-      console.warn('Profile update warning:', profileErr.message);
+    if (profileErr && req.user?.email) {
+      await supabase
+        .from('profiles')
+        .update(profileUpdate)
+        .eq('email', String(req.user.email).toLowerCase());
     }
 
     // 3. Update Supabase Auth user_metadata
@@ -347,20 +336,17 @@ exports.uploadProfilePhoto = async (req, res) => {
       photoUrl = `data:image/jpeg;base64,${base64}`;
     }
 
-    // ── Step 4: Update avatar_url in MongoDB and Supabase profiles table ──
-    const mongoUser = await User.findById(userId);
-    if (mongoUser) {
-      mongoUser.avatarUrl = photoUrl;
-      await mongoUser.save();
-    }
-
+    // ── Step 4: Update avatar_url in Supabase profiles table ──
     const { error: profileErr } = await supabase
       .from('profiles')
       .update({ avatar_url: photoUrl })
       .eq('id', String(userId));
 
-    if (profileErr) {
-      console.warn('Profile avatar_url update warning:', profileErr.message);
+    if (profileErr && req.user?.email) {
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: photoUrl })
+        .eq('email', String(req.user.email).toLowerCase());
     }
 
     res.json({
@@ -511,10 +497,7 @@ exports.importUsers = async (req, res) => {
         let derivedRollNumber = user.rollNumber || null;
 
         if (role === 'student' || role === 'student_organizer') {
-          if (!derivedRollNumber && emailLower.includes('@')) {
-            derivedRollNumber = emailLower.split('@')[0].trim();
-          }
-
+          // Do not auto-fill roll number from email
           if (!derivedDepartment) {
             if (emailLower.endsWith('@cse.suh.edu.in')) derivedDepartment = 'CSE';
             else if (emailLower.endsWith('@aiml.suh.edu.in')) derivedDepartment = 'AIML';

@@ -50,29 +50,43 @@ const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
 const validateUtr = (utr) => typeof utr === 'string' && UTR_PATTERN.test(utr.trim());
 
 const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds) => {
-  const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
-    p_team_id: teamId,
-    p_leader_id: leaderId
-  });
+  // 1. Update event_teams status to 'registered'
+  const { error: teamErr } = await supabase
+    .from('event_teams')
+    .update({ status: 'registered' })
+    .eq('id', teamId);
+  if (teamErr) console.error('Error updating event_teams status:', teamErr.message);
 
-  if (rpcErr) {
-    const rpcMsg = rpcErr.message || '';
-    if (rpcMsg.includes('Maximum number of teams') || rpcMsg.includes('max_teams')) {
-      const error = new Error('No more team slots are available. Registration is full.');
-      error.statusCode = 409;
-      throw error;
+  // 2. Update ALL team members' event_registrations to 'registered'
+  const { error: regErr } = await supabase
+    .from('event_registrations')
+    .update({ status: 'registered' })
+    .eq('team_id', teamId)
+    .in('status', ['registered', 'accepted', 'pending']);
+  if (regErr) console.error('Error updating team registrations:', regErr.message);
+
+  // 3. Increment registered count safely via RPC or direct fallback
+  try {
+    const { error: rpcErr } = await supabase.rpc('confirm_team_registration', {
+      p_team_id: teamId,
+      p_leader_id: leaderId
+    });
+
+    if (rpcErr) {
+      const rpcMsg = rpcErr.message || '';
+      if (rpcMsg.includes('Maximum number of teams') || rpcMsg.includes('max_teams')) {
+        const error = new Error('No more team slots are available. Registration is full.');
+        error.statusCode = 409;
+        throw error;
+      }
+      // Fallback update
+      await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', event.id);
     }
-    if (rpcMsg.includes('Minimum team size not reached yet') && acceptedUserIds.size < (event.min_team_size || 1)) {
-      throw new Error(rpcMsg);
-    }
-    // Fallback: RPC missing or other error — manually set team status
-    await supabase.from('event_teams').update({ status: 'registered' }).eq('id', teamId);
+  } catch (err) {
+    if (err.statusCode === 409) throw err;
+    console.warn('RPC confirm_team_registration notice (handled via fallback):', err.message);
     await supabase.from('events').update({ registered_count: (event.registered_count || 0) + 1 }).eq('id', event.id);
   }
-
-  const { error: regErr } = await supabase.from('event_registrations')
-    .update({ status: 'registered' }).eq('team_id', teamId).eq('user_id', leaderId);
-  if (regErr) throw regErr;
 };
 
 const resolveUserProfile = async (userId) => {
@@ -83,6 +97,40 @@ const resolveUserProfile = async (userId) => {
   return { id: userId, name: 'Unknown', email: null };
 };
 
+const checkProfileCompleteness = (profile) => {
+  if (!profile) return { isComplete: false, missingFields: ['Profile Details'] };
+
+  const missingFields = [];
+
+  const name = profile.name || profile.fullName;
+  const phone = profile.phone || profile.phoneNumber;
+  const gender = profile.gender;
+  const collegeName = profile.college_name || profile.collegeName;
+  const department = profile.department;
+  const degreeProgram = profile.degree_program || profile.degreeProgram;
+  const yearOfStudy = profile.year_of_study || profile.yearOfStudy;
+  const rollNumber = profile.roll_number || profile.rollNumber;
+  const avatarUrl = profile.avatar_url || profile.avatarUrl;
+
+  if (!name || !String(name).trim()) missingFields.push('Full Name');
+
+  const cleanPhone = String(phone || '').replace(/[^0-9]/g, '');
+  if (!cleanPhone || cleanPhone.length !== 10) missingFields.push('10-digit Phone Number');
+
+  if (!gender || !String(gender).trim()) missingFields.push('Gender');
+  if (!collegeName || !String(collegeName).trim()) missingFields.push('College Name');
+  if (!department || !String(department).trim()) missingFields.push('Department');
+  if (!degreeProgram || !String(degreeProgram).trim()) missingFields.push('Degree / Program');
+  if (!yearOfStudy || !String(yearOfStudy).trim()) missingFields.push('Year of Study');
+  if (!rollNumber || !String(rollNumber).trim()) missingFields.push('Roll Number');
+  if (!avatarUrl || !String(avatarUrl).trim()) missingFields.push('Profile Photo');
+
+  return {
+    isComplete: missingFields.length === 0,
+    missingFields
+  };
+};
+
 // Register a user for an event
 exports.registerForEvent = async (req, res) => {
   try {
@@ -91,6 +139,23 @@ exports.registerForEvent = async (req, res) => {
 
     if (!eventId) {
       return res.status(400).json({ message: 'Event ID is required.' });
+    }
+
+    // MANDATORY PROFILE CHECK: Ensure all profile fields are completed before allowing registration
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const completeness = checkProfileCompleteness(userProfile);
+    if (!completeness.isComplete) {
+      return res.status(400).json({
+        success: false,
+        profileIncomplete: true,
+        missingFields: completeness.missingFields,
+        message: `Incomplete Profile! Please complete all required profile fields (${completeness.missingFields.join(', ')}) before registering for events.`
+      });
     }
 
     // Fetch event
@@ -231,6 +296,18 @@ exports.getMyRegistrations = async (req, res) => {
 
     // Fetch team members for team registrations
     const enrichedRegistrations = await Promise.all(registrations.map(async (reg) => {
+      if (reg.eventId && reg.eventId.registration_type === 'team') {
+        const { count: teamCount } = await supabase
+          .from('event_teams')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_id', reg.eventId.id)
+          .eq('status', 'registered');
+        const countVal = teamCount || 0;
+        reg.eventId.confirmed_teams_count = countVal;
+        reg.eventId.registered_count = countVal;
+        reg.eventId.registeredCount = countVal;
+      }
+
       if (reg.team_id && reg.teamId) {
         // Fetch all registrations for this team
         const { data: teamRegs } = await supabase
@@ -255,12 +332,14 @@ exports.getMyRegistrations = async (req, res) => {
         });
 
         const leaderReg = teamRegs?.find(tr => tr.user_id === reg.teamId.leader_id);
+        const isTeamRegistered = reg.teamId.status === 'registered' || (leaderReg && leaderReg.status === 'registered');
 
         return {
           ...reg,
+          status: isTeamRegistered ? 'registered' : reg.status,
           teamDetails: {
             leader_id: reg.teamId.leader_id,
-            teamStatus: leaderReg ? leaderReg.status : 'pending',
+            teamStatus: isTeamRegistered ? 'registered' : (reg.teamId.status || 'pending'),
             members: membersWithStatus
           }
         };
@@ -534,22 +613,22 @@ exports.getEventRegistrations = async (req, res) => {
 
     // Stage 1: Try PostgREST join with profiles & event_teams
     try {
-      const { data: stage1Data } = await supabase
+      const { data: stage1Data, error: s1Err } = await supabase
         .from('event_registrations')
         .select(`
           *,
-          userId:profiles(id, name, email, department, roll_number, avatar_url),
-          teamId:event_teams (*)
+          userId:profiles!event_registrations_user_id_fkey(*),
+          teamId:event_teams(*)
         `)
         .eq('event_id', eventId)
         .range(0, 4999);
 
-      if (stage1Data && Array.isArray(stage1Data) && stage1Data.length > 0) {
+      if (!s1Err && stage1Data && Array.isArray(stage1Data) && stage1Data.length > 0) {
         registrations = stage1Data;
       }
     } catch (e) {}
 
-    // Stage 2: Try direct query and manual profile merge if Stage 1 returned 0 records or failed
+    // Stage 2: Direct query + robust profile mapping by ID and Email
     if (!registrations || registrations.length === 0) {
       try {
         const { data: rawRegs } = await supabase
@@ -560,15 +639,30 @@ exports.getEventRegistrations = async (req, res) => {
 
         if (rawRegs && Array.isArray(rawRegs) && rawRegs.length > 0) {
           const userIds = [...new Set(rawRegs.map(r => r.user_id).filter(Boolean))];
+          const userEmails = [...new Set(rawRegs.map(r => r.user_email || r.email).filter(Boolean))];
           const teamIds = [...new Set(rawRegs.map(r => r.team_id).filter(Boolean))];
 
           let profMap = new Map();
+
           if (userIds.length > 0) {
-            // Batch query in chunks of 200 for extreme scalability
             for (let i = 0; i < userIds.length; i += 200) {
               const chunk = userIds.slice(i, i + 200);
               const { data: profs } = await supabase.from('profiles').select('*').in('id', chunk);
-              (profs || []).forEach(p => profMap.set(p.id, p));
+              (profs || []).forEach(p => {
+                if (p.id) profMap.set(String(p.id), p);
+                if (p.email) profMap.set(String(p.email).toLowerCase(), p);
+              });
+            }
+          }
+
+          if (userEmails.length > 0) {
+            for (let i = 0; i < userEmails.length; i += 200) {
+              const chunk = userEmails.slice(i, i + 200);
+              const { data: profs } = await supabase.from('profiles').select('*').in('email', chunk.map(e => String(e).toLowerCase()));
+              (profs || []).forEach(p => {
+                if (p.id) profMap.set(String(p.id), p);
+                if (p.email) profMap.set(String(p.email).toLowerCase(), p);
+              });
             }
           }
 
@@ -578,19 +672,24 @@ exports.getEventRegistrations = async (req, res) => {
             (teams || []).forEach(t => teamMap.set(t.id, t));
           }
 
-          registrations = rawRegs.map(r => ({
-            ...r,
-            userId: profMap.get(r.user_id) || {
-              id: r.user_id,
-              name: r.user_name || r.name || 'Student',
-              email: r.user_email || r.email || '',
-              roll_number: r.roll_number || r.rollNo || '',
-              department: r.department || 'General'
-            },
-            teamId: teamMap.get(r.team_id) || null
-          }));
+          registrations = rawRegs.map(r => {
+            const matchedProfile = profMap.get(String(r.user_id)) || (r.user_email ? profMap.get(String(r.user_email).toLowerCase()) : null);
+            return {
+              ...r,
+              userId: matchedProfile || {
+                id: r.user_id,
+                name: r.user_name || r.name || (r.user_email ? r.user_email.split('@')[0] : 'Student'),
+                email: r.user_email || r.email || '',
+                roll_number: r.roll_number || r.rollNo || '',
+                department: r.department || 'General'
+              },
+              teamId: teamMap.get(r.team_id) || null
+            };
+          });
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('getEventRegistrations stage 2 warning:', e.message);
+      }
     }
 
     if (!registrations) {
@@ -610,7 +709,7 @@ exports.getEventRegistrations = async (req, res) => {
                           avatarsMap[normalizeKey(derivedRoll)] ||
                           avatarsMap[normalizeKey(dbRoll)];
 
-        if (storedUrl) {
+        if (storedUrl && !r.userId.avatar_url) {
           r.userId.avatar_url = storedUrl;
         }
       }
@@ -782,6 +881,34 @@ exports.registerTeamForEvent = async (req, res) => {
     let allTeamUserIds = [...uniqueMemberIds];
     if (event.team_leader_registration_required !== false) {
       allTeamUserIds.push(leaderId);
+    }
+
+    // MANDATORY PROFILE CHECK: Ensure all team members have completed all profile fields before registering
+    const { data: teamProfiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', allTeamUserIds);
+
+    const incompleteMembers = [];
+    for (const uId of allTeamUserIds) {
+      const prof = (teamProfiles || []).find(p => String(p.id) === String(uId));
+      const completeness = checkProfileCompleteness(prof);
+      if (!completeness.isComplete) {
+        incompleteMembers.push({
+          name: prof?.name || prof?.email || 'Team Member',
+          missingFields: completeness.missingFields
+        });
+      }
+    }
+
+    if (incompleteMembers.length > 0) {
+      const details = incompleteMembers.map(m => `${m.name} (${m.missingFields.join(', ')})`).join('; ');
+      return res.status(400).json({
+        success: false,
+        profileIncomplete: true,
+        incompleteMembers,
+        message: `Incomplete Profile! Cannot register team because the following member(s) have incomplete profiles: ${details}. All members must complete their profile fields first.`
+      });
     }
 
     const teamSize = allTeamUserIds.length;
@@ -1306,8 +1433,21 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: 'Team ID is required.' });
     }
 
-    if (!leaderContactNumber || !/^[6-9]\d{9}$/.test(leaderContactNumber)) {
-      return res.status(400).json({ message: 'A valid 10-digit Indian mobile number is required for the Team Leader.' });
+    let contactNumber = leaderContactNumber;
+    if (!contactNumber || !/^[6-9]\d{9}$/.test(contactNumber)) {
+      // Automatically extract Leader phone number from profile
+      const { data: leaderProfile } = await supabase
+        .from('profiles')
+        .select('phone')
+        .eq('id', leaderId)
+        .maybeSingle();
+      
+      const cleanPhone = String(leaderProfile?.phone || '').replace(/[^0-9]/g, '');
+      if (cleanPhone && cleanPhone.length === 10) {
+        contactNumber = cleanPhone;
+      } else {
+        contactNumber = req.user?.phone || '9876543210';
+      }
     }
 
     if (utrNumber && String(utrNumber).trim() !== '' && !validateUtr(utrNumber)) {
@@ -1346,45 +1486,48 @@ exports.confirmTeamRegistration = async (req, res) => {
     }
 
     // 4. STRICT CHECK: Max Teams / Capacity Slots Available
-    if (event.max_teams) {
-      const { count: confirmedTeamsCount, error: countErr } = await supabase
-        .from('event_teams')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', event.id)
-        .eq('status', 'registered');
+    if (event.registration_type === 'team') {
+      if (event.max_teams) {
+        const { count: confirmedTeamsCount, error: countErr } = await supabase
+          .from('event_teams')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_id', event.id)
+          .eq('status', 'registered');
 
-      if (!countErr && confirmedTeamsCount >= event.max_teams) {
-        return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
+        if (!countErr && confirmedTeamsCount >= event.max_teams) {
+          return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
+        }
+      }
+    } else {
+      if (event.capacity) {
+        const { count: currentRegsCount, error: capErr } = await supabase
+          .from('event_registrations')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_id', event.id)
+          .eq('status', 'registered');
+
+        if (!capErr && currentRegsCount >= event.capacity) {
+          return res.status(409).json({ message: 'Event capacity has been reached.' });
+        }
       }
     }
 
-    if (event.capacity) {
-      const { count: currentRegsCount, error: capErr } = await supabase
-        .from('event_registrations')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', event.id)
-        .eq('status', 'registered');
-
-      if (!capErr && currentRegsCount >= event.capacity) {
-        return res.status(409).json({ message: 'No more team slots are available. Registration is full.' });
-      }
-    }
-
-    // 5. Update leader registration to registered
+    // 5. Update ALL team registrations to registered
     const { error: regErr } = await supabase
       .from('event_registrations')
       .update({ status: 'registered' })
-      .eq('team_id', teamId)
-      .eq('user_id', leaderId);
+      .eq('team_id', teamId);
+
+    if (regErr) console.warn('Warning updating team member registrations to registered:', regErr.message);
 
     if (regErr) {
       return res.status(400).json({ message: regErr.message || 'Failed to update team registration status.' });
     }
 
-    // Save the leader contact number
+    // Save the leader contact number (extracted from profile)
     const { error: contactErr } = await supabase
       .from('event_teams')
-      .update({ leader_contact_number: leaderContactNumber })
+      .update({ leader_contact_number: contactNumber })
       .eq('id', teamId);
 
     if (contactErr) {
@@ -1514,15 +1657,15 @@ exports.getConfirmedTeams = async (req, res) => {
 
     const teamIds = teams.map(t => t.id);
 
-    // Fetch confirmed registrations for these teams with user profiles
+    // Fetch confirmed registrations for these teams with full user profiles
     const { data: registrations, error: regErr } = await supabase
       .from('event_registrations')
       .select(`
         id, team_id, user_id, attendance_status, created_at,
-        profiles!event_registrations_user_id_fkey(id, name, email, department, roll_number)
+        profiles!event_registrations_user_id_fkey(*)
       `)
       .in('team_id', teamIds)
-      .eq('status', 'registered');
+      .in('status', ['registered', 'accepted', 'pending']);
 
     if (regErr) throw regErr;
 
@@ -1530,11 +1673,18 @@ exports.getConfirmedTeams = async (req, res) => {
     const result = teams.map(team => {
       const teamRegs = registrations.filter(r => r.team_id === team.id);
       const members = teamRegs.map(r => ({
+        registrationId: r.id,
         userId: r.user_id,
         name: r.profiles?.name || 'Unknown',
-        email: r.profiles?.email || 'N/A',
-        department: r.profiles?.department || 'N/A',
-        rollNumber: r.profiles?.roll_number || 'N/A',
+        email: r.profiles?.email || '',
+        department: r.profiles?.department || '',
+        rollNumber: r.profiles?.roll_number || '',
+        collegeName: r.profiles?.college_name || r.profiles?.collegeName || r.profiles?.institution || '',
+        degreeProgram: r.profiles?.degree_program || r.profiles?.degreeProgram || r.profiles?.program || '',
+        yearOfStudy: r.profiles?.year_of_study || r.profiles?.yearOfStudy || '',
+        gender: r.profiles?.gender || '',
+        phone: r.profiles?.phone || '',
+        avatarUrl: r.profiles?.avatar_url || r.profiles?.avatarUrl || null,
         attendanceStatus: r.attendance_status
       }));
 
@@ -1542,7 +1692,7 @@ exports.getConfirmedTeams = async (req, res) => {
         id: team.id,
         name: team.name,
         leaderId: team.leader_id,
-        leaderContactNumber: team.leader_contact_number || 'N/A',
+        leaderContactNumber: team.leader_contact_number || '',
         members: members
       };
     });

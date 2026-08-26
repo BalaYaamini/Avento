@@ -103,8 +103,7 @@ exports.register = async (req, res) => {
       const matches = emailLower.match(/^faculty(\d+)/i);
       employeeId = matches ? `EMP00${matches[1]}` : `EMP_${Math.floor(100 + Math.random() * 900)}`;
     } else if (role === 'student') {
-      const matches = emailLower.match(/^(\d+)/);
-      rollNumber = matches ? matches[1] : `2203A${Math.floor(100000 + Math.random() * 900000)}`;
+      rollNumber = null;
     }
 
     await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
@@ -154,15 +153,15 @@ exports.login = async (req, res) => {
 
     const supaUser = authData.user;
 
-    // Check status in Supabase profiles
+    // Query full profile from Supabase profiles table (single source of truth)
     const { data: profileData, error: profileErr } = await supabase
       .from('profiles')
-      .select('status, first_login')
+      .select('*')
       .eq('email', emailLower)
-      .single();
+      .maybeSingle();
 
     if (profileErr) {
-      console.warn('[AUTH] Profile lookup error:', profileErr.message);
+      console.warn('[AUTH] Profile lookup warning:', profileErr.message);
     }
 
     if (profileData && profileData.status === 'inactive') {
@@ -201,9 +200,16 @@ exports.login = async (req, res) => {
         email: supaUser.email,
         fullName: fullName,
         roles: roles,
-        employeeId: null, // Update when employee ID is supported in MongoDB
-        rollNumber: null, // Update when roll number is supported in MongoDB
-        first_login: profileData ? profileData.first_login : false
+        employeeId: profileData?.employee_id || null,
+        rollNumber: profileData?.roll_number || null,
+        department: profileData?.department || null,
+        first_login: profileData ? profileData.first_login : false,
+        avatarUrl: profileData?.avatar_url || null,
+        phone: profileData?.phone || null,
+        gender: profileData?.gender || null,
+        degreeProgram: profileData?.degree_program || null,
+        yearOfStudy: profileData?.year_of_study || null,
+        collegeName: profileData?.college_name || null,
       }
     });
   } catch (err) {

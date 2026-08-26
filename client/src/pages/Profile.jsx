@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Cropper from 'react-easy-crop';
 
 // Helper function to create HTML Image element asynchronously
@@ -81,7 +81,11 @@ const Profile = () => {
       setDegreeProgram(user.degreeProgram || '');
       setYearOfStudy(user.yearOfStudy || '');
       setCollegeName(user.collegeName || '');
-      setRollNumber(user.rollNumber || '');
+      let initialRoll = user.rollNumber || '';
+      if (initialRoll.startsWith('2203A') || (user.email && initialRoll === user.email.split('@')[0])) {
+        initialRoll = '';
+      }
+      setRollNumber(initialRoll);
       setDepartment(user.department || '');
       setPhotoPreview(user.avatarUrl || null);
     }
@@ -175,7 +179,7 @@ const Profile = () => {
     setSubmitting(false);
 
     if (result.success) {
-      setFeedback({ type: 'success', message: 'Profile updated successfully!' });
+      handlePendingEventRedirect('Profile updated successfully!');
     } else {
       setFeedback({ type: 'error', message: result.message || 'Failed to update profile.' });
     }
@@ -229,6 +233,23 @@ const Profile = () => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
+  const handlePendingEventRedirect = (successMsg) => {
+    const pendingEventId = sessionStorage.getItem('pendingEventId');
+    if (pendingEventId) {
+      sessionStorage.removeItem('pendingEventId');
+      setFeedback({ type: 'success', message: `${successMsg} Redirecting back to event registration...` });
+      setTimeout(() => {
+        if (typeof navigate === 'function') {
+          navigate(`/?autoRegisterEventId=${pendingEventId}`);
+        } else {
+          window.location.href = `/?autoRegisterEventId=${pendingEventId}`;
+        }
+      }, 1200);
+    } else {
+      setFeedback({ type: 'success', message: successMsg });
+    }
+  };
+
   const handleSaveCroppedImage = async () => {
     try {
       if (!imageToCrop || !croppedAreaPixels) return;
@@ -249,7 +270,7 @@ const Profile = () => {
 
       if (result.success) {
         setPhotoPreview(result.avatarUrl);
-        setFeedback({ type: 'success', message: 'Profile photo cropped and saved successfully!' });
+        handlePendingEventRedirect('Profile photo saved successfully!');
       } else {
         setPhotoPreview(user?.avatarUrl || null);
         setFeedback({ type: 'error', message: result.message || 'Failed to upload photo.' });
