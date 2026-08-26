@@ -30,12 +30,21 @@ module.exports = async (req, res, next) => {
       roles = ['admin'];
     }
 
-    // Check status in Supabase profiles
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('status, first_login, avatar_url')
-      .eq('id', user._id)
-      .single();
+    // Check status in Supabase profiles (safely catch missing column / PostgREST errors)
+    let profileData = null;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user._id)
+        .maybeSingle();
+
+      if (!error && data) {
+        profileData = data;
+      }
+    } catch (supErr) {
+      console.warn('Supabase profile fetch warning:', supErr.message);
+    }
 
     if (profileData && profileData.status === 'inactive') {
       return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
@@ -46,10 +55,16 @@ module.exports = async (req, res, next) => {
       email: user.email,
       fullName: user.name,
       roles: roles,
-      employeeId: null,
-      rollNumber: null,
-      first_login: profileData ? profileData.first_login : false,
-      avatarUrl: profileData ? profileData.avatar_url : null,
+      employeeId: user.employeeId || null,
+      rollNumber: (profileData && profileData.roll_number) ? profileData.roll_number : (user.rollNumber || null),
+      department: (profileData && profileData.department) ? profileData.department : (user.department || null),
+      first_login: profileData ? (profileData.first_login !== false) : false,
+      avatarUrl: (profileData && profileData.avatar_url) ? profileData.avatar_url : (user.avatarUrl || null),
+      phone: (profileData && profileData.phone) ? profileData.phone : (user.phone || null),
+      gender: (profileData && profileData.gender) ? profileData.gender : (user.gender || null),
+      degreeProgram: (profileData && profileData.degree_program) ? profileData.degree_program : (user.degreeProgram || null),
+      yearOfStudy: (profileData && profileData.year_of_study) ? profileData.year_of_study : (user.yearOfStudy || null),
+      collegeName: (profileData && profileData.college_name) ? profileData.college_name : (user.collegeName || null),
     };
 
     // Enforce first_login on backend for all protected routes except profile and change-password

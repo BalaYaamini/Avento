@@ -186,12 +186,21 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Please verify OTP before login' });
     }
 
-    // Check status in Supabase profiles
-    const { data: profileData, error: profileErr } = await supabase
-      .from('profiles')
-      .select('status, first_login')
-      .eq('email', emailLower)
-      .single();
+    // Check status & profile details in Supabase profiles (safely catch missing column / PostgREST errors)
+    let profileData = null;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', emailLower)
+        .maybeSingle();
+
+      if (!error && data) {
+        profileData = data;
+      }
+    } catch (supErr) {
+      console.warn('Supabase login profile fetch warning:', supErr.message);
+    }
 
     if (profileData && profileData.status === 'inactive') {
       return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
@@ -234,9 +243,16 @@ exports.login = async (req, res) => {
         email: user.email,
         fullName: user.name,
         roles: roles,
-        employeeId: null, // Update when employee ID is supported in MongoDB
-        rollNumber: null, // Update when roll number is supported in MongoDB
-        first_login: profileData ? profileData.first_login : false
+        employeeId: user.employeeId || null,
+        rollNumber: (profileData && profileData.roll_number) ? profileData.roll_number : (user.rollNumber || null),
+        department: (profileData && profileData.department) ? profileData.department : (user.department || null),
+        first_login: profileData ? (profileData.first_login !== false) : false,
+        avatarUrl: (profileData && profileData.avatar_url) ? profileData.avatar_url : (user.avatarUrl || null),
+        phone: (profileData && profileData.phone) ? profileData.phone : (user.phone || null),
+        gender: (profileData && profileData.gender) ? profileData.gender : (user.gender || null),
+        degreeProgram: (profileData && profileData.degree_program) ? profileData.degree_program : (user.degreeProgram || null),
+        yearOfStudy: (profileData && profileData.year_of_study) ? profileData.year_of_study : (user.yearOfStudy || null),
+        collegeName: (profileData && profileData.college_name) ? profileData.college_name : (user.collegeName || null),
       }
     });
   } catch (err) {

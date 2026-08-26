@@ -169,29 +169,97 @@ exports.getStudents = async (req, res) => {
   }
 };
 
-// Update only the display name for the authenticated user
-exports.updateDisplayName = async (req, res) => {
+// Update profile details for the authenticated user
+exports.updateProfileDetails = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name } = req.body;
+    const { name, phone, gender, degreeProgram, yearOfStudy, collegeName, rollNumber, department } = req.body;
 
+    // ── 1. Display Name Validation ──
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Name is required and cannot be empty.' });
+      return res.status(400).json({ message: 'Display Name is required.' });
+    }
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2 || trimmedName.length > 80) {
+      return res.status(400).json({ message: 'Display Name must be between 2 and 80 characters long.' });
+    }
+    if (/<[^>]*>|http:\/\/|https:\/\/|www\.|&[a-z0-9]+;/i.test(trimmedName)) {
+      return res.status(400).json({ message: 'Display Name cannot contain links or HTML tags.' });
+    }
+    if (!/^[a-zA-Z\u00C0-\u024F\s\.\'\-]+$/.test(trimmedName)) {
+      return res.status(400).json({ message: 'Display Name can only contain letters, spaces, initials, hyphens (-), and apostrophes (\').' });
     }
 
-    const trimmedName = name.trim();
+    // ── 2. Institution / College Name Validation ──
+    if (!collegeName || !collegeName.trim()) {
+      return res.status(400).json({ message: 'Institution / College Name is required.' });
+    }
+    const trimmedCollege = collegeName.trim();
+    if (trimmedCollege.length < 2 || trimmedCollege.length > 150) {
+      return res.status(400).json({ message: 'Institution name must be between 2 and 150 characters long.' });
+    }
+    if (!/[a-zA-Z\u00C0-\u024F]/.test(trimmedCollege)) {
+      return res.status(400).json({ message: 'Institution name must contain letters and cannot consist only of numbers or special characters.' });
+    }
 
-    // 1. Update MongoDB
+    // ── 3. Roll Number Validation ──
+    const isStudent = req.user?.roles?.includes('student');
+    let finalRollNumber = null;
+    if (rollNumber !== undefined && rollNumber !== null) {
+      const trimmedRoll = rollNumber.trim();
+      if (isStudent && !trimmedRoll) {
+        return res.status(400).json({ message: 'College Roll Number is required for students.' });
+      }
+      if (trimmedRoll) {
+        if (!/^[a-zA-Z0-9\-\/]+$/.test(trimmedRoll)) {
+          return res.status(400).json({ message: 'Roll Number can only contain letters, numbers, hyphens (-), and slashes (/).' });
+        }
+        finalRollNumber = trimmedRoll.toUpperCase();
+      }
+    } else if (isStudent) {
+      return res.status(400).json({ message: 'College Roll Number is required for students.' });
+    }
+
+    // ── 4. Phone Validation (Indian 10-digit mobile) ──
+    let cleanPhone = null;
+    if (phone !== undefined && phone !== null && phone !== '') {
+      const cleaned = phone.replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
+      if (!/^[6-9]\d{9}$/.test(cleaned)) {
+        return res.status(400).json({ message: 'Please enter a valid 10-digit Indian mobile number.' });
+      }
+      cleanPhone = cleaned;
+    }
+
+    // Build Supabase profile update object
+    const profileUpdate = {
+      name: trimmedName,
+      college_name: trimmedCollege,
+    };
+    if (phone !== undefined) profileUpdate.phone = cleanPhone;
+    if (gender !== undefined) profileUpdate.gender = gender || null;
+    if (degreeProgram !== undefined) profileUpdate.degree_program = degreeProgram ? degreeProgram.trim() : null;
+    if (yearOfStudy !== undefined) profileUpdate.year_of_study = yearOfStudy || null;
+    if (rollNumber !== undefined) profileUpdate.roll_number = finalRollNumber;
+    if (department !== undefined) profileUpdate.department = department ? department.trim() : null;
+
+    // 1. Update MongoDB (stores profile details to guarantee persistence across reloads)
     const mongoUser = await User.findById(userId);
     if (mongoUser) {
       mongoUser.name = trimmedName;
+      if (phone !== undefined) mongoUser.phone = cleanPhone;
+      if (gender !== undefined) mongoUser.gender = gender || null;
+      if (degreeProgram !== undefined) mongoUser.degreeProgram = degreeProgram ? degreeProgram.trim() : null;
+      if (yearOfStudy !== undefined) mongoUser.yearOfStudy = yearOfStudy || null;
+      if (collegeName !== undefined) mongoUser.collegeName = trimmedCollege;
+      if (rollNumber !== undefined) mongoUser.rollNumber = finalRollNumber;
+      if (department !== undefined) mongoUser.department = department ? department.trim() : null;
       await mongoUser.save();
     }
 
-    // 2. Update Supabase profiles table
+    // 2. Update Supabase profiles table (all fields)
     const { error: profileErr } = await supabase
       .from('profiles')
-      .update({ name: trimmedName })
+      .update(profileUpdate)
       .eq('id', String(userId));
 
     if (profileErr) {
@@ -207,19 +275,26 @@ exports.updateDisplayName = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
-    // Return the updated user object (same shape as authMiddleware sets)
+    // Return the updated user object
     res.json({
-      message: 'Display name updated successfully.',
+      message: 'Profile updated successfully.',
       user: {
         id: userId,
         email: req.user.email,
         fullName: trimmedName,
         roles: req.user.roles,
+        phone: profileUpdate.phone !== undefined ? profileUpdate.phone : req.user.phone,
+        gender: profileUpdate.gender !== undefined ? profileUpdate.gender : req.user.gender,
+        degreeProgram: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : req.user.degreeProgram,
+        yearOfStudy: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : req.user.yearOfStudy,
+        collegeName: profileUpdate.college_name !== undefined ? profileUpdate.college_name : req.user.collegeName,
+        rollNumber: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : req.user.rollNumber,
+        department: profileUpdate.department !== undefined ? profileUpdate.department : req.user.department,
       }
     });
   } catch (err) {
-    console.error('updateDisplayName error:', err.message);
-    res.status(500).json({ message: 'Server error updating display name.', error: err.message });
+    console.error('updateProfileDetails error:', err.message);
+    res.status(500).json({ message: 'Server error updating profile.', error: err.message });
   }
 };
 
@@ -312,7 +387,13 @@ exports.uploadProfilePhoto = async (req, res) => {
       photoUrl = `data:image/jpeg;base64,${base64}`;
     }
 
-    // ── Step 4: Update avatar_url in Supabase profiles table ──
+    // ── Step 4: Update avatar_url in MongoDB and Supabase profiles table ──
+    const mongoUser = await User.findById(userId);
+    if (mongoUser) {
+      mongoUser.avatarUrl = photoUrl;
+      await mongoUser.save();
+    }
+
     const { error: profileErr } = await supabase
       .from('profiles')
       .update({ avatar_url: photoUrl })

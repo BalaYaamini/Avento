@@ -29,8 +29,8 @@ router.put('/:id/activate', authMiddleware, adminMiddleware, userController.acti
 router.put('/:id', authMiddleware, adminMiddleware, userController.updateUserDetails);
 router.delete('/:id', authMiddleware, adminMiddleware, userController.deleteUser);
 
-// Authenticated user: update display name only
-router.put('/profile/name', authMiddleware, userController.updateDisplayName);
+// Authenticated user: update profile details (name, phone, gender, degree, year, college, roll number)
+router.put('/profile/details', authMiddleware, userController.updateProfileDetails);
 
 // Authenticated user: upload profile photo
 router.put('/profile/photo', authMiddleware, upload.single('photo'), userController.uploadProfilePhoto);
