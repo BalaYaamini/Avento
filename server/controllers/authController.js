@@ -1,27 +1,28 @@
 // server/controllers/authController.js
 // Supabase-only authentication controller (no MongoDB)
 const supabase = require('../config/supabaseClient');
-const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const { validatePasswordStrength } = require('../utils/passwordValidator');
-const { sendPasswordResetEmail } = require('../services/notificationService');
+const { sendPasswordResetEmail, sendEmailNotification } = require('../services/notificationService');
 
-const ALLOWED_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
+const COLLEGE_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
 
 const getRoleFromEmail = (email) => {
   const e = email.toLowerCase();
+  if (e === 'admin.avento@gmail.com') return 'admin';
   if (e.endsWith('@cse.suh.edu.in') || e.endsWith('@aiml.suh.edu.in')) return 'student';
   if (e.endsWith('@suh.edu.in')) return 'faculty';
-  return null;
+  return 'student';
 };
 
-const upsertProfile = async (userId, email, name, role, employeeId = null, rollNumber = null) => {
+const upsertProfile = async (userId, email, name, role, employeeId = null, rollNumber = null, registrationMethod = 'imported') => {
   const profile = {
     id: userId,
     email,
     name,
     role,
     created_at: new Date().toISOString(),
+    registration_method: registrationMethod,
   };
   if (role === 'faculty' && employeeId) profile.employee_id = employeeId;
   if (role === 'student' && rollNumber) profile.roll_number = rollNumber;
@@ -43,21 +44,11 @@ exports.register = async (req, res) => {
 
     const emailLower = email.toLowerCase().trim();
 
-    const isAllowed = ALLOWED_DOMAINS.some((d) => emailLower.endsWith(d));
-    if (!isAllowed) {
-      return res.status(400).json({
-        message: 'Registration allowed only for institutional email addresses (@cse.suh.edu.in, @aiml.suh.edu.in, @suh.edu.in).'
-      });
-    }
-
     if (!validatePasswordStrength(password)) {
       return res.status(400).json({ message: 'Password does not meet strength requirements.' });
     }
 
     const role = getRoleFromEmail(emailLower);
-    if (!role) {
-      return res.status(403).json({ message: 'Registration not allowed for this email domain.' });
-    }
 
     // Verify OTP from Supabase table (with 5-min TTL check)
     const { data: otpRecord, error: otpFetchErr } = await supabase
@@ -116,7 +107,7 @@ exports.register = async (req, res) => {
       rollNumber = matches ? matches[1] : `2203A${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber);
+    await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
 
     // Remove OTP after successful registration
     await supabase.from('otps').delete().eq('email', emailLower);
@@ -224,21 +215,26 @@ exports.login = async (req, res) => {
 // ─── SEND PASSWORD RESET ────────────────────────────────────────────────────
 exports.sendPasswordReset = async (req, res) => {
   try {
-    const email = String(req.body.email || '').toLowerCase().trim();
+    const emailLower = String(req.body.email || '').toLowerCase().trim();
     const redirectTo = String(req.body.redirectTo || '').trim();
 
-    if (!email || !redirectTo) {
+    if (!emailLower || !redirectTo) {
       return res.status(400).json({ message: 'Email and redirect URL are required.' });
     }
 
-    const role = getRoleFromEmail(email) || (email === 'admin.avento@gmail.com' ? 'admin' : null);
-    if (!role) {
-      return res.status(400).json({ message: 'Only registered users can reset passwords.' });
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', emailLower)
+      .maybeSingle();
+
+    if (!profileData) {
+      return res.status(400).json({ message: 'No account found with this email.' });
     }
 
     const { data, error } = await supabase.auth.admin.generateLink({
       type: 'recovery',
-      email,
+      email: emailLower,
       options: { redirectTo },
     });
     if (error || !data?.properties?.action_link) {
@@ -246,11 +242,11 @@ exports.sendPasswordReset = async (req, res) => {
     }
 
     await sendPasswordResetEmail({
-      recipientEmail: email,
+      recipientEmail: emailLower,
       resetUrl: data.properties.action_link,
     });
 
-    return res.json({ message: `Password reset link sent to ${email}. Please check your inbox.` });
+    return res.json({ message: `Password reset link sent to ${emailLower}. Please check your inbox.` });
   } catch (err) {
     console.error('Password reset email error:', err.message);
     return res.status(500).json({ message: 'Failed to send reset link. Please try again.' });
@@ -268,16 +264,13 @@ exports.getProfile = async (req, res) => {
 
 // ─── SEND OTP ───────────────────────────────────────────────────────────────
 exports.sendOtp = async (req, res) => {
-  let emailLower = '';
-  let otp = '';
-
   try {
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ message: 'Email is required.' });
     }
 
-    emailLower = email.toLowerCase().trim();
+    const emailLower = email.toLowerCase().trim();
 
     // Check if user already exists in Supabase profiles
     const { data: existingProfile } = await supabase
@@ -297,16 +290,8 @@ exports.sendOtp = async (req, res) => {
       return res.status(400).json({ message: 'User already exists with this email.' });
     }
 
-    // Domain validation
-    const isAllowed = ALLOWED_DOMAINS.some((d) => emailLower.endsWith(d));
-    if (!isAllowed) {
-      return res.status(400).json({
-        message: 'Only institutional email addresses are allowed (@cse.suh.edu.in, @aiml.suh.edu.in, @suh.edu.in).'
-      });
-    }
-
     console.log(`[OTP] Generating OTP for ${emailLower}...`);
-    otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     console.log(`[OTP] Saving OTP to Supabase...`);
     const { error: otpUpsertErr } = await supabase
@@ -315,119 +300,152 @@ exports.sendOtp = async (req, res) => {
     if (otpUpsertErr) throw otpUpsertErr;
     console.log(`[OTP] OTP saved successfully.`);
 
-    console.log(`[OTP] Initializing email transporter...`);
-
-    console.log(`[OTP] EMAIL_USER configured:`, !!process.env.EMAIL_USER);
-    console.log(`[OTP] EMAIL_PASS configured:`, !!process.env.EMAIL_PASS);
-
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.error(`[OTP] CRITICAL ERROR: SMTP credentials missing in environment variables.`);
-      return res.status(500).json({ message: 'Server configuration error: Email credentials missing.' });
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    console.log(`[OTP] Sending OTP via Nodemailer API to ${emailLower}...`);
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: emailLower,
-      subject: 'Avento Verification Code',
-      html: `
+    const otpHtml = `
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Avento Verification Code</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F8FAFC; -webkit-font-smoothing: antialiased;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #F8FAFC; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.08);">
-          <tr>
-            <td style="height: 8px; background: linear-gradient(135deg, #7C3AED, #8B5CF6);"></td>
-          </tr>
-          <tr>
-            <td style="padding: 40px 20px 10px 20px; text-align: center; background-color: #ffffff;">
-              <img src="https://joekmqnkpfjuptcgzpmh.supabase.co/storage/v1/object/public/public-assets/avento-logo-public.png" alt="Avento Logo" width="60" style="display: block; margin: 0 auto 15px auto; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-              <h1 style="margin: 0; font-size: 32px; letter-spacing: 1px;">
-                <span style="background-color: #F5D76E; color: #1e293b; padding: 2px 10px; border-radius: 4px; display: inline-block;">AVENTO</span>
-              </h1>
-              <p style="margin: 12px 0 0 0; color: #7C3AED; font-size: 20px; font-weight: 600; letter-spacing: 1px;">Verification Code</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 30px 40px;">
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #334155; line-height: 1.6;">Hello,</p>
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #334155; line-height: 1.6;">Welcome to <strong>Avento</strong> — your university's smart campus events platform.</p>
-              <p style="margin: 0 0 35px 0; font-size: 16px; color: #334155; line-height: 1.6;">Thank you for registering with Avento. To complete your registration and secure your account, please verify your email address using the One-Time Password (OTP) below.</p>
-              <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td align="center">
-                    <div style="background-color: #f1f5f9; border-radius: 12px; padding: 24px; display: inline-block; min-width: 200px;">
-                      <div style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #1e293b; text-align: center; margin-left: 8px;">${otp}</div>
-                    </div>
-                    <p style="margin: 15px 0 0 0; font-size: 14px; color: #64748b; text-align: center;">This code is valid for 5 minutes.</p>
-                  </td>
-                </tr>
-              </table>
-              <div style="margin-top: 40px;">
-                <p style="margin: 0 0 20px 0; font-size: 14px; color: #64748b; line-height: 1.6;">
-                  <strong>Security Notice:</strong><br>
-                  If you did not initiate this registration request, you may safely ignore this email.
-                </p>
-                <p style="margin: 0; font-size: 14px; color: #64748b; line-height: 1.6;">
-                  Need assistance?<br>
-                  📧 <a href="mailto:admin.avento@gmail.com" style="color: #7C3AED; text-decoration: none; font-weight: 500;">admin.avento@gmail.com</a>
-                </p>
-              </div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 0 40px 30px 40px;">
-              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 0 0 20px 0;">
-              <p style="margin: 0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
-                This is an automated message from Avento.<br>
-                Please do not reply directly to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#F8FAFC;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
+          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
+            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
+          </h1>
+          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Verification Code</p>
+        </td></tr>
+        <tr><td style="padding:30px 40px;">
+          <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>
+          <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Welcome to <strong>Avento</strong>! Use the code below to verify your email address.</p>
+          <table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td align="center">
+            <div style="background-color:#f1f5f9;border-radius:12px;padding:24px;display:inline-block;min-width:200px;">
+              <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#1e293b;text-align:center;margin-left:8px;">${otp}</div>
+            </div>
+            <p style="margin:15px 0 0 0;font-size:14px;color:#64748b;text-align:center;">This code is valid for 5 minutes.</p>
+          </td></tr></table>
+          <p style="margin:25px 0 0 0;font-size:13px;color:#94a3b8;line-height:1.5;">If you did not request this, you can safely ignore this email.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px 40px;">
+          <hr style="border:0;border-top:1px solid #e2e8f0;margin:0 0 20px 0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">This is an automated message from Avento.</p>
+        </td></tr>
+      </table>
+    </td></tr>
   </table>
 </body>
-</html>
-      `
-    };
+</html>`;
 
-    await transporter.sendMail(mailOptions);
-    console.log(`[OTP] Nodemailer send successful.`);
+    await sendEmailNotification({
+      recipientEmail: emailLower,
+      subject: 'Avento Verification Code',
+      htmlBody: otpHtml,
+    });
 
+    console.log(`[OTP] OTP sent successfully to ${emailLower}.`);
     return res.json({
       message: `OTP sent successfully to ${emailLower}. Please check your inbox.`,
       email: emailLower,
     });
   } catch (err) {
-    console.error('[OTP] SendOtp error encountered:');
-    console.error(err);
-
+    console.error('[OTP] SendOtp error:', err.message);
     return res.status(500).json({
       message: 'Server error sending OTP.',
       error: err.message,
-      stack: err.stack
     });
+  }
+};
+
+// ─── GOOGLE LOGIN ────────────────────────────────────────────────────────
+exports.googleLogin = async (req, res) => {
+  try {
+    const { access_token } = req.body;
+    if (!access_token) {
+      return res.status(400).json({ message: 'Missing Supabase access token.' });
+    }
+
+    const { data: { user: supaUser }, error: getUserErr } = await supabase.auth.getUser(access_token);
+    if (getUserErr || !supaUser) {
+      return res.status(401).json({ message: 'Invalid or expired session.' });
+    }
+
+    const emailLower = supaUser.email.toLowerCase().trim();
+    const fullName = supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || emailLower.split('@')[0];
+    const avatarUrl = supaUser.user_metadata?.avatar_url || null;
+
+    let { data: profileData } = await supabase
+      .from('profiles')
+      .select('role, status, first_login, registration_method')
+      .eq('id', supaUser.id)
+      .maybeSingle();
+
+    if (profileData && profileData.status === 'inactive') {
+      return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
+    }
+
+    const role = getRoleFromEmail(emailLower);
+
+    if (!profileData) {
+      const newProfile = {
+        id: supaUser.id,
+        email: emailLower,
+        name: fullName,
+        role,
+        created_at: new Date().toISOString(),
+        first_login: false,
+        registration_method: 'google',
+      };
+      const { error: upsertErr } = await supabase
+        .from('profiles')
+        .upsert(newProfile, { onConflict: 'id' });
+      if (upsertErr) console.error('[Google Login] Profile upsert error:', upsertErr.message);
+      if (avatarUrl) {
+        const { error: avatarErr } = await supabase
+          .from('profiles')
+          .update({ avatar_url: avatarUrl })
+          .eq('id', supaUser.id);
+        if (avatarErr) console.warn('[Google Login] Avatar update skipped:', avatarErr.message);
+      }
+      profileData = { role, status: 'active', first_login: false };
+    } else if (profileData.registration_method !== 'google') {
+      await supabase
+        .from('profiles')
+        .update({ registration_method: 'google' })
+        .eq('id', supaUser.id);
+    }
+
+    let userRole = profileData.role || role;
+    if (emailLower === 'admin.avento@gmail.com') {
+      userRole = 'admin';
+      if (profileData.role !== 'admin') {
+        await supabase.from('profiles').update({ role: 'admin' }).eq('id', supaUser.id);
+      }
+    }
+
+    let roles = [userRole];
+    if (userRole === 'organizer') roles.push('student');
+
+    const token = jwt.sign(
+      { id: supaUser.id, email: emailLower, role: userRole },
+      process.env.JWT_SECRET || 'avento_super_secret_key_12345',
+      { expiresIn: '30d' }
+    );
+
+    return res.json({
+      token,
+      user: {
+        id: supaUser.id,
+        email: emailLower,
+        fullName,
+        roles,
+        employeeId: null,
+        rollNumber: null,
+        first_login: profileData.first_login || false,
+      }
+    });
+  } catch (err) {
+    console.error('[Google Login] Error:', err.message);
+    return res.status(500).json({ message: 'Server error during Google login.', error: err.message });
   }
 };
 

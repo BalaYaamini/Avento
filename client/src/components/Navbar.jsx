@@ -259,8 +259,8 @@ const Navbar = () => {
                <>
                  <NavLink to="/admin" end className={navLinkClass}>Dashboard</NavLink>
                  <NavLink to="/admin/events" className={navLinkClass}>Events</NavLink>
-                  <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
-                  <NavLink to="/admin/announcements" className={navLinkClass}>Announcements</NavLink>
+                 <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
+                 <NavLink to="/admin/announcements" className={navLinkClass}>Announcements</NavLink>
                </>
              )}
            </div>
@@ -463,8 +463,8 @@ const Navbar = () => {
             <>
               <NavLink to="/admin" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
               <NavLink to="/admin/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Events</NavLink>
-               <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
-               <NavLink to="/admin/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements</NavLink>
+                <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
+                <NavLink to="/admin/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements</NavLink>
             </>
           )}
 
