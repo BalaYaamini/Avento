@@ -101,8 +101,8 @@ const AdminDashboard = () => {
   const shortcuts = [
     { label: 'Configure & Create Events', to: '/admin/events', arrow: 'text-pastel-lavender' },
     { label: 'View Booked Registrations', to: '/admin/registrations', arrow: 'text-pastel-mint' },
-    { label: 'Manage Portal Users', to: '/admin/users', arrow: 'text-pastel-pink' }
-    ,{ label: 'Post Announcements', to: '/admin/announcements', arrow: 'text-pastel-coral' }
+    { label: 'Manage Portal Users', to: '/admin/users', arrow: 'text-pastel-pink' },
+    { label: 'Post Announcements', to: '/admin/announcements', arrow: 'text-pastel-coral' }
   ];
 
   return (

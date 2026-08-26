@@ -15,13 +15,14 @@ const getRoleFromEmail = (email) => {
   return 'student';
 };
 
-const upsertProfile = async (userId, email, name, role, employeeId = null, rollNumber = null) => {
+const upsertProfile = async (userId, email, name, role, employeeId = null, rollNumber = null, registrationMethod = 'imported') => {
   const profile = {
     id: userId,
     email,
     name,
     role,
     created_at: new Date().toISOString(),
+    registration_method: registrationMethod,
   };
   if (role === 'faculty' && employeeId) profile.employee_id = employeeId;
   if (role === 'student' && rollNumber) profile.roll_number = rollNumber;
@@ -106,7 +107,7 @@ exports.register = async (req, res) => {
       rollNumber = matches ? matches[1] : `2203A${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber);
+    await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
 
     // Remove OTP after successful registration
     await supabase.from('otps').delete().eq('email', emailLower);
@@ -374,7 +375,7 @@ exports.googleLogin = async (req, res) => {
 
     let { data: profileData } = await supabase
       .from('profiles')
-      .select('role, status, first_login')
+      .select('role, status, first_login, registration_method')
       .eq('id', supaUser.id)
       .maybeSingle();
 
@@ -392,6 +393,7 @@ exports.googleLogin = async (req, res) => {
         role,
         created_at: new Date().toISOString(),
         first_login: false,
+        registration_method: 'google',
       };
       if (avatarUrl) newProfile.avatar_url = avatarUrl;
       const { error: upsertErr } = await supabase
@@ -399,6 +401,11 @@ exports.googleLogin = async (req, res) => {
         .upsert(newProfile, { onConflict: 'id' });
       if (upsertErr) console.error('[Google Login] Profile upsert error:', upsertErr.message);
       profileData = { role, status: 'active', first_login: false };
+    } else if (profileData.registration_method !== 'google') {
+      await supabase
+        .from('profiles')
+        .update({ registration_method: 'google' })
+        .eq('id', supaUser.id);
     }
 
     let userRole = profileData.role || role;

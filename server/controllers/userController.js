@@ -43,7 +43,8 @@ exports.getUsers = async (req, res) => {
         registrationCount: rCount,
         createdAt: user.created_at,
         status: user.status || 'active',
-        first_login: user.first_login !== false
+        first_login: user.first_login !== false,
+        registrationMethod: user.registration_method || 'imported',
       };
     });
 
@@ -350,7 +351,8 @@ exports.importUsers = async (req, res) => {
           department: derivedDepartment,
           created_at: new Date().toISOString(),
           first_login: true,
-          status: 'active'
+          status: 'active',
+          registration_method: 'imported',
         };
 
         if (role === 'faculty') profile.employee_id = user.employeeId || null;
