@@ -1,6 +1,5 @@
 const axios = require('axios');
 const supabase = require('../config/supabaseClient');
-const User = require('../models/User');
 
 let emailCountToday = 0;
 let lastResetDate = new Date().toDateString();
@@ -205,23 +204,13 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
 
     if (!targetEmail && recipientId) {
       try {
-        const mongoUser = await User.findById(recipientId).select('name email').maxTimeMS(3000);
-        if (mongoUser && mongoUser.email) {
-          targetEmail = mongoUser.email;
-          targetName = mongoUser.name;
+        const { data: profile } = await supabase
+          .from('profiles').select('email, name').eq('id', recipientId).single();
+        if (profile && profile.email) {
+          targetEmail = profile.email;
+          targetName = profile.name;
         }
       } catch (e) {}
-
-      if (!targetEmail) {
-        try {
-          const { data: profile } = await supabase
-            .from('profiles').select('email, name').eq('id', recipientId).single();
-          if (profile && profile.email) {
-            targetEmail = profile.email;
-            targetName = profile.name;
-          }
-        } catch (e) {}
-      }
     }
 
     const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && BREVO_API_KEY;

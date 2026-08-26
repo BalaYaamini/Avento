@@ -1,16 +1,8 @@
-const mongoose = require('mongoose');
-
+// server/config/db.js
+// MongoDB has been removed. This file is kept as a no-op for backwards compatibility.
+// All data is now stored in Supabase (PostgreSQL).
 const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      dbName: 'avento'
-    });
-    console.log(`MongoDB Connected: ${conn.connection.host} (Database: avento)`);
-  } catch (error) {
-    console.error(`Error connecting to MongoDB: ${error.message}`);
-    // Removed process.exit(1) to prevent the server from crashing abruptly,
-    // which was causing the 502 Bad Gateway and "Network Error" on the frontend.
-  }
+  console.log('[DB] MongoDB removed — using Supabase only.');
 };
 
 module.exports = connectDB;

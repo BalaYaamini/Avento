@@ -1,7 +1,6 @@
 // server/controllers/eventController.js
 const path = require('path');
 const supabase = require('../config/supabaseClient');
-const User = require('../models/User');
 const { notifyUser } = require('../services/notificationService');
 
 const cleanEventRemarks = (evt) => {
@@ -691,11 +690,10 @@ const updateStatus = async (req, res) => {
             if (insertErr) throw insertErr;
           }
 
-          // Update proposer's role to 'organizer' in both Supabase and MongoDB if they are currently 'student'
+          // Update proposer's role to 'organizer' in Supabase if they are currently 'student'
           const { data: proposer } = await supabase.from('profiles').select('role').eq('id', event.proposed_by).maybeSingle();
           if (proposer && proposer.role === 'student') {
             await supabase.from('profiles').update({ role: 'organizer' }).eq('id', event.proposed_by);
-            await User.findByIdAndUpdate(event.proposed_by, { role: 'organizer' });
           }
         }
       } else {

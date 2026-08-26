@@ -2,8 +2,6 @@ const supabase = require('../config/supabaseClient');
 const { checkCoreOrganizerAccess } = require('./eventController');
 const { sendEmailNotification } = require('../services/notificationService');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
-const User = require('../models/User');
-const ProblemStatementDocument = require('../models/ProblemStatementDocument');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (str) => typeof str === 'string' && UUID_REGEX.test(str.trim());
@@ -230,11 +228,12 @@ async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemState
       let name = profile ? profile.name : 'Participant';
 
       if (!email) {
+        // User not in profiles — try Supabase Auth user metadata
         try {
-          const mongoUser = await User.findById(uId).select('email name');
-          if (mongoUser) {
-            email = mongoUser.email;
-            name = mongoUser.name || name;
+          const { data: authUser } = await supabase.auth.admin.getUserById(uId);
+          if (authUser?.user?.email) {
+            email = authUser.user.email;
+            name = authUser.user.user_metadata?.full_name || name;
           }
         } catch (e) {
           // ignore
@@ -1777,12 +1776,15 @@ exports.uploadProblemStatementPdf = async (req, res) => {
       .eq('id', eventId);
 
     if (updateErr) {
-      console.warn('Saving PDF reference in MongoDB because the Supabase event column is unavailable:', updateErr.message);
-      await ProblemStatementDocument.findOneAndUpdate(
-        { eventId: String(eventId) },
-        { eventId: String(eventId), pdfUrl: pdfUrlWithName, fileName, updatedAt: new Date() },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
+      console.warn('Saving PDF reference in problem_statement_documents table:', updateErr.message);
+      await supabase
+        .from('problem_statement_documents')
+        .upsert({
+          event_id: String(eventId),
+          pdf_url: pdfUrlWithName,
+          file_name: fileName,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'event_id' });
     }
 
     res.json({
@@ -1845,8 +1847,12 @@ exports.getProblemStatementPdf = async (req, res) => {
 
     let storedPdfUrl = event.problem_statement_pdf_url;
     if (!storedPdfUrl) {
-      const fallbackDocument = await ProblemStatementDocument.findOne({ eventId: String(eventId) }).lean();
-      storedPdfUrl = fallbackDocument?.pdfUrl || null;
+      const { data: fallbackDoc } = await supabase
+        .from('problem_statement_documents')
+        .select('pdf_url')
+        .eq('event_id', String(eventId))
+        .maybeSingle();
+      storedPdfUrl = fallbackDoc?.pdf_url || null;
     }
 
     if (!storedPdfUrl || storedPdfUrl.trim() === '') {
