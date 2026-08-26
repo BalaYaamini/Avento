@@ -395,11 +395,17 @@ exports.googleLogin = async (req, res) => {
         first_login: false,
         registration_method: 'google',
       };
-      if (avatarUrl) newProfile.avatar_url = avatarUrl;
       const { error: upsertErr } = await supabase
         .from('profiles')
         .upsert(newProfile, { onConflict: 'id' });
       if (upsertErr) console.error('[Google Login] Profile upsert error:', upsertErr.message);
+      if (avatarUrl) {
+        const { error: avatarErr } = await supabase
+          .from('profiles')
+          .update({ avatar_url: avatarUrl })
+          .eq('id', supaUser.id);
+        if (avatarErr) console.warn('[Google Login] Avatar update skipped:', avatarErr.message);
+      }
       profileData = { role, status: 'active', first_login: false };
     } else if (profileData.registration_method !== 'google') {
       await supabase
