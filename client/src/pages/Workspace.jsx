@@ -17,6 +17,7 @@ import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
 import ScoringBoard from '../components/ScoringBoard';
 import ConfirmationEmailModal from '../components/ConfirmationEmailModal';
 import IDCardManager from '../components/IDCardManager';
+import OrganizerPeriodicAttendance from '../components/OrganizerPeriodicAttendance';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -189,9 +190,19 @@ const Workspace = () => {
     setScanFeedback(null);
     try {
       const res = await axios.post('/api/attendance/verify', { registrationId, eventId });
-      if (res.data.success && res.data.student) {
-        const { name } = res.data.student;
-        setScanFeedback({ type: 'success', message: `Attendance marked successfully for ${name}.` });
+      if (res.data.alreadyMarked) {
+        const { name } = res.data.student || {};
+        setScanFeedback({
+          type: 'warning',
+          message: res.data.message || `Attendance already marked for ${name || 'this participant'} during this period.`
+        });
+      } else if (res.data.success) {
+        const { name } = res.data.student || {};
+        const progressStr = res.data.progress ? ` [Progress: ${res.data.progress}]` : '';
+        setScanFeedback({
+          type: 'success',
+          message: `${res.data.message || 'Attendance marked successfully'} for ${name || 'participant'}${progressStr}.`
+        });
       } else {
         setScanFeedback({ type: 'success', message: res.data.message || 'Attendance recorded.' });
       }
@@ -655,6 +666,15 @@ const Workspace = () => {
         )}
 
         <button
+          onClick={() => setActiveTab('periodic_attendance')}
+          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 flex items-center gap-1.5 ${
+            activeTab === 'periodic_attendance' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+          }`}
+        >
+          <span>Periodic Attendance</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('id_cards')}
           className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
             activeTab === 'id_cards' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
@@ -663,6 +683,12 @@ const Workspace = () => {
           ID Cards
         </button>
       </div>
+
+      {activeTab === 'periodic_attendance' && (
+        <div className="mb-8">
+          <OrganizerPeriodicAttendance eventId={eventId} onScanClick={() => { setScanFeedback(null); setIsScannerOpen(true); }} />
+        </div>
+      )}
 
       {activeTab === 'registrations' && !isNormalOrganizer() && (
         <div className="mb-8">
