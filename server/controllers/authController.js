@@ -201,38 +201,9 @@ exports.login = async (req, res) => {
 
     // If sign-in fails, check if this is a Google-only user without a password
     if (authError || !authData?.user) {
-      // Check if user exists in Supabase Auth with Google provider
-      const { data: usersData } = await supabase.auth.admin.listUsers();
-      const authUser = usersData?.users?.find(u => u.email.toLowerCase() === emailLower);
-
-      if (authUser && authUser.app_metadata?.provider === 'google') {
-        // Create profile if missing, then return needsPassword
-        if (!existingProfile) {
-          const role = getRoleFromEmail(emailLower);
-          const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || emailLower.split('@')[0];
-          const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null;
-
-          await supabase.from('profiles').upsert({
-            id: authUser.id,
-            email: emailLower,
-            name,
-            role,
-            registration_method: 'google',
-            has_password: false,
-            created_at: new Date().toISOString(),
-          }, { onConflict: 'id' });
-
-          if (avatarUrl) {
-            await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', authUser.id);
-          }
-        }
-
-        return res.status(400).json({
-          message: 'This account was created with Google Sign-In. Set a password to log in with email.',
-          needsPassword: true,
-        });
-      }
-
+      // Profile with google registration already caught above.
+      // If no profile exists, we can't determine provider without listing all users.
+      // Just return invalid credentials — user should use Google sign-in.
       console.log(`[AUTH] Login Failed for '${emailLower}':`, authError?.message || 'No user returned');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -512,11 +483,15 @@ exports.googleLogin = async (req, res) => {
         created_at: new Date().toISOString(),
         first_login: false,
         registration_method: 'google',
+        has_password: false,
       };
       const { error: upsertErr } = await supabase
         .from('profiles')
         .upsert(newProfile, { onConflict: 'id' });
-      if (upsertErr) console.error('[Google Login] Profile upsert error:', upsertErr.message);
+      if (upsertErr) {
+        console.error('[Google Login] Profile upsert error:', upsertErr.message);
+        return res.status(500).json({ message: 'Failed to create user profile.', error: upsertErr.message });
+      }
       if (avatarUrl) {
         const { error: avatarErr } = await supabase
           .from('profiles')
@@ -678,36 +653,7 @@ exports.sendSetPasswordOtp = async (req, res) => {
     if (profErr) throw profErr;
 
     if (!profile) {
-      // Check if user exists in Supabase Auth (might be Google-only with no profile)
-      const { data: usersData } = await supabase.auth.admin.listUsers();
-      const authUser = usersData?.users?.find(u => u.email.toLowerCase() === emailLower);
-
-      if (!authUser) {
-        return res.status(400).json({ message: 'No account found with this email.' });
-      }
-
-      if (authUser.app_metadata?.provider !== 'google') {
-        return res.status(400).json({ message: 'This account can use email/password login directly.' });
-      }
-
-      // Create profile for this Google user
-      const role = getRoleFromEmail(emailLower);
-      const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || emailLower.split('@')[0];
-      const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null;
-
-      await supabase.from('profiles').upsert({
-        id: authUser.id,
-        email: emailLower,
-        name,
-        role,
-        registration_method: 'google',
-        has_password: false,
-        created_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-
-      if (avatarUrl) {
-        await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', authUser.id);
-      }
+      return res.status(400).json({ message: 'No account found. Please sign in with Google first to set up your account.' });
     } else if (profile.registration_method !== 'google' || profile.has_password) {
       return res.status(400).json({ message: 'This account can use email/password login directly.' });
     }
@@ -783,7 +729,7 @@ exports.setPasswordWithOtp = async (req, res) => {
       return res.status(400).json({ message: 'Password does not meet strength requirements.' });
     }
 
-    let { data: profile, error: profErr } = await supabase
+    const { data: profile, error: profErr } = await supabase
       .from('profiles')
       .select('id, registration_method, has_password')
       .eq('email', emailLower)
@@ -791,23 +737,7 @@ exports.setPasswordWithOtp = async (req, res) => {
     if (profErr) throw profErr;
 
     if (!profile) {
-      const { data: usersData } = await supabase.auth.admin.listUsers();
-      const authUser = usersData?.users?.find(u => u.email.toLowerCase() === emailLower);
-      if (!authUser || authUser.app_metadata?.provider !== 'google') {
-        return res.status(400).json({ message: 'No Google account found with this email.' });
-      }
-      const role = getRoleFromEmail(emailLower);
-      const name = authUser.user_metadata?.full_name || authUser.user_metadata?.name || emailLower.split('@')[0];
-      await supabase.from('profiles').upsert({
-        id: authUser.id, email: emailLower, name, role,
-        registration_method: 'google', has_password: false,
-        created_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-      const { data: newProfile } = await supabase.from('profiles').select('id, registration_method, has_password').eq('email', emailLower).single();
-      if (!newProfile || newProfile.registration_method !== 'google' || newProfile.has_password) {
-        return res.status(400).json({ message: 'This account already has a password set.' });
-      }
-      profile = newProfile;
+      return res.status(400).json({ message: 'No account found. Please sign in with Google first to set up your account.' });
     } else if (profile.registration_method !== 'google' || profile.has_password) {
       return res.status(400).json({ message: 'This account already has a password set.' });
     }
