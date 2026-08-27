@@ -628,3 +628,146 @@ exports.setPassword = async (req, res) => {
     res.status(500).json({ message: 'Server error setting password.', error: err.message });
   }
 };
+
+// ─── SEND SET-PASSWORD OTP (public — for Google-only users) ────────────────
+exports.sendSetPasswordOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required.' });
+
+    const emailLower = email.toLowerCase().trim();
+
+    const { data: profile, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, registration_method, has_password')
+      .eq('email', emailLower)
+      .maybeSingle();
+    if (profErr) throw profErr;
+
+    if (!profile) {
+      return res.status(400).json({ message: 'No account found with this email.' });
+    }
+    if (profile.registration_method !== 'google' || profile.has_password) {
+      return res.status(400).json({ message: 'This account can use email/password login directly.' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const { error: otpUpsertErr } = await supabase
+      .from('otps')
+      .upsert({ email: emailLower, otp, created_at: new Date().toISOString() }, { onConflict: 'email' });
+    if (otpUpsertErr) throw otpUpsertErr;
+
+    const otpHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#F8FAFC;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
+          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
+            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
+          </h1>
+          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Set Your Password</p>
+        </td></tr>
+        <tr><td style="padding:30px 40px;">
+          <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>
+          <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Use the code below to set a password for your <strong>Avento</strong> account so you can also log in with email.</p>
+          <table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td align="center">
+            <div style="background-color:#f1f5f9;border-radius:12px;padding:24px;display:inline-block;min-width:200px;">
+              <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#1e293b;text-align:center;margin-left:8px;">${otp}</div>
+            </div>
+            <p style="margin:15px 0 0 0;font-size:14px;color:#64748b;text-align:center;">This code is valid for 5 minutes.</p>
+          </td></tr></table>
+          <p style="margin:25px 0 0 0;font-size:13px;color:#94a3b8;line-height:1.5;">If you did not request this, you can safely ignore this email.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px 40px;">
+          <hr style="border:0;border-top:1px solid #e2e8f0;margin:0 0 20px 0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">This is an automated message from Avento.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    await sendEmailNotification({
+      recipientEmail: emailLower,
+      subject: 'Avento — Set Your Password',
+      htmlBody: otpHtml,
+    });
+
+    console.log(`[SetPasswordOTP] OTP sent to ${emailLower}`);
+    return res.json({ message: `OTP sent to ${emailLower}. Please check your inbox.` });
+  } catch (err) {
+    console.error('[SetPasswordOTP] SendOtp error:', err.message);
+    return res.status(500).json({ message: 'Failed to send OTP.' });
+  }
+};
+
+// ─── SET PASSWORD WITH OTP (public — for Google-only users) ────────────────
+exports.setPasswordWithOtp = async (req, res) => {
+  try {
+    const { email, otp, password } = req.body;
+    if (!email || !otp || !password) {
+      return res.status(400).json({ message: 'Email, OTP, and password are required.' });
+    }
+
+    const emailLower = email.toLowerCase().trim();
+
+    if (!validatePasswordStrength(password)) {
+      return res.status(400).json({ message: 'Password does not meet strength requirements.' });
+    }
+
+    const { data: profile, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, registration_method, has_password')
+      .eq('email', emailLower)
+      .maybeSingle();
+    if (profErr) throw profErr;
+
+    if (!profile) {
+      return res.status(400).json({ message: 'No account found with this email.' });
+    }
+    if (profile.registration_method !== 'google' || profile.has_password) {
+      return res.status(400).json({ message: 'This account already has a password set.' });
+    }
+
+    const { data: otpRecord, error: otpFetchErr } = await supabase
+      .from('otps')
+      .select('otp, created_at')
+      .eq('email', emailLower)
+      .maybeSingle();
+    if (otpFetchErr) throw otpFetchErr;
+
+    if (!otpRecord) {
+      return res.status(400).json({ message: 'OTP expired or not requested. Please request a new one.' });
+    }
+
+    const otpAge = (new Date() - new Date(otpRecord.created_at)) / 1000;
+    if (otpAge > 300) {
+      await supabase.from('otps').delete().eq('email', emailLower);
+      return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
+    }
+
+    if (otpRecord.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP. Please try again.' });
+    }
+
+    const { error: authErr } = await supabase.auth.admin.updateUserById(profile.id, { password });
+    if (authErr) {
+      return res.status(500).json({ message: 'Failed to set password.', error: authErr.message });
+    }
+
+    await supabase.from('profiles').update({ has_password: true }).eq('id', profile.id);
+    await supabase.from('otps').delete().eq('email', emailLower);
+
+    res.json({ message: 'Password set successfully. You can now log in with email and password.' });
+  } catch (err) {
+    console.error('[SetPasswordWithOtp] Error:', err.message);
+    res.status(500).json({ message: 'Server error setting password.', error: err.message });
+  }
+};
