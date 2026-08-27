@@ -23,6 +23,7 @@ const upsertProfile = async (userId, email, name, role, employeeId = null, rollN
     role,
     created_at: new Date().toISOString(),
     registration_method: registrationMethod,
+    first_login: false,
   };
   if (role === 'faculty' && employeeId) profile.employee_id = employeeId;
   if (role === 'student' && rollNumber) profile.roll_number = rollNumber;
@@ -510,7 +511,7 @@ exports.googleLogin = async (req, res) => {
 
     let { data: profileData } = await supabase
       .from('profiles')
-      .select('role, status, first_login, registration_method, has_password')
+      .select('*')
       .eq('id', supaUser.id)
       .maybeSingle();
 

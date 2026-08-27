@@ -68,7 +68,7 @@ module.exports = async (req, res, next) => {
       rollNumber: userRollNo,
       roll_number: userRollNo,
       department: profileData.department || null,
-      first_login: profileData.first_login !== false,
+      first_login: profileData.first_login === true,
       avatarUrl: profileData.avatar_url || null,
       avatar_url: profileData.avatar_url || null,
       phone: profileData.phone || null,
