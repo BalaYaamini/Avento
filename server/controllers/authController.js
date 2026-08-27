@@ -26,6 +26,7 @@ const upsertProfile = async (userId, email, name, role, employeeId = null, rollN
   };
   if (role === 'faculty' && employeeId) profile.employee_id = employeeId;
   if (role === 'student' && rollNumber) profile.roll_number = rollNumber;
+  if (registrationMethod === 'otp') profile.has_password = true;
 
   const { error } = await supabase
     .from('profiles')
@@ -178,6 +179,20 @@ exports.login = async (req, res) => {
     const emailLower = email.toLowerCase().trim();
     console.log('[AUTH] Incoming login attempt for email:', emailLower);
 
+    // Check if user registered via Google and has no password set
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('registration_method, has_password')
+      .eq('email', emailLower)
+      .maybeSingle();
+
+    if (existingProfile && existingProfile.registration_method === 'google' && !existingProfile.has_password) {
+      return res.status(400).json({ 
+        message: 'This account was created with Google Sign-In. Please log in with Google, or set a password first from your profile.',
+        needsPassword: true
+      });
+    }
+
     // Use Supabase Auth for password verification
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: emailLower,
@@ -194,7 +209,7 @@ exports.login = async (req, res) => {
     // Check status in Supabase profiles
     const { data: profileData, error: profileErr } = await supabase
       .from('profiles')
-      .select('status, first_login, role, name, phone, college, gender, avatar_url')
+      .select('status, first_login, role, name, phone, college, gender, avatar_url, registration_method, has_password')
       .eq('id', supaUser.id)
       .single();
 
@@ -582,5 +597,33 @@ exports.syncPassword = async (req, res) => {
   } catch (err) {
     console.error('syncPassword error:', err.message);
     res.status(500).json({ message: 'Server error syncing password', error: err.message });
+  }
+};
+
+// ─── SET PASSWORD (for Google-only users) ─────────────────────────────────
+exports.setPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const userId = req.user.id;
+
+    if (!password) {
+      return res.status(400).json({ message: 'Please provide a password.' });
+    }
+
+    if (!validatePasswordStrength(password)) {
+      return res.status(400).json({ message: 'Password does not meet strength requirements.' });
+    }
+
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, { password });
+    if (authError) {
+      return res.status(500).json({ message: 'Failed to set password.', error: authError.message });
+    }
+
+    await supabase.from('profiles').update({ has_password: true }).eq('id', userId);
+
+    res.json({ message: 'Password set successfully. You can now log in with email and password.' });
+  } catch (err) {
+    console.error('[SetPassword] Error:', err.message);
+    res.status(500).json({ message: 'Server error setting password.', error: err.message });
   }
 };

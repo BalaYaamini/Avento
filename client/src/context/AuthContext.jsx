@@ -62,12 +62,24 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
+      // First check with backend if account needs password setup
+      const res = await axios.post('/api/auth/login', { email: email.trim(), password });
+
+      // If backend says needsPassword, return that info without trying Supabase
+      if (res.data.needsPassword) {
+        return { success: false, needsPassword: true, message: res.data.message };
+      }
+
+      // Now sign in via Supabase Auth (password verified by backend, but Supabase session needed)
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password
       });
 
-      const res = await axios.post('/api/auth/login', { email: email.trim(), password });
+      if (authError) {
+        setError(authError.message);
+        return { success: false, message: authError.message };
+      }
       
       const { token, user: userData } = res.data;
       
@@ -78,6 +90,10 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (e) {
       const msg = e.response?.data?.message || e.message;
+      const needsPassword = e.response?.data?.needsPassword || false;
+      if (needsPassword) {
+        return { success: false, needsPassword: true, message: msg };
+      }
       setError(msg);
       return { success: false, message: msg };
     } finally {

@@ -46,6 +46,10 @@ const Login = () => {
     setSubmitting(true);
     const result = await login(email.trim(), password);
     setSubmitting(false);
+    if (result.needsPassword) {
+      navigate('/set-password', { replace: true });
+      return;
+    }
     if (!result.success) {
       setLocalError(result.message || 'Login failed. Check your credentials.');
     }

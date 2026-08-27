@@ -16,6 +16,7 @@ import AuthCallback from './pages/AuthCallback';
 import ForgotPassword from './pages/ForgotPassword';
 import ChangePassword from './pages/ChangePassword';
 import AcceptInvite from './pages/AcceptInvite';
+import SetPassword from './pages/SetPassword';
 import VerifyCertificate from './pages/VerifyCertificate';
 
 // Protected Student views
@@ -105,6 +106,7 @@ const AnimatedRoutes = () => {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/accept-invite/:token" element={<AcceptInvite />} />
+        <Route path="/set-password" element={<ProtectedRoute><SetPassword /></ProtectedRoute>} />
         <Route path="/verify/:certificateId" element={<VerifyCertificate />} />
         <Route path="/verify-certificate/:certificateId" element={<VerifyCertificate />} />
 

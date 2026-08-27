@@ -25,4 +25,7 @@ router.get('/profile', authMiddleware, authController.getProfile);
 // Sync password from Supabase to MongoDB (used by Forgot Password)
 router.post('/sync-password', authController.syncPassword);
 
+// Set password for Google-only users
+router.post('/set-password', authMiddleware, authController.setPassword);
+
 module.exports = router;
