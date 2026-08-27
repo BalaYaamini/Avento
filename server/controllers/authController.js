@@ -460,7 +460,7 @@ exports.googleLogin = async (req, res) => {
 
     let { data: profileData } = await supabase
       .from('profiles')
-      .select('role, status, first_login, registration_method')
+      .select('role, status, first_login, registration_method, has_password')
       .eq('id', supaUser.id)
       .maybeSingle();
 
@@ -559,6 +559,7 @@ exports.googleLogin = async (req, res) => {
         college: profileData?.college || null,
         gender: profileData?.gender || null,
         avatarUrl: profileData?.avatar_url || null,
+        hasPassword: profileData?.has_password || false,
       }
     });
   } catch (err) {

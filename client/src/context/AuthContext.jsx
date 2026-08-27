@@ -141,7 +141,7 @@ export const AuthProvider = ({ children }) => {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(userData);
 
-      return { success: true };
+      return { success: true, hasPassword: userData.hasPassword };
     } catch (e) {
       const msg = e.response?.data?.message || e.message;
       setError(msg);
