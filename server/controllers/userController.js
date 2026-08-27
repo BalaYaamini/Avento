@@ -507,7 +507,7 @@ exports.deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
 
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', String(userId)).single();
+    const { data: profile } = await supabase.from('profiles').select('role, email').eq('id', String(userId)).single();
     if (profile && profile.role === 'admin') {
       return res.status(403).json({ message: 'Action restricted: Cannot delete an administrator account.' });
     }
@@ -515,7 +515,9 @@ exports.deleteUser = async (req, res) => {
     // Clean up related records first (avoid FK constraint errors)
     await supabase.from('event_registrations').delete().eq('user_id', String(userId));
     await supabase.from('team_email_invites').delete().eq('invited_by', String(userId));
-    await supabase.from('team_email_invites').delete().eq('email', profile?.email || '');
+    if (profile?.email) {
+      await supabase.from('team_email_invites').delete().eq('email', profile.email);
+    }
 
     // Delete from Supabase Auth
     const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
@@ -523,11 +525,21 @@ exports.deleteUser = async (req, res) => {
       console.warn('Supabase Auth delete warning:', authErr.message);
     }
 
-    // Delete profile
-    const { error: profileErr } = await supabase.from('profiles').delete().eq('id', String(userId));
+    // Delete profile — use .select() to verify it actually deleted
+    const { data: deletedRows, error: profileErr } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', String(userId))
+      .select('id');
+
     if (profileErr) {
       console.error('Profile delete error:', profileErr.message);
       return res.status(500).json({ message: 'Failed to delete user profile.', error: profileErr.message });
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      console.error('Profile delete returned 0 rows — RLS may be blocking the operation');
+      return res.status(500).json({ message: 'Failed to delete user profile. RLS policy may be blocking this operation. Please check Supabase RLS policies on the profiles table.' });
     }
 
     res.json({ message: 'User deleted successfully.' });
