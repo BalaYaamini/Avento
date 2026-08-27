@@ -512,12 +512,23 @@ exports.deleteUser = async (req, res) => {
       return res.status(403).json({ message: 'Action restricted: Cannot delete an administrator account.' });
     }
 
+    // Clean up related records first (avoid FK constraint errors)
+    await supabase.from('event_registrations').delete().eq('user_id', String(userId));
+    await supabase.from('team_email_invites').delete().eq('invited_by', String(userId));
+    await supabase.from('team_email_invites').delete().eq('email', profile?.email || '');
+
+    // Delete from Supabase Auth
     const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
     if (authErr) {
       console.warn('Supabase Auth delete warning:', authErr.message);
     }
 
-    await supabase.from('profiles').delete().eq('id', String(userId));
+    // Delete profile
+    const { error: profileErr } = await supabase.from('profiles').delete().eq('id', String(userId));
+    if (profileErr) {
+      console.error('Profile delete error:', profileErr.message);
+      return res.status(500).json({ message: 'Failed to delete user profile.', error: profileErr.message });
+    }
 
     res.json({ message: 'User deleted successfully.' });
   } catch (err) {
@@ -553,13 +564,25 @@ exports.bulkDeleteUsers = async (req, res) => {
     for (const uId of eligibleUserIds) {
       const idStr = String(uId);
 
+      // Clean up related records first
+      await supabase.from('event_registrations').delete().eq('user_id', idStr);
+      await supabase.from('team_email_invites').delete().eq('invited_by', idStr);
+      const { data: p } = await supabase.from('profiles').select('email').eq('id', idStr).single();
+      if (p?.email) {
+        await supabase.from('team_email_invites').delete().eq('email', p.email);
+      }
+
       try {
         await supabase.auth.admin.deleteUser(idStr);
       } catch (authErr) {
         console.warn(`Supabase Auth bulk delete warning for ${idStr}:`, authErr.message);
       }
 
-      await supabase.from('profiles').delete().eq('id', idStr);
+      const { error: delErr } = await supabase.from('profiles').delete().eq('id', idStr);
+      if (delErr) {
+        console.error(`Profile bulk delete error for ${idStr}:`, delErr.message);
+        continue;
+      }
 
       deletedCount++;
     }
