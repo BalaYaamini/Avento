@@ -519,13 +519,7 @@ exports.deleteUser = async (req, res) => {
       await supabase.from('team_email_invites').delete().eq('email', profile.email);
     }
 
-    // Delete from Supabase Auth
-    const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
-    if (authErr) {
-      console.warn('Supabase Auth delete warning:', authErr.message);
-    }
-
-    // Delete profile — use .select() to verify it actually deleted
+    // Delete profile BEFORE auth — RLS silently blocks profile delete after auth user is removed
     const { data: deletedRows, error: profileErr } = await supabase
       .from('profiles')
       .delete()
@@ -540,6 +534,12 @@ exports.deleteUser = async (req, res) => {
     if (!deletedRows || deletedRows.length === 0) {
       console.error('Profile delete returned 0 rows — RLS may be blocking the operation');
       return res.status(500).json({ message: 'Failed to delete user profile. RLS policy may be blocking this operation. Please check Supabase RLS policies on the profiles table.' });
+    }
+
+    // Delete from Supabase Auth (after profile to avoid RLS deadlock)
+    const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
+    if (authErr) {
+      console.warn('Supabase Auth delete warning:', authErr.message);
     }
 
     res.json({ message: 'User deleted successfully.' });
@@ -584,16 +584,17 @@ exports.bulkDeleteUsers = async (req, res) => {
         await supabase.from('team_email_invites').delete().eq('email', p.email);
       }
 
-      try {
-        await supabase.auth.admin.deleteUser(idStr);
-      } catch (authErr) {
-        console.warn(`Supabase Auth bulk delete warning for ${idStr}:`, authErr.message);
-      }
-
+      // Delete profile BEFORE auth — RLS silently blocks profile delete after auth user is removed
       const { error: delErr } = await supabase.from('profiles').delete().eq('id', idStr);
       if (delErr) {
         console.error(`Profile bulk delete error for ${idStr}:`, delErr.message);
         continue;
+      }
+
+      try {
+        await supabase.auth.admin.deleteUser(idStr);
+      } catch (authErr) {
+        console.warn(`Supabase Auth bulk delete warning for ${idStr}:`, authErr.message);
       }
 
       deletedCount++;
