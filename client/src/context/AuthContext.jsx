@@ -150,14 +150,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (fullName, email, password, otp) => {
+  const register = async (fullName, email, password, otp, profileData = {}) => {
     try {
       setLoading(true);
       await axios.post('/api/auth/register', { 
         fullName, 
         email: email.trim().toLowerCase(), 
         password, 
-        otp 
+        otp,
+        phone: profileData.phone || '',
+        college: profileData.college || '',
+        gender: profileData.gender || ''
       });
       return { success: true };
     } catch (e) {
@@ -189,6 +192,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateFullProfile = async (updates) => {
+    try {
+      const res = await axios.put('/api/users/profile/full', updates);
+      if (res.data?.user) {
+        setUser(prev => ({ ...prev, ...res.data.user }));
+      }
+      return { success: true };
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message;
+      return { success: false, message: msg };
+    }
+  };
+
   const clearError = () => setError(null);
 
   const value = {
@@ -203,6 +219,7 @@ export const AuthProvider = ({ children }) => {
     logout,
     sendOtp,
     updateProfile,
+    updateFullProfile,
     clearError,
     getRedirectPath,
     inferRole,

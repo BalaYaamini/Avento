@@ -13,6 +13,9 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
+  const [phone, setPhone] = useState('');
+  const [college, setCollege] = useState('');
+  const [gender, setGender] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -52,6 +55,9 @@ const Register = () => {
     setLocalError(null);
     if (!fullName.trim()) { setLocalError('Please enter your full name.'); return; }
     if (!email.trim()) { setLocalError('Please enter your email.'); return; }
+    if (!phone.trim()) { setLocalError('Please enter your phone number.'); return; }
+    if (!college.trim()) { setLocalError('Please enter your college/university.'); return; }
+    if (!gender) { setLocalError('Please select your gender.'); return; }
 
     setSubmitting(true);
     const result = await sendOtp(email.trim());
@@ -73,7 +79,7 @@ const Register = () => {
     if (password.length < 8) { setLocalError('Password must be at least 8 characters.'); return; }
 
     setSubmitting(true);
-    const result = await register(fullName.trim(), email.trim(), password, otp.trim());
+    const result = await register(fullName.trim(), email.trim(), password, otp.trim(), { phone: phone.trim(), college: college.trim(), gender });
     setSubmitting(false);
     if (result.success) {
       setSuccessMsg('Account created successfully! Redirecting to login...');
@@ -186,6 +192,52 @@ const Register = () => {
                 <p className="text-[10px] text-text-secondary mt-1.5 font-quicksand">
                   Any valid email works - college or personal
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.1em] mb-2 font-quicksand">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+91 98765 43210"
+                  className="w-full bg-gray-50 text-text-primary placeholder-gray-400 border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm font-body focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.1em] mb-2 font-quicksand">
+                  College / University
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={college}
+                  onChange={(e) => setCollege(e.target.value)}
+                  placeholder="e.g. SVU College of Engineering"
+                  className="w-full bg-gray-50 text-text-primary placeholder-gray-400 border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm font-body focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-[0.1em] mb-2 font-quicksand">
+                  Gender
+                </label>
+                <select
+                  required
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  className="w-full bg-gray-50 text-text-primary border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm font-body focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300"
+                >
+                  <option value="">Select Gender</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                  <option value="prefer_not_to_say">Prefer not to say</option>
+                </select>
               </div>
 
               <button

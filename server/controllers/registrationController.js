@@ -1,5 +1,6 @@
 const supabase = require('../config/supabaseClient');
-const { notifyUser } = require('../services/notificationService');
+const { notifyUser, sendEmailNotification } = require('../services/notificationService');
+const crypto = require('crypto');
 
 const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
 
@@ -2018,5 +2019,311 @@ exports.getNonOrganizerStudentsForEvent = async (req, res) => {
   } catch (err) {
     console.error('Error in getNonOrganizerStudentsForEvent:', err);
     res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });
+  }
+};
+
+// ─── INVITE EXTERNAL MEMBER BY EMAIL ──────────────────────────────────────
+exports.inviteExternalMember = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { email, name } = req.body;
+    const userId = req.user.id;
+
+    if (!email || !name) {
+      return res.status(400).json({ message: 'Email and name are required.' });
+    }
+
+    const emailLower = email.toLowerCase().trim();
+
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*, events(*)')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !team) return res.status(404).json({ message: 'Team not found.' });
+    if (team.leader_id !== userId) return res.status(403).json({ message: 'Only the Team Leader can invite members.' });
+    if (team.status === 'registered') return res.status(400).json({ message: 'Cannot edit a confirmed team.' });
+
+    const event = team.events;
+
+    const { data: currentRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('team_id', teamId)
+      .in('status', ['registered', 'pending']);
+
+    if ((currentRegs || []).length >= event.max_team_size) {
+      return res.status(400).json({ message: `Cannot exceed maximum team size of ${event.max_team_size} members.` });
+    }
+
+    const { data: existingInvite } = await supabase
+      .from('team_email_invites')
+      .select('id, status')
+      .eq('event_id', event.id)
+      .eq('team_id', teamId)
+      .eq('email', emailLower)
+      .maybeSingle();
+
+    if (existingInvite && existingInvite.status === 'pending') {
+      return res.status(400).json({ message: 'This email already has a pending invitation.' });
+    }
+
+    const inviteToken = crypto.randomBytes(32).toString('hex');
+
+    const { error: inviteErr } = await supabase
+      .from('team_email_invites')
+      .upsert({
+        event_id: event.id,
+        team_id: teamId,
+        invited_by: userId,
+        email: emailLower,
+        name: name.trim(),
+        status: 'pending',
+        invite_token: inviteToken,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      }, { onConflict: 'event_id, team_id, email' });
+
+    if (inviteErr) throw inviteErr;
+
+    const inviteUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/accept-invite/${inviteToken}`;
+
+    const inviteHtml = `
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:40px 20px;background:#fdfbf7;font-family:Arial,sans-serif;color:#1e293b;">
+  <div style="max-width:560px;margin:auto;background:#fff;border-radius:20px;padding:40px;box-shadow:0 4px 20px rgba(0,0,0,.06);">
+    <h1 style="margin:0;color:#1e293b;font-size:28px;">AVENTO</h1>
+    <p style="color:#64748b;font-size:14px;margin:5px 0 0;">Event Management Platform</p>
+    <hr style="border:0;border-top:1px solid #f1f5f9;margin:25px 0;">
+    <h2 style="margin:0 0 10px;font-size:22px;color:#1e293b;">You're Invited to Join a Team!</h2>
+    <p style="font-size:16px;color:#475569;line-height:1.6;">Hello ${name},</p>
+    <p style="font-size:16px;color:#475569;line-height:1.6;">
+      <strong>${team.name}</strong> has invited you to join their team for <strong>${event.title}</strong>.
+    </p>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 8px;font-size:14px;color:#64748b;"><strong>Event:</strong> ${event.title}</p>
+      <p style="margin:0 0 8px;font-size:14px;color:#64748b;"><strong>Team:</strong> ${team.name}</p>
+      ${event.date ? `<p style="margin:0 0 8px;font-size:14px;color:#64748b;"><strong>Date:</strong> ${new Date(event.date).toLocaleDateString()}</p>` : ''}
+      ${event.venue ? `<p style="margin:0;font-size:14px;color:#64748b;"><strong>Venue:</strong> ${event.venue}</p>` : ''}
+    </div>
+    <p style="font-size:15px;color:#475569;line-height:1.6;">
+      ${`Click the button below to sign up on Avento (if you haven't already) and accept this team invitation.`}
+    </p>
+    <div style="text-align:center;margin:30px 0;">
+      <a href="${inviteUrl}" style="display:inline-block;padding:14px 32px;border-radius:12px;background:linear-gradient(135deg,#c084fc,#a78bfa);color:#fff;text-decoration:none;font-weight:700;font-size:15px;box-shadow:0 4px 15px rgba(167,139,250,0.4);">Accept Invitation</a>
+    </div>
+    <p style="font-size:12px;color:#94a3b8;">This invitation expires in 7 days. If you did not expect this, you can safely ignore this email.</p>
+    <hr style="border:0;border-top:1px solid #f1f5f9;margin:25px 0;">
+    <p style="font-size:11px;color:#cbd5e1;text-align:center;">AVENTO - Smart Campus Event Management</p>
+  </div>
+</body>
+</html>`;
+
+    await sendEmailNotification({
+      recipientEmail: emailLower,
+      subject: `Team Invitation – ${event.title}`,
+      htmlBody: inviteHtml
+    });
+
+    res.status(201).json({ message: `Invitation sent to ${emailLower}` });
+  } catch (err) {
+    console.error('Error inviting external member:', err);
+    res.status(500).json({ message: 'Server error sending invitation.', error: err.message });
+  }
+};
+
+// ─── GET TEAM EMAIL INVITES ───────────────────────────────────────────────
+exports.getTeamInvites = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const userId = req.user.id;
+
+    const { data: team } = await supabase.from('event_teams').select('leader_id').eq('id', teamId).single();
+    if (!team || team.leader_id !== userId) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const { data: invites, error } = await supabase
+      .from('team_email_invites')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(invites || []);
+  } catch (err) {
+    console.error('Error fetching team invites:', err);
+    res.status(500).json({ message: 'Server error fetching invites.', error: err.message });
+  }
+};
+
+// ─── REVOKE TEAM EMAIL INVITE ─────────────────────────────────────────────
+exports.revokeTeamInvite = async (req, res) => {
+  try {
+    const { teamId, inviteId } = req.params;
+    const userId = req.user.id;
+
+    const { data: team } = await supabase.from('event_teams').select('leader_id').eq('id', teamId).single();
+    if (!team || team.leader_id !== userId) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const { error } = await supabase
+      .from('team_email_invites')
+      .update({ status: 'cancelled' })
+      .eq('id', inviteId)
+      .eq('team_id', teamId);
+
+    if (error) throw error;
+    res.json({ message: 'Invitation revoked.' });
+  } catch (err) {
+    console.error('Error revoking invite:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
+};
+
+// ─── ACCEPT INVITE BY TOKEN (for new + existing users) ────────────────────
+exports.acceptInviteByToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const userId = req.user?.id;
+
+    const { data: invite, error: inviteErr } = await supabase
+      .from('team_email_invites')
+      .select('*, events(id, title, date, venue, registration_deadline, registration_type), event_teams(id, name, leader_id, status)')
+      .eq('invite_token', token)
+      .maybeSingle();
+
+    if (inviteErr || !invite) {
+      return res.status(404).json({ message: 'Invalid or expired invitation.' });
+    }
+
+    if (invite.status !== 'pending') {
+      return res.status(400).json({ message: `This invitation has already been ${invite.status}.` });
+    }
+
+    if (new Date(invite.expires_at) < new Date()) {
+      await supabase.from('team_email_invites').update({ status: 'expired' }).eq('id', invite.id);
+      return res.status(400).json({ message: 'This invitation has expired.' });
+    }
+
+    const event = invite.events;
+    const team = invite.event_teams;
+
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'Registration deadline has passed.' });
+    }
+
+    if (team.status === 'registered') {
+      return res.status(400).json({ message: 'This team is already confirmed.' });
+    }
+
+    if (!userId) {
+      return res.status(200).json({
+        requiresAuth: true,
+        invite: {
+          email: invite.email,
+          name: invite.name,
+          eventTitle: event.title,
+          teamName: team.name,
+          eventDate: event.date,
+          eventVenue: event.venue
+        }
+      });
+    }
+
+    const { data: profile } = await supabase.from('profiles').select('id, email').eq('id', userId).maybeSingle();
+    if (!profile || profile.email.toLowerCase() !== invite.email.toLowerCase()) {
+      return res.status(403).json({ message: 'This invitation was sent to a different email address.' });
+    }
+
+    const { data: existingReg } = await supabase
+      .from('event_registrations')
+      .select('id, status, team_id')
+      .eq('event_id', event.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existingReg && existingReg.status === 'registered') {
+      return res.status(400).json({ message: 'You already have an active registration for this event.' });
+    }
+
+    if (existingReg && existingReg.status === 'pending' && existingReg.team_id === team.id) {
+      await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+      return res.json({
+        message: `You have joined team "${team.name}" for "${event.title}".`,
+        teamName: team.name,
+        eventTitle: event.title
+      });
+    }
+
+    if (existingReg && existingReg.status === 'pending' && existingReg.team_id !== team.id) {
+      return res.status(400).json({ message: 'You are already pending for another team in this event. Leave that team first.' });
+    }
+
+    const { error: regErr } = await supabase
+      .from('event_registrations')
+      .insert({
+        user_id: userId,
+        event_id: event.id,
+        team_id: team.id,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      });
+
+    if (regErr) {
+      if (regErr.code === '23505') {
+        await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+        return res.json({
+          message: `You have joined team "${team.name}" for "${event.title}".`,
+          teamName: team.name,
+          eventTitle: event.title
+        });
+      }
+      throw regErr;
+    }
+
+    await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+
+    res.json({
+      message: `You have joined team "${team.name}" for "${event.title}".`,
+      teamName: team.name,
+      eventTitle: event.title
+    });
+  } catch (err) {
+    console.error('Error accepting invite:', err);
+    res.status(500).json({ message: 'Server error accepting invitation.', error: err.message });
+  }
+};
+
+// ─── GET INVITE BY TOKEN (public, no auth required) ───────────────────────
+exports.getInviteByToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const { data: invite, error } = await supabase
+      .from('team_email_invites')
+      .select('email, name, status, expires_at, events(title, date, venue), event_teams(name)')
+      .eq('invite_token', token)
+      .maybeSingle();
+
+    if (error || !invite) {
+      return res.status(404).json({ message: 'Invalid invitation.' });
+    }
+
+    res.json({
+      email: invite.email,
+      name: invite.name,
+      status: invite.status,
+      expiresAt: invite.expires_at,
+      eventTitle: invite.events?.title,
+      eventDate: invite.events?.date,
+      eventVenue: invite.events?.venue,
+      teamName: invite.event_teams?.name
+    });
+  } catch (err) {
+    console.error('Error fetching invite:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
   }
 };

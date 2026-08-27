@@ -573,3 +573,79 @@ exports.bulkDeleteUsers = async (req, res) => {
     res.status(500).json({ message: 'Failed to perform bulk user deletion.', error: err.message });
   }
 };
+
+// ─── UPDATE FULL PROFILE (photo, phone, college, gender) ──────────────────
+exports.updateFullProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { phone, college, gender, avatar_url } = req.body;
+
+    const updates = {};
+    if (phone !== undefined) updates.phone = phone;
+    if (college !== undefined) updates.college = college;
+    if (gender !== undefined) updates.gender = gender;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'No fields to update.' });
+    }
+
+    const { error } = await supabase.from('profiles').update(updates).eq('id', String(userId));
+    if (error) throw error;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, name, email, phone, college, gender, avatar_url, role')
+      .eq('id', String(userId))
+      .single();
+
+    res.json({
+      message: 'Profile updated successfully.',
+      user: {
+        id: profile.id,
+        fullName: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        college: profile.college,
+        gender: profile.gender,
+        avatarUrl: profile.avatar_url,
+        roles: [profile.role],
+      }
+    });
+  } catch (err) {
+    console.error('updateFullProfile error:', err.message);
+    res.status(500).json({ message: 'Failed to update profile.', error: err.message });
+  }
+};
+
+// ─── GET FULL PROFILE ─────────────────────────────────────────────────────
+exports.getFullProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, phone, college, gender, avatar_url, role, department, roll_number')
+      .eq('id', String(userId))
+      .single();
+
+    if (error || !profile) {
+      return res.status(404).json({ message: 'Profile not found.' });
+    }
+
+    res.json({
+      id: profile.id,
+      fullName: profile.name,
+      email: profile.email,
+      phone: profile.phone,
+      college: profile.college,
+      gender: profile.gender,
+      avatarUrl: profile.avatar_url,
+      roles: [profile.role],
+      department: profile.department,
+      rollNumber: profile.roll_number,
+    });
+  } catch (err) {
+    console.error('getFullProfile error:', err.message);
+    res.status(500).json({ message: 'Failed to fetch profile.', error: err.message });
+  }
+};

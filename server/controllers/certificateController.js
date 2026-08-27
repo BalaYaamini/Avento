@@ -268,7 +268,7 @@ const createPdfCertificate = async (event, student, certId, facultyName = '', or
   drawText(student.name, 'STUDENT_NAME');
 
   try {
-    const cleanBaseUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    const cleanBaseUrl = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/+$/, '');
     const verifyUrl = `${cleanBaseUrl}/verify/${certId}`;
     const qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 1, width: 300, errorCorrectionLevel: 'H' });
     const qrImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');

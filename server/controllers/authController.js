@@ -37,7 +37,7 @@ const upsertProfile = async (userId, email, name, role, employeeId = null, rollN
 // ─── REGISTER ───────────────────────────────────────
 exports.register = async (req, res) => {
   try {
-    const { fullName, email, password, otp } = req.body;
+    const { fullName, email, password, otp, phone, college, gender } = req.body;
     if (!fullName || !email || !password || !otp) {
       return res.status(400).json({ message: 'Please provide fullName, email, password, and OTP.' });
     }
@@ -107,10 +107,47 @@ exports.register = async (req, res) => {
       rollNumber = matches ? matches[1] : `2203A${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
-    await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
+    const profile = await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
+
+    if (phone || college || gender) {
+      const updates = {};
+      if (phone) updates.phone = phone;
+      if (college) updates.college = college;
+      if (gender) updates.gender = gender;
+      await supabase.from('profiles').update(updates).eq('id', userId);
+    }
 
     // Remove OTP after successful registration
     await supabase.from('otps').delete().eq('email', emailLower);
+
+    // Auto-link pending team email invites
+    try {
+      const { data: pendingInvites } = await supabase
+        .from('team_email_invites')
+        .select('id, event_id, team_id, events(title), event_teams(name)')
+        .eq('email', emailLower)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString());
+
+      if (pendingInvites && pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          const { error: regErr } = await supabase
+            .from('event_registrations')
+            .insert({
+              user_id: userId,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          if (!regErr || regErr.code === '23505') {
+            await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+          }
+        }
+      }
+    } catch (linkErr) {
+      console.warn('[Register] Auto-link invites error:', linkErr.message);
+    }
 
     return res.status(201).json({
       message: 'Registration successful. You can now log in.',
@@ -157,7 +194,7 @@ exports.login = async (req, res) => {
     // Check status in Supabase profiles
     const { data: profileData, error: profileErr } = await supabase
       .from('profiles')
-      .select('status, first_login, role, name')
+      .select('status, first_login, role, name, phone, college, gender, avatar_url')
       .eq('id', supaUser.id)
       .single();
 
@@ -185,6 +222,35 @@ exports.login = async (req, res) => {
       roles.push('student');
     }
 
+    // Auto-link pending team email invites
+    try {
+      const { data: pendingInvites } = await supabase
+        .from('team_email_invites')
+        .select('id, event_id, team_id')
+        .eq('email', emailLower)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString());
+
+      if (pendingInvites && pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          const { error: regErr } = await supabase
+            .from('event_registrations')
+            .insert({
+              user_id: supaUser.id,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          if (!regErr || regErr.code === '23505') {
+            await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+          }
+        }
+      }
+    } catch (linkErr) {
+      console.warn('[Login] Auto-link invites error:', linkErr.message);
+    }
+
     const fullName = profileData?.name || supaUser.user_metadata?.full_name || emailLower.split('@')[0];
 
     // Generate JWT
@@ -203,7 +269,11 @@ exports.login = async (req, res) => {
         roles: roles,
         employeeId: null,
         rollNumber: null,
-        first_login: profileData ? profileData.first_login : false
+        first_login: profileData ? profileData.first_login : false,
+        phone: profileData?.phone || null,
+        college: profileData?.college || null,
+        gender: profileData?.gender || null,
+        avatarUrl: profileData?.avatar_url || null,
       }
     });
   } catch (err) {
@@ -419,6 +489,35 @@ exports.googleLogin = async (req, res) => {
     let roles = [userRole];
     if (userRole === 'organizer') roles.push('student');
 
+    // Auto-link pending team email invites
+    try {
+      const { data: pendingInvites } = await supabase
+        .from('team_email_invites')
+        .select('id, event_id, team_id')
+        .eq('email', emailLower)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString());
+
+      if (pendingInvites && pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          const { error: regErr } = await supabase
+            .from('event_registrations')
+            .insert({
+              user_id: supaUser.id,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          if (!regErr || regErr.code === '23505') {
+            await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+          }
+        }
+      }
+    } catch (linkErr) {
+      console.warn('[Google Login] Auto-link invites error:', linkErr.message);
+    }
+
     const token = jwt.sign(
       { id: supaUser.id, email: emailLower, role: userRole },
       process.env.JWT_SECRET || 'avento_super_secret_key_12345',
@@ -435,6 +534,10 @@ exports.googleLogin = async (req, res) => {
         employeeId: null,
         rollNumber: null,
         first_login: profileData.first_login || false,
+        phone: profileData?.phone || null,
+        college: profileData?.college || null,
+        gender: profileData?.gender || null,
+        avatarUrl: profileData?.avatar_url || null,
       }
     });
   } catch (err) {
