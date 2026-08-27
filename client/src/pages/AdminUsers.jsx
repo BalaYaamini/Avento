@@ -162,11 +162,10 @@ const AdminUsers = () => {
 
   const handleDelete = async () => {
     try {
-      console.log('Deleting user:', actionUser?.id || actionUser?._id);
-      const res = await axios.delete(`/api/users/${actionUser.id || actionUser._id}`);
-      console.log('Delete response:', res.data);
+      const userId = actionUser.id || actionUser._id;
+      await axios.delete(`/api/users/${userId}`);
+      setUsers(prev => prev.filter(u => (u.id || u._id) !== userId));
       setIsDeleteModalOpen(false);
-      await fetchUsers();
     } catch (err) {
       console.error('Delete failed:', err.response?.data || err.message);
       alert(err.response?.data?.message || 'Failed to delete user.');
