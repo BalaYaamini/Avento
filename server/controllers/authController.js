@@ -77,12 +77,15 @@ exports.register = async (req, res) => {
 
     // Create user in Supabase Auth
     let userId;
-    const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
-    if (listErr) throw listErr;
-    const existingAuth = usersData.users.find((u) => u.email.toLowerCase() === emailLower);
+    // Check if profile already exists (avoids expensive listUsers call)
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', emailLower)
+      .maybeSingle();
 
-    if (existingAuth) {
-      userId = existingAuth.id;
+    if (existingProfile) {
+      userId = existingProfile.id;
       await supabase.auth.admin.updateUserById(userId, {
         password: password,
         email_confirm: true,
@@ -416,13 +419,6 @@ exports.sendOtp = async (req, res) => {
       .maybeSingle();
 
     if (existingProfile) {
-      return res.status(400).json({ message: 'User already exists with this email.' });
-    }
-
-    // Also check Supabase Auth
-    const { data: usersData } = await supabase.auth.admin.listUsers();
-    const existingAuth = usersData?.users?.find((u) => u.email.toLowerCase() === emailLower);
-    if (existingAuth) {
       return res.status(400).json({ message: 'User already exists with this email.' });
     }
 

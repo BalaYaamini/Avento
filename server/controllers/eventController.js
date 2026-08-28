@@ -27,61 +27,66 @@ const getEvents = async (req, res) => {
     const { data: events, error } = await query;
     if (error) throw error;
 
-    const mappedEvents = await Promise.all((events || []).map(async (evt) => {
-      const { data: orgs } = await supabase
-        .from('event_organizers')
-        .select('student_id')
-        .eq('event_id', evt.id);
-      const { data: members } = await supabase
-        .from('event_members')
-        .select('user_id')
-        .eq('event_id', evt.id);
+    if (!events || events.length === 0) return res.json([]);
 
-      const allOrgIds = [
-        ...(orgs || []).map(o => o.student_id),
-        ...(members || []).map(m => m.user_id)
-      ].filter(Boolean);
+    const eventIds = events.map(e => e.id);
 
+    // Batch fetch all related data in parallel (instead of per-event)
+    const [orgsResult, membersResult, reqsResult, profilesResult, teamCountsResult] = await Promise.all([
+      supabase.from('event_organizers').select('event_id, student_id').in('event_id', eventIds),
+      supabase.from('event_members').select('event_id, user_id').in('event_id', eventIds),
+      supabase.from('organizer_requests').select('event_id, student_id, status, category').in('event_id', eventIds),
+      supabase.from('profiles').select('id, name').in('id', events.map(e => e.proposed_by).filter(Boolean)),
+      supabase.from('event_teams').select('event_id').in('event_id', eventIds).eq('status', 'registered'),
+    ]);
+
+    // Index related data by event_id for O(1) lookups
+    const orgsByEvent = {};
+    (orgsResult.data || []).forEach(o => {
+      (orgsByEvent[o.event_id] = orgsByEvent[o.event_id] || []).push(o.student_id);
+    });
+    const membersByEvent = {};
+    (membersResult.data || []).forEach(m => {
+      (membersByEvent[m.event_id] = membersByEvent[m.event_id] || []).push(m.user_id);
+    });
+    const reqsByEvent = {};
+    (reqsResult.data || []).forEach(r => {
+      (reqsByEvent[r.event_id] = reqsByEvent[r.event_id] || []).push(r);
+    });
+    const profilesById = {};
+    (profilesResult.data || []).forEach(p => { profilesById[p.id] = p.name; });
+    const teamCountByEvent = {};
+    (teamCountsResult.data || []).forEach(t => {
+      teamCountByEvent[t.event_id] = (teamCountByEvent[t.event_id] || 0) + 1;
+    });
+
+    const mappedEvents = events.map((evt) => {
+      const orgIds = orgsByEvent[evt.id] || [];
+      const memberIds = membersByEvent[evt.id] || [];
+
+      const allOrgIds = [...orgIds, ...memberIds];
       if (evt.faculty_id) allOrgIds.push(evt.faculty_id);
       if (evt.proposed_by) allOrgIds.push(evt.proposed_by);
       if (evt.student_organizer_id) allOrgIds.push(evt.student_organizer_id);
       if (evt.organizer_id) allOrgIds.push(evt.organizer_id);
 
-      evt.organizerIds = [...new Set(allOrgIds)];
+      evt.organizerIds = [...new Set(allOrgIds.filter(Boolean))];
       evt.organizersCount = evt.organizerIds.length;
 
-      const { data: reqs } = await supabase
-        .from('organizer_requests')
-        .select('student_id, status, category')
-        .eq('event_id', evt.id);
-      evt.organizerRequests = (reqs || []).map(r => ({ studentId: r.student_id, status: r.status, category: r.category }));
+      const reqs = reqsByEvent[evt.id] || [];
+      evt.organizerRequests = reqs.map(r => ({ studentId: r.student_id, status: r.status, category: r.category }));
 
-      // Fetch proposer's name
-      if (evt.proposed_by) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('name')
-          .eq('id', evt.proposed_by)
-          .maybeSingle();
-        evt.proposerName = profile?.name || 'Unknown Proposer';
-      } else {
-        evt.proposerName = 'Administrator';
-      }
+      evt.proposerName = evt.proposed_by ? (profilesById[evt.proposed_by] || 'Unknown Proposer') : 'Administrator';
 
       if (evt.registration_type === 'team') {
-        const { count: teamCount } = await supabase
-          .from('event_teams')
-          .select('*', { count: 'exact', head: true })
-          .eq('event_id', evt.id)
-          .eq('status', 'registered');
-        const countVal = teamCount || 0;
+        const countVal = teamCountByEvent[evt.id] || 0;
         evt.confirmed_teams_count = countVal;
         evt.registered_count = countVal;
         evt.registeredCount = countVal;
       }
 
       return cleanEventRemarks(evt);
-    }));
+    });
 
     res.json(mappedEvents);
   } catch (err) {
@@ -136,57 +141,65 @@ const getMyEvents = async (req, res) => {
       events.sort((a, b) => new Date(a.date) - new Date(b.date));
     }
 
-    // For each event, fetch team members from event_members
-    const eventsWithMembers = await Promise.all((events || []).map(async (evt) => {
-      const { data: members } = await supabase
-        .from('event_members')
-        .select('*')
-        .eq('event_id', evt.id);
-      const { data: orgs } = await supabase
-        .from('event_organizers')
-        .select('student_id')
-        .eq('event_id', evt.id);
-      const uniqueOrganizerIds = new Set([
-        ...(orgs || []).map(o => o.student_id),
-        ...(members || []).map(m => m.user_id)
-      ].filter(Boolean));
+    if (events.length === 0) return res.json([]);
+
+    const eventIds = events.map(e => e.id);
+    const userId = req.user.id;
+
+    // Batch fetch all related data in parallel (instead of per-event)
+    const [allMembersResult, allOrgsResult, allOrgRolesResult, allReqsResult] = await Promise.all([
+      supabase.from('event_members').select('*').in('event_id', eventIds),
+      supabase.from('event_organizers').select('event_id, student_id, organizer_role').in('event_id', eventIds),
+      supabase.from('event_organizers').select('event_id, organizer_role').in('event_id', eventIds).eq('student_id', userId),
+      supabase.from('organizer_requests').select('event_id, student_id, status, category').in('event_id', eventIds),
+    ]);
+
+    // Index related data by event_id
+    const membersByEvent = {};
+    (allMembersResult.data || []).forEach(m => {
+      (membersByEvent[m.event_id] = membersByEvent[m.event_id] || []).push(m);
+    });
+    const orgsByEvent = {};
+    (allOrgsResult.data || []).forEach(o => {
+      (orgsByEvent[o.event_id] = orgsByEvent[o.event_id] || []).push(o.student_id);
+    });
+    const orgRolesByEvent = {};
+    (allOrgRolesResult.data || []).forEach(o => { orgRolesByEvent[o.event_id] = o.organizer_role; });
+    const reqsByEvent = {};
+    (allReqsResult.data || []).forEach(r => {
+      (reqsByEvent[r.event_id] = reqsByEvent[r.event_id] || []).push(r);
+    });
+
+    const eventsWithMembers = events.map((evt) => {
+      const members = membersByEvent[evt.id] || [];
+      const orgIds = orgsByEvent[evt.id] || [];
+      const uniqueOrganizerIds = new Set([...orgIds, ...members.map(m => m.user_id)].filter(Boolean));
       evt.organizerIds = Array.from(uniqueOrganizerIds);
       evt.organizersCount = evt.organizerIds.length;
 
-      // Determine the requesting user's organizer type for this event.
-      // The proposer and faculty are always Core. Members in event_members use their stored organizer_type.
       const isProposerOrFaculty =
-        String(evt.proposed_by || '') === String(req.user.id) ||
-        String(evt.student_organizer_id || '') === String(req.user.id) ||
-        String(evt.faculty_id || '') === String(req.user.id) ||
-        String(evt.organizer_id || '') === String(req.user.id);
+        String(evt.proposed_by || '') === String(userId) ||
+        String(evt.student_organizer_id || '') === String(userId) ||
+        String(evt.faculty_id || '') === String(userId) ||
+        String(evt.organizer_id || '') === String(userId);
 
       if (isProposerOrFaculty) {
         evt.userOrganizerType = 'core';
       } else {
-        const userMember = (members || []).find(m => String(m.user_id) === String(req.user.id));
+        const userMember = members.find(m => String(m.user_id) === String(userId));
         if (userMember) {
           evt.userOrganizerType = userMember.organizer_type || 'normal';
         } else {
-          // Check event_organizers (post-publication) — treat as normal unless organizer_role is core
-          const { data: orgEntry } = await supabase
-            .from('event_organizers')
-            .select('organizer_role')
-            .eq('event_id', evt.id)
-            .eq('student_id', req.user.id)
-            .maybeSingle();
-          evt.userOrganizerType = (orgEntry?.organizer_role === 'core') ? 'core' : 'normal';
+          const orgRole = orgRolesByEvent[evt.id];
+          evt.userOrganizerType = (orgRole === 'core') ? 'core' : 'normal';
         }
       }
 
-      const { data: reqs } = await supabase
-        .from('organizer_requests')
-        .select('student_id, status, category')
-        .eq('event_id', evt.id);
-      evt.organizerRequests = (reqs || []).map(r => ({ studentId: r.student_id, status: r.status, category: r.category }));
+      const reqs = reqsByEvent[evt.id] || [];
+      evt.organizerRequests = reqs.map(r => ({ studentId: r.student_id, status: r.status, category: r.category }));
 
-      return cleanEventRemarks({ ...evt, teamMembers: members || [] });
-    }));
+      return cleanEventRemarks({ ...evt, teamMembers: members });
+    });
 
     res.json(eventsWithMembers);
   } catch (err) {

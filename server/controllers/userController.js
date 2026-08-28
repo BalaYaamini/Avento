@@ -546,11 +546,14 @@ exports.importUsers = async (req, res) => {
           }
         }
 
-        const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers();
-        if (listErr) throw listErr;
+        // Check if user already exists via profiles table (avoids expensive listUsers call)
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', emailLower)
+          .maybeSingle();
 
-        const existingAuth = usersData.users.find((u) => u.email.toLowerCase() === emailLower);
-        if (existingAuth) {
+        if (existingProfile) {
           skipped++;
           errors.push({ email: emailLower, reason: 'User already exists (skipped)' });
           continue;

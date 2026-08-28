@@ -2,6 +2,26 @@
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabaseClient');
 
+// Simple in-memory profile cache (TTL: 5 minutes)
+const profileCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+
+function getCachedProfile(userId) {
+  const entry = profileCache.get(userId);
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
+  profileCache.delete(userId);
+  return null;
+}
+
+function setCachedProfile(userId, data) {
+  // Limit cache size to prevent memory leaks
+  if (profileCache.size > 500) {
+    const oldestKey = profileCache.keys().next().value;
+    profileCache.delete(oldestKey);
+  }
+  profileCache.set(userId, { data, ts: Date.now() });
+}
+
 module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -13,27 +33,30 @@ module.exports = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'avento_super_secret_key_12345');
 
-    // Fetch user profile from Supabase (single source of truth)
-    let profileData = null;
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', String(decoded.id))
-        .maybeSingle();
-
-      if (data) {
-        profileData = data;
-      } else if (decoded.email) {
-        const { data: dataByEmail } = await supabase
+    // Fetch user profile from Supabase (with cache)
+    let profileData = getCachedProfile(decoded.id);
+    if (!profileData) {
+      try {
+        const { data } = await supabase
           .from('profiles')
           .select('*')
-          .eq('email', String(decoded.email).toLowerCase())
+          .eq('id', String(decoded.id))
           .maybeSingle();
-        if (dataByEmail) profileData = dataByEmail;
+
+        if (data) {
+          profileData = data;
+        } else if (decoded.email) {
+          const { data: dataByEmail } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', String(decoded.email).toLowerCase())
+            .maybeSingle();
+          if (dataByEmail) profileData = dataByEmail;
+        }
+        if (profileData) setCachedProfile(decoded.id, profileData);
+      } catch (supErr) {
+        console.warn('Supabase authMiddleware profile fetch warning:', supErr.message);
       }
-    } catch (supErr) {
-      console.warn('Supabase authMiddleware profile fetch warning:', supErr.message);
     }
 
     if (!profileData) {
