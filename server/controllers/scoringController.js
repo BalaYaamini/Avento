@@ -81,6 +81,7 @@ const updateConfig = async (req, res) => {
     if (removeRounds.length) await supabase.from('scoring_rounds').delete().in('id', removeRounds).eq('event_id', eventId);
     res.json({ message: 'Scoring configuration saved.' });
   } catch (err) {
+    console.error('updateConfig error:', err.message, err);
     res.status(500).json({ message: 'Server error saving scoring configuration.', error: err.message });
   }
 };

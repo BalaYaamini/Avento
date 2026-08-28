@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import ImportScoresModal from './ImportScoresModal';
 
 const rankStyles = [
   'border-amber-300 bg-gradient-to-br from-amber-100 to-yellow-50',
@@ -14,6 +15,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [myTeamId, setMyTeamId] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
   const pendingSaves = useRef({});
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -140,6 +142,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   if (!canEdit && !data.visible) return null;
 
   return (
+    <>
     <section className="scoring-board mb-8 overflow-hidden rounded-[2rem] border border-slate-200/70 bg-white/70 shadow-xl shadow-violet-500/5 backdrop-blur-sm dark:border-slate-700/70 dark:bg-slate-950/90">
       <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-violet-950 to-fuchsia-900 px-6 py-7 text-white sm:px-8">
         <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-fuchsia-400/20 blur-3xl" />
@@ -149,7 +152,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
             <h2 className="font-display text-2xl font-black sm:text-3xl">Scoring Board</h2>
             <p className="mt-1 text-sm text-violet-100/80">Round performance and current team standings.</p>
           </div>
-          {canEdit && <div className="flex flex-wrap gap-2">{pendingCount > 0 && <button onClick={flushPendingSaves} className="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-lg hover:bg-emerald-600 animate-pulse">{pendingCount} unsaved — Click to Save</button>}<button onClick={() => update(['visible'], !data.visible)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">{data.visible ? 'Hide Scoreboard' : 'Show Scoreboard'}</button><button onClick={saveConfig} disabled={saving} className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-violet-800 shadow-lg hover:bg-violet-50">{saving ? 'Saving...' : 'Save Changes'}</button></div>}
+          {canEdit && <div className="flex flex-wrap gap-2">{pendingCount > 0 && <button onClick={flushPendingSaves} className="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-lg hover:bg-emerald-600 animate-pulse">{pendingCount} unsaved — Click to Save</button>}<button onClick={() => setShowImportModal(true)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">Import Excel</button><button onClick={() => update(['visible'], !data.visible)} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">{data.visible ? 'Hide Scoreboard' : 'Show Scoreboard'}</button><button onClick={saveConfig} disabled={saving} className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-violet-800 shadow-lg hover:bg-violet-50">{saving ? 'Saving...' : 'Save Changes'}</button></div>}
         </div>
       </div>
 
@@ -170,6 +173,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         </>}
       </div>
     </section>
+    {showImportModal && <ImportScoresModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} eventId={eventId} rounds={data.rounds} teams={data.teams} scores={data.scores} onImportSuccess={() => { setShowImportModal(false); load(); }} />}
+    </>
   );
 };
 
