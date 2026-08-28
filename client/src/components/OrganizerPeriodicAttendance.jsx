@@ -15,6 +15,11 @@ const toLocalISOString = (dateInput) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
+const cleanPeriodTitle = (name) => {
+  if (!name) return '';
+  return String(name).replace(/🍔/g, '').replace(/\[Food Coupon Included\]/gi, '').trim();
+};
+
 export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
@@ -25,7 +30,13 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   
   // Custom period modal form
   const [showPeriodModal, setShowPeriodModal] = useState(false);
-  const [periodForm, setPeriodForm] = useState({ periodName: '', startTime: '', endTime: '' });
+  const [periodForm, setPeriodForm] = useState({ 
+    periodName: '', 
+    startTime: '', 
+    endTime: '', 
+    includesFoodCoupon: false, 
+    foodCouponName: 'Food / Meal Coupon' 
+  });
   const [editingPeriodId, setEditingPeriodId] = useState(null);
   
   // Customizable Event Start, Duration, & Interval State
@@ -189,7 +200,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
       }
       setShowPeriodModal(false);
       setEditingPeriodId(null);
-      setPeriodForm({ periodName: '', startTime: '', endTime: '' });
+      setPeriodForm({ periodName: '', startTime: '', endTime: '', includesFoodCoupon: false, foodCouponName: 'Food / Meal Coupon' });
       await fetchPeriodicData();
     } catch (err) {
       alert(err.response?.data?.message || 'Error saving period.');
@@ -278,14 +289,14 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black font-display tracking-tight text-white">
-              {activePeriod ? activePeriod.period_name : 'No Active Checkpoint Right Now'}
+              {activePeriod ? cleanPeriodTitle(activePeriod.period_name) : 'No Active Checkpoint Right Now'}
             </h2>
             
             <p className="text-sm text-slate-300 mt-1 font-medium">
               {activePeriod ? (
                 <>Active Period Window: <span className="font-mono text-indigo-300">{new Date(activePeriod.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(activePeriod.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
               ) : nextPeriod ? (
-                <>Next Period (<strong className="text-indigo-300">{nextPeriod.period_name}</strong>) starts at <span className="font-mono text-indigo-300">{new Date(nextPeriod.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
+                <>Next Period (<strong className="text-indigo-300">{cleanPeriodTitle(nextPeriod.period_name)}</strong>) starts at <span className="font-mono text-indigo-300">{new Date(nextPeriod.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
               ) : (
                 'All periodic checkpoints for this event have concluded or no periods generated yet.'
               )}
@@ -677,7 +688,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
               >
                 <option value="all">All Checkpoint Periods</option>
                 {periods.map(p => (
-                  <option key={p.id} value={p.id}>{p.period_name}</option>
+                  <option key={p.id} value={p.id}>{cleanPeriodTitle(p.period_name)}</option>
                 ))}
               </select>
             </div>
@@ -699,7 +710,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                   <span>Checkpoint #{idx + 1}</span>
                   <span className="font-mono text-indigo-600 dark:text-indigo-400">{p.markedCount} Scans</span>
                 </div>
-                <h4 className="text-sm font-black text-slate-900 dark:text-white line-clamp-1">{p.period_name}</h4>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white line-clamp-1">{cleanPeriodTitle(p.period_name)}</h4>
                 <div className="text-[11px] font-mono text-slate-400 mt-1">
                   {new Date(p.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(p.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
@@ -746,13 +757,25 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                       </td>
                       <td className="py-3.5 px-4 font-medium text-slate-800 dark:text-slate-200">
                         <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                          {log.periodName}
+                          {cleanPeriodTitle(log.periodName)}
                         </span>
+                        {(log.includesFoodCoupon || /food|meal|coupon|lunch|dinner|breakfast|snack/i.test(log.periodName || '')) && (
+                          <div className="mt-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <span>Food Coupon Included</span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
-                          ✓ Verified
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                            ✓ Verified
+                          </span>
+                          {(log.includesFoodCoupon || /food|meal|coupon|lunch|dinner|breakfast|snack/i.test(log.periodName || '')) && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700">
+                              Food Coupon Redeemed
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -776,7 +799,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
               <button
                 onClick={() => {
                   setEditingPeriodId(null);
-                  setPeriodForm({ periodName: '', startTime: '', endTime: '' });
+                  setPeriodForm({ periodName: '', startTime: '', endTime: '', includesFoodCoupon: false, foodCouponName: 'Food / Meal Coupon' });
                   setShowPeriodModal(true);
                 }}
                 className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl hover:bg-indigo-500 transition-all flex items-center gap-1"
@@ -789,6 +812,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {periods.map((period, index) => {
               const isCurrentActive = activePeriod && activePeriod.id === period.id;
+              const hasFood = !!(period.includes_food_coupon || /food|meal|coupon|lunch|dinner|breakfast|snack/i.test(period.period_name || ''));
               return (
                 <div
                   key={period.id}
@@ -807,8 +831,16 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                   <div className="flex items-start justify-between">
                     <div>
                       <span className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">Checkpoint #{index + 1}</span>
-                      <h4 className="text-base font-black text-slate-900 dark:text-white mt-0.5">{period.period_name}</h4>
+                      <h4 className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                        {(period.period_name || '').replace(/(?:🍔\s*)?\[Food Coupon Included\]/gi, '').trim()}
+                      </h4>
                       
+                      {hasFood && (
+                        <div className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          <span>Food coupon included during this time period</span>
+                        </div>
+                      )}
+
                       <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-2 flex items-center gap-2">
                         <span>{new Date(period.start_time).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
                         <span>→</span>
@@ -821,9 +853,11 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                         onClick={() => {
                           setEditingPeriodId(period.id);
                           setPeriodForm({
-                            periodName: period.period_name,
+                            periodName: (period.period_name || '').replace(/(?:🍔\s*)?\[Food Coupon Included\]/gi, '').trim(),
                             startTime: toLocalISOString(period.start_time),
-                            endTime: toLocalISOString(period.end_time)
+                            endTime: toLocalISOString(period.end_time),
+                            includesFoodCoupon: hasFood,
+                            foodCouponName: period.food_coupon_name || 'Food / Meal Coupon'
                           });
                           setShowPeriodModal(true);
                         }}
@@ -949,6 +983,39 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                   onChange={e => setPeriodForm(prev => ({ ...prev, endTime: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold dark:text-white"
                 />
+              </div>
+
+              {/* Food Coupon Integration Option */}
+              <div className="p-4 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl space-y-3">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={periodForm.includesFoodCoupon}
+                    onChange={e => setPeriodForm(prev => ({ ...prev, includesFoodCoupon: e.target.checked }))}
+                    className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                  />
+                  <span className="flex items-center gap-1.5">
+                    <span>Include Food Coupon / Meal Pass with this Period</span>
+                  </span>
+                </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 pl-6.5">
+                  Scanning QR during this time period will automatically record both Attendance AND Food Coupon Redemption together in 1 single scan!
+                </p>
+
+                {periodForm.includesFoodCoupon && (
+                  <div className="pl-6.5 pt-1">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1">
+                      Food Coupon Label / Name
+                    </label>
+                    <input
+                      type="text"
+                      value={periodForm.foodCouponName}
+                      onChange={e => setPeriodForm(prev => ({ ...prev, foodCouponName: e.target.value }))}
+                      placeholder="e.g. Lunch Coupon / Dinner Meal Pass"
+                      className="w-full px-3.5 py-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">

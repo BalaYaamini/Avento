@@ -2038,7 +2038,14 @@ const StudentRegistrations = () => {
                 <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
               </div>
               <div className="bg-[#FFFFFF] dark:bg-[#FFFFFF] !bg-[#FFFFFF] p-4 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center">
-                <QRCodeSVG value={String(qrModalData.id || '')} size={200} level="H" includeMargin={false} />
+                <QRCodeSVG 
+                  value={String(qrModalData.id || qrModalData.registration_id || qrModalData.user_id || 'EVENT_PASS')} 
+                  size={200} 
+                  level="H" 
+                  bgColor="#FFFFFF"
+                  fgColor="#000000"
+                  includeMargin={false} 
+                />
               </div>
               <div className="text-center">
                 <p className="text-xs text-slate-600 font-medium">Show this QR code at the venue for attendance verification.</p>

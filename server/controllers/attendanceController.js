@@ -229,13 +229,20 @@ exports.verifyQrToken = async (req, res) => {
         .eq('attendance_period_id', activePeriod.id)
         .maybeSingle();
 
+      // Check if food coupon option is enabled for active period or auto-detected in period name
+      const hasFoodCoupon = activePeriod.includes_food_coupon === true ||
+        (activePeriod.period_name && /food|meal|coupon|lunch|dinner|breakfast|snack/i.test(activePeriod.period_name));
+      const foodCouponLabel = activePeriod.food_coupon_name || 'Food / Meal Coupon';
+
       if (existingRecord) {
         const scanTimeStr = new Date(existingRecord.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         return res.status(200).json({
           success: true,
           alreadyMarked: true,
-          message: `Attendance already marked for this period (${activePeriod.period_name}) at ${scanTimeStr}.`,
+          message: `Attendance already marked for this period (${activePeriod.period_name})${hasFoodCoupon ? ' (Food coupon already redeemed)' : ''} at ${scanTimeStr}.`,
           periodName: activePeriod.period_name,
+          includesFoodCoupon: hasFoodCoupon,
+          foodCouponName: foodCouponLabel,
           originalScanTime: existingRecord.scanned_at,
           student: studentInfo
         });
@@ -257,8 +264,10 @@ exports.verifyQrToken = async (req, res) => {
         return res.status(200).json({
           success: true,
           alreadyMarked: true,
-          message: `Attendance already marked for this period (${activePeriod.period_name}).`,
+          message: `Attendance already marked for this period (${activePeriod.period_name})${hasFoodCoupon ? ' (Food coupon already redeemed)' : ''}.`,
           periodName: activePeriod.period_name,
+          includesFoodCoupon: hasFoodCoupon,
+          foodCouponName: foodCouponLabel,
           student: studentInfo
         });
       } else if (insertErr) {
@@ -279,12 +288,15 @@ exports.verifyQrToken = async (req, res) => {
 
       const totalPeriodsCount = periods.length;
       const progressStr = `${markedCount || 1}/${totalPeriodsCount}`;
+      const foodMsg = hasFoodCoupon ? ` Food Coupon (${foodCouponLabel}) Redeemed Together!` : '';
 
       return res.json({
         success: true,
         alreadyMarked: false,
-        message: `Attendance marked for ${activePeriod.period_name}! (${progressStr})`,
+        message: `Attendance marked for ${activePeriod.period_name}!${foodMsg} (${progressStr})`,
         periodName: activePeriod.period_name,
+        includesFoodCoupon: hasFoodCoupon,
+        foodCouponName: foodCouponLabel,
         scannedAt: now.toISOString(),
         progress: progressStr,
         student: studentInfo
@@ -387,12 +399,15 @@ exports.getEventPeriodicAttendance = async (req, res) => {
     const scanLogs = records.map(r => {
       const periodObj = periods.find(p => p.id === r.attendance_period_id);
       const profile = r.registration?.profiles || {};
+      const hasFood = !!(periodObj?.includes_food_coupon || (periodObj?.period_name && /food|meal|coupon|lunch|dinner|breakfast|snack/i.test(periodObj.period_name)));
       return {
         id: r.id,
         scannedAt: r.scanned_at,
         registrationId: r.registration_id,
         periodId: r.attendance_period_id,
         periodName: periodObj ? periodObj.period_name : 'Checkpoint',
+        includesFoodCoupon: hasFood,
+        foodCouponName: periodObj?.food_coupon_name || 'Food / Meal Coupon',
         participantName: profile.name || 'Participant',
         rollNumber: profile.roll_number || 'N/A',
         email: profile.email || 'N/A'
@@ -544,7 +559,7 @@ exports.autoGeneratePeriods = async (req, res) => {
 exports.createCustomPeriod = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { periodName, startTime, endTime } = req.body;
+    const { periodName, startTime, endTime, includesFoodCoupon, includes_food_coupon, foodCouponName, food_coupon_name } = req.body;
 
     if (!periodName || !startTime || !endTime) {
       return res.status(400).json({ message: 'Period name, start time, and end time are required.' });
@@ -556,18 +571,46 @@ exports.createCustomPeriod = async (req, res) => {
     const isOwner = await checkIsEventOrganizer(event, req.user);
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
-    const { data: newPeriod, error } = await supabase
+    const hasFood = !!(includesFoodCoupon || includes_food_coupon);
+    const couponName = (foodCouponName || food_coupon_name || 'Food / Meal Coupon').trim();
+
+    let cleanName = periodName.replace(/(?:🍔\s*)?\[Food Coupon Included\]/gi, '').trim();
+    if (hasFood) {
+      cleanName = `${cleanName} [Food Coupon Included]`;
+    }
+
+    let insertPayload = {
+      event_id: eventId,
+      period_name: cleanName,
+      start_time: new Date(startTime).toISOString(),
+      end_time: new Date(endTime).toISOString(),
+      includes_food_coupon: hasFood,
+      food_coupon_name: couponName
+    };
+
+    let newPeriod = null;
+    const { data: inserted, error } = await supabase
       .from('event_attendance_periods')
-      .insert({
-        event_id: eventId,
-        period_name: periodName.trim(),
-        start_time: new Date(startTime).toISOString(),
-        end_time: new Date(endTime).toISOString()
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error && (error.message?.includes('includes_food_coupon') || error.code === 'PGRST204')) {
+      delete insertPayload.includes_food_coupon;
+      delete insertPayload.food_coupon_name;
+      const { data: fbPeriod, error: fbErr } = await supabase
+        .from('event_attendance_periods')
+        .insert(insertPayload)
+        .select()
+        .single();
+      if (fbErr) throw fbErr;
+      newPeriod = { ...fbPeriod, includes_food_coupon: hasFood, food_coupon_name: couponName };
+    } else if (error) {
+      throw error;
+    } else {
+      newPeriod = inserted;
+    }
+
     return res.json({ success: true, message: 'Custom attendance period created successfully.', period: newPeriod });
   } catch (err) {
     console.error('Error creating custom period:', err);
@@ -579,7 +622,7 @@ exports.createCustomPeriod = async (req, res) => {
 exports.updatePeriod = async (req, res) => {
   try {
     const { eventId, periodId } = req.params;
-    const { periodName, startTime, endTime } = req.body;
+    const { periodName, startTime, endTime, includesFoodCoupon, includes_food_coupon, foodCouponName, food_coupon_name } = req.body;
 
     const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
     if (!event) return res.status(404).json({ message: 'Event not found.' });
@@ -587,19 +630,49 @@ exports.updatePeriod = async (req, res) => {
     const isOwner = await checkIsEventOrganizer(event, req.user);
     if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
 
-    const { data: updatedPeriod, error } = await supabase
+    const hasFood = includesFoodCoupon !== undefined ? !!includesFoodCoupon : (includes_food_coupon !== undefined ? !!includes_food_coupon : undefined);
+    const couponName = foodCouponName !== undefined ? foodCouponName.trim() : (food_coupon_name !== undefined ? food_coupon_name.trim() : undefined);
+
+    let cleanName = periodName ? periodName.replace(/(?:🍔\s*)?\[Food Coupon Included\]/gi, '').trim() : undefined;
+    if (hasFood && cleanName) {
+      cleanName = `${cleanName} [Food Coupon Included]`;
+    }
+
+    let updatePayload = {
+      period_name: cleanName,
+      start_time: startTime ? new Date(startTime).toISOString() : undefined,
+      end_time: endTime ? new Date(endTime).toISOString() : undefined,
+      includes_food_coupon: hasFood,
+      food_coupon_name: couponName
+    };
+
+    let updatedPeriod = null;
+    const { data: uPeriod, error } = await supabase
       .from('event_attendance_periods')
-      .update({
-        period_name: periodName ? periodName.trim() : undefined,
-        start_time: startTime ? new Date(startTime).toISOString() : undefined,
-        end_time: endTime ? new Date(endTime).toISOString() : undefined
-      })
+      .update(updatePayload)
       .eq('id', periodId)
       .eq('event_id', eventId)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error && (error.message?.includes('includes_food_coupon') || error.code === 'PGRST204')) {
+      delete updatePayload.includes_food_coupon;
+      delete updatePayload.food_coupon_name;
+      const { data: fbUpdated, error: fbErr } = await supabase
+        .from('event_attendance_periods')
+        .update(updatePayload)
+        .eq('id', periodId)
+        .eq('event_id', eventId)
+        .select()
+        .single();
+      if (fbErr) throw fbErr;
+      updatedPeriod = { ...fbUpdated, includes_food_coupon: hasFood, food_coupon_name: couponName };
+    } else if (error) {
+      throw error;
+    } else {
+      updatedPeriod = uPeriod;
+    }
+
     return res.json({ success: true, message: 'Attendance period updated.', period: updatedPeriod });
   } catch (err) {
     console.error('Error updating period:', err);

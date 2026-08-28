@@ -56,6 +56,9 @@ const IDCardManager = ({ eventId, event }) => {
   const [isSingleCardModalOpen, setIsSingleCardModalOpen] = useState(false);
   const [isBatchViewOpen, setIsBatchViewOpen] = useState(false);
   const [isBatchPrinting, setIsBatchPrinting] = useState(false);
+  const [batchPage, setBatchPage] = useState(1);
+  const [batchPageSize, setBatchPageSize] = useState(50); // 50 participants per batch (100 cards = 25 A4 pages) for 100% reliable printing without dropouts
+  const [showAllForPrint, setShowAllForPrint] = useState(false);
   const [showFormatGuide, setShowFormatGuide] = useState(true);
   const [idTemplateUrl, setIdTemplateUrl] = useState(null);
 
@@ -321,7 +324,7 @@ const IDCardManager = ({ eventId, event }) => {
     }
   }, [eventId]);
 
-  const selectedStudentForCard = (students || []).find(s => String(s.registrationId || s.userId) === String(selectedStudentId)) || (students || [])[0] || {
+  const selectedStudentForCard = (students || []).find(s => String(s.registrationId || s.userId || s.id || s.studentId) === String(selectedStudentId)) || (students || [])[0] || {
     name: 'Student Name',
     rollNumber: '2401100cse0001',
     department: 'CSE',
@@ -838,12 +841,9 @@ const IDCardManager = ({ eventId, event }) => {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             margin: 0 auto !important;
-            padding: 5mm 0 !important;
+            padding: 4mm 0 !important;
             box-sizing: border-box !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-            align-items: center !important;
+            display: block !important;
             overflow: hidden !important;
           }
           .id-card-grid-4 {
@@ -865,6 +865,10 @@ const IDCardManager = ({ eventId, event }) => {
             break-inside: avoid !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+          .id-card-item svg, .id-card-item canvas, .id-card-item img {
+            visibility: visible !important;
+            display: block !important;
           }
         }
       `}</style>
@@ -1423,7 +1427,7 @@ const IDCardManager = ({ eventId, event }) => {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => {
-                            setSelectedStudentForCard(student);
+                            setSelectedStudentId(student.registrationId || student.id || student.userId || student.studentId);
                             setIsSingleCardModalOpen(true);
                           }}
                           className="px-3 py-1.5 bg-gradient-to-r from-fuchsia-500/10 to-indigo-500/10 hover:from-fuchsia-500 hover:to-indigo-600 text-fuchsia-600 hover:text-white dark:text-fuchsia-400 font-bold text-xs rounded-xl border border-fuchsia-500/20 transition-all cursor-pointer flex items-center gap-1.5"
@@ -1617,9 +1621,11 @@ const IDCardManager = ({ eventId, event }) => {
                       className="bg-white p-1 rounded-xl shadow-md border border-slate-200 flex items-center justify-center"
                     >
                       <QRCodeSVG
-                        value={selectedStudentForCard.registrationId || selectedStudentForCard.userId || selectedStudentForCard.email || 'EVENT_PASS'}
+                        value={String(selectedStudentForCard.registrationId || selectedStudentForCard.id || selectedStudentForCard.userId || selectedStudentForCard.email || 'EVENT_PASS')}
                         size={(idConfig.QR_CODE.size || 90) - 8}
                         level="H"
+                        bgColor="#FFFFFF"
+                        fgColor="#000000"
                         includeMargin={false}
                       />
                     </div>
@@ -1659,9 +1665,11 @@ const IDCardManager = ({ eventId, event }) => {
                   {/* Centered Large QR Code Box */}
                   <div className="p-3.5 bg-white rounded-3xl shadow-xl border-4 border-slate-900 my-auto flex items-center justify-center relative z-10">
                     <QRCodeSVG
-                      value={String(selectedStudentForCard.registrationId || selectedStudentForCard.id || '')}
+                      value={String(selectedStudentForCard.registrationId || selectedStudentForCard.id || selectedStudentForCard.userId || selectedStudentForCard.email || 'EVENT_PASS')}
                       size={230}
                       level="H"
+                      bgColor="#FFFFFF"
+                      fgColor="#000000"
                       includeMargin={false}
                     />
                   </div>
@@ -1669,7 +1677,7 @@ const IDCardManager = ({ eventId, event }) => {
                   {/* Pass Details */}
                   <div className="w-full space-y-1 pb-1 z-10">
                     <div className="text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
-                      {selectedStudentForCard.registrationId || 'VENUE ENTRY PASS'}
+                      VENUE ENTRY PASS
                     </div>
                     {selectedStudentForCard.collegeName && (
                       <div className="text-[11px] font-bold text-slate-700 line-clamp-1">{selectedStudentForCard.collegeName}</div>
@@ -1719,228 +1727,292 @@ const IDCardManager = ({ eventId, event }) => {
       )}
 
       {/* Batch ID Cards View / Printable Grid */}
-      {isBatchViewOpen && (
-        <div id="printable-id-cards" className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 no-print">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Batch ID Cards Preview</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Print or export ID cards for all registered students ({students.length}).</p>
+      {isBatchViewOpen && (() => {
+        const displayList = (showAllForPrint || batchPageSize === 'all') 
+          ? students 
+          : students.slice((batchPage - 1) * Number(batchPageSize), batchPage * Number(batchPageSize));
+
+        const totalBatchPages = batchPageSize === 'all' ? 1 : Math.ceil(students.length / Number(batchPageSize));
+
+        return (
+          <div id="printable-id-cards" className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4 no-print">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Batch ID Cards Preview</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Print or export ID cards for all registered students ({students.length} Total).</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Scalability Pagination & Batch Selection Bar for 500+ ID Cards */}
+                <div className="flex flex-wrap items-center gap-2 bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <button
+                    disabled={batchPage <= 1 || batchPageSize === 'all'}
+                    onClick={() => setBatchPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg shadow-sm disabled:opacity-40 cursor-pointer"
+                  >
+                    ← Prev Batch
+                  </button>
+
+                  <select
+                    value={batchPage}
+                    onChange={e => setBatchPage(Number(e.target.value))}
+                    disabled={batchPageSize === 'all'}
+                    className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer"
+                  >
+                    {Array.from({ length: totalBatchPages }, (_, i) => {
+                      const pSize = Number(batchPageSize) || 50;
+                      const bStart = i * pSize + 1;
+                      const bEnd = Math.min((i + 1) * pSize, students.length);
+                      return (
+                        <option key={i + 1} value={i + 1}>
+                          Batch {i + 1}: Students {bStart}–{bEnd} ({bEnd - bStart + 1} Participants • {Math.ceil((bEnd - bStart + 1) / 2)} A4 Pages)
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <button
+                    disabled={batchPage >= totalBatchPages || batchPageSize === 'all'}
+                    onClick={() => setBatchPage(p => Math.min(totalBatchPages, p + 1))}
+                    className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg shadow-sm disabled:opacity-40 cursor-pointer"
+                  >
+                    Next Batch →
+                  </button>
+
+                  <select
+                    value={batchPageSize}
+                    onChange={e => {
+                      setBatchPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value));
+                      setBatchPage(1);
+                    }}
+                    className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer"
+                    title="Batch Size Selection"
+                  >
+                    <option value={50}>50 Students / Batch (Recommended)</option>
+                    <option value={100}>100 Students / Batch</option>
+                    <option value={20}>20 Students / Batch</option>
+                    <option value="all">Show All ({students.length} Students)</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handlePrintCard}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs rounded-xl shadow-md hover:from-emerald-700 hover:to-teal-700 transition-colors flex items-center gap-2 cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  <span>🖨️ Print Batch {batchPageSize === 'all' ? 'All' : batchPage} ({displayList.length} Students • {Math.ceil(displayList.length / 2)} A4 Pages)</span>
+                </button>
+              </div>
             </div>
 
-            <button
-              onClick={handlePrintCard}
-              className="px-5 py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-emerald-700 transition-colors flex items-center gap-2 cursor-pointer"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-              </svg>
-              <span>Print All Cards</span>
-            </button>
-          </div>
+            <div className="space-y-8">
+              {chunkArray(displayList, 2).map((pageStudents, pageIdx) => (
+                <div key={pageIdx} className="id-card-print-page space-y-3">
+                  <div className="no-print flex items-center justify-between text-xs font-bold text-fuchsia-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2 w-full max-w-3xl">
+                    <span>📄 Printed Page {pageIdx + 1} (2 Participants • 4 Cards per Page)</span>
+                    <span className="text-slate-400 font-mono font-normal">({pageStudents.length} Participants • {pageStudents.length * 2} Cards)</span>
+                  </div>
 
-          <div className="space-y-8">
-            {chunkArray(students, 2).map((pageStudents, pageIdx) => (
-              <div key={pageIdx} className="id-card-print-page space-y-3">
-                <div className="no-print flex items-center justify-between text-xs font-bold text-fuchsia-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2 w-full max-w-3xl">
-                  <span>📄 Printed Page {pageIdx + 1} (2 Participants • 4 Cards per Page)</span>
-                  <span className="text-slate-400 font-mono font-normal">({pageStudents.length} Participants • {pageStudents.length * 2} Cards)</span>
-                </div>
+                  <div className="id-card-grid-4 grid grid-cols-2 gap-6 items-center justify-center">
+                    {pageStudents.map((student) => (
+                      <React.Fragment key={student.registrationId}>
+                        {/* Front Side ID Card */}
+                        <div
+                          className="id-card-item rounded-3xl border border-white/20 shadow-lg relative overflow-hidden text-center bg-cover bg-center select-none"
+                          style={{
+                            width: '360px',
+                            height: '500px',
+                            margin: '0 auto',
+                            backgroundImage: idTemplateUrl ? `url(${idTemplateUrl})` : 'linear-gradient(to bottom, #0f172a, #1e1b4b, #090d16)',
+                            backgroundSize: '100% 100%',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'center',
+                            backgroundColor: '#0f172a'
+                          }}
+                        >
+                          {/* 1. Student Photo Placeholder */}
+                          {idConfig.STUDENT_PHOTO && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${idConfig.STUDENT_PHOTO.x}px`,
+                                top: `${idConfig.STUDENT_PHOTO.y}px`,
+                                width: `${idConfig.STUDENT_PHOTO.size || 100}px`,
+                                height: `${idConfig.STUDENT_PHOTO.size || 100}px`
+                              }}
+                            >
+                              {student.avatarUrl ? (
+                                <img
+                                  src={resolveStudentAvatarUrl(student.avatarUrl)}
+                                  alt={student.name}
+                                  loading="eager"
+                                  decoding="async"
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full rounded-2xl object-cover border-2 border-fuchsia-400 shadow-md"
+                                  onError={(e) => handleImageError(e, student.avatarUrl)}
+                                />
+                              ) : (
+                                <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20">
+                                  {student.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                <div className="id-card-grid-4 grid grid-cols-2 gap-6 items-center justify-center">
-                  {pageStudents.map((student) => (
-                    <React.Fragment key={student.registrationId}>
-                      {/* Front Side ID Card */}
-                      <div
-                        className="id-card-item rounded-3xl border border-white/20 shadow-lg relative overflow-hidden text-center bg-cover bg-center select-none"
-                        style={{
-                          width: '360px',
-                          height: '500px',
-                          margin: '0 auto',
-                          backgroundImage: idTemplateUrl ? `url(${idTemplateUrl})` : 'linear-gradient(to bottom, #0f172a, #1e1b4b, #090d16)',
-                          backgroundSize: '100% 100%',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'center',
-                          backgroundColor: '#0f172a'
-                        }}
-                      >
-                        {/* 1. Student Photo Placeholder */}
-                        {idConfig.STUDENT_PHOTO && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${idConfig.STUDENT_PHOTO.x}px`,
-                              top: `${idConfig.STUDENT_PHOTO.y}px`,
-                              width: `${idConfig.STUDENT_PHOTO.size || 100}px`,
-                              height: `${idConfig.STUDENT_PHOTO.size || 100}px`
-                            }}
-                          >
-                            {student.avatarUrl ? (
-                              <img
-                                src={resolveStudentAvatarUrl(student.avatarUrl)}
-                                alt={student.name}
-                                loading="eager"
-                                decoding="async"
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full rounded-2xl object-cover border-2 border-fuchsia-400 shadow-md"
-                                onError={(e) => handleImageError(e, student.avatarUrl)}
-                              />
-                            ) : (
-                              <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20">
-                                {student.name.charAt(0).toUpperCase()}
-                              </div>
+                          {/* 2. Student Name Placeholder */}
+                          {idConfig.STUDENT_NAME && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${idConfig.STUDENT_NAME.x}px`,
+                                top: `${idConfig.STUDENT_NAME.y}px`,
+                                fontSize: `${idConfig.STUDENT_NAME.fontSize || 18}px`,
+                                color: idConfig.STUDENT_NAME.color || '#ffffff',
+                                textAlign: idConfig.STUDENT_NAME.align || 'center',
+                                transform: idConfig.STUDENT_NAME.align === 'center' ? 'translateX(-50%)' : 'none',
+                                whiteSpace: 'nowrap',
+                                fontWeight: '900'
+                              }}
+                            >
+                              {student.name}
+                            </div>
+                          )}
+
+                          {/* 3. College Name Placeholder */}
+                          {idConfig.COLLEGE_NAME && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${idConfig.COLLEGE_NAME.x}px`,
+                                top: `${idConfig.COLLEGE_NAME.y}px`,
+                                fontSize: `${idConfig.COLLEGE_NAME.fontSize || 14}px`,
+                                color: idConfig.COLLEGE_NAME.color || '#f0abfc',
+                                textAlign: idConfig.COLLEGE_NAME.align || 'center',
+                                transform: idConfig.COLLEGE_NAME.align === 'center' ? 'translateX(-50%)' : 'none',
+                                whiteSpace: 'nowrap',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              {student.collegeName || ''}
+                            </div>
+                          )}
+
+                          {/* 4. Team Name Placeholder */}
+                          {idConfig.TEAM_NAME && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${idConfig.TEAM_NAME.x}px`,
+                                top: `${idConfig.TEAM_NAME.y}px`,
+                                fontSize: `${idConfig.TEAM_NAME.fontSize || 13}px`,
+                                color: idConfig.TEAM_NAME.color || '#e2e8f0',
+                                textAlign: idConfig.TEAM_NAME.align || 'center',
+                                transform: idConfig.TEAM_NAME.align === 'center' ? 'translateX(-50%)' : 'none',
+                                whiteSpace: 'nowrap',
+                                fontWeight: '600'
+                              }}
+                            >
+                              {student.teamName || ''}
+                            </div>
+                          )}
+
+                          {/* 5. Department Placeholder */}
+                          {idConfig.DEPARTMENT && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${idConfig.DEPARTMENT.x}px`,
+                                top: `${idConfig.DEPARTMENT.y}px`,
+                                fontSize: `${idConfig.DEPARTMENT.fontSize || 12}px`,
+                                color: idConfig.DEPARTMENT.color || '#cbd5e1',
+                                textAlign: idConfig.DEPARTMENT.align || 'center',
+                                transform: idConfig.DEPARTMENT.align === 'center' ? 'translateX(-50%)' : 'none',
+                                whiteSpace: 'nowrap',
+                                fontWeight: '600'
+                              }}
+                            >
+                              {student.department || ''}
+                            </div>
+                          )}
+
+                          {/* 6. Degree Program Placeholder */}
+                          {idConfig.DEGREE_PROGRAM && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${idConfig.DEGREE_PROGRAM.x}px`,
+                                top: `${idConfig.DEGREE_PROGRAM.y}px`,
+                                fontSize: `${idConfig.DEGREE_PROGRAM.fontSize || 12}px`,
+                                color: idConfig.DEGREE_PROGRAM.color || '#94a3b8',
+                                textAlign: idConfig.DEGREE_PROGRAM.align || 'center',
+                                transform: idConfig.DEGREE_PROGRAM.align === 'center' ? 'translateX(-50%)' : 'none',
+                                whiteSpace: 'nowrap',
+                                fontWeight: '500'
+                              }}
+                            >
+                              {student.degreeProgram || ''}
+                            </div>
+                          )}
+
+                        </div>
+
+                        {/* Attached Dedicated QR Pass Card (Only QR Code on Card) */}
+                        <div
+                          className="id-card-item rounded-3xl border border-slate-200 dark:border-slate-800 shadow-lg relative overflow-hidden text-center select-none p-6 flex flex-col items-center justify-between bg-white"
+                          style={{
+                            width: '360px',
+                            height: '500px',
+                            margin: '0 auto',
+                            backgroundColor: '#ffffff'
+                          }}
+                        >
+                          {/* Header */}
+                          <div className="w-full space-y-1 pt-2 z-10">
+                            <div className="flex items-center justify-center gap-1.5 mb-1">
+                              <img src="/logo.png?v=3" alt="Avento Logo" className="h-6 w-auto object-contain" />
+                              <span className="text-xs font-black tracking-wider uppercase text-slate-900">AVENTO</span>
+                            </div>
+                            <span className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              OFFICIAL EVENT ENTRY PASS
+                            </span>
+                            <h4 className="text-sm font-black text-slate-900 line-clamp-1 pt-0.5">
+                              {student.name}
+                            </h4>
+                          </div>
+
+                          {/* Centered Large QR Code Box */}
+                          <div className="p-3.5 bg-white rounded-3xl shadow-xl border-4 border-slate-900 my-auto flex items-center justify-center relative z-10">
+                            <QRCodeSVG
+                              value={String(student.registrationId || student.id || student.userId || student.rollNumber || student.email || 'EVENT_PASS')}
+                              size={230}
+                              level="H"
+                              bgColor="#FFFFFF"
+                              fgColor="#000000"
+                              includeMargin={false}
+                            />
+                          </div>
+
+                          {/* Pass Details */}
+                          <div className="w-full space-y-1 pb-1 z-10">
+                            <div className="text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
+                              VENUE ENTRY PASS
+                            </div>
+                            {student.collegeName && (
+                              <div className="text-[11px] font-bold text-slate-700 line-clamp-1">{student.collegeName}</div>
                             )}
                           </div>
-                        )}
-
-                        {/* 2. Student Name Placeholder */}
-                        {idConfig.STUDENT_NAME && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${idConfig.STUDENT_NAME.x}px`,
-                              top: `${idConfig.STUDENT_NAME.y}px`,
-                              fontSize: `${idConfig.STUDENT_NAME.fontSize || 18}px`,
-                              color: idConfig.STUDENT_NAME.color || '#ffffff',
-                              textAlign: idConfig.STUDENT_NAME.align || 'center',
-                              transform: idConfig.STUDENT_NAME.align === 'center' ? 'translateX(-50%)' : 'none',
-                              whiteSpace: 'nowrap',
-                              fontWeight: '900'
-                            }}
-                          >
-                            {student.name}
-                          </div>
-                        )}
-
-                        {/* 3. College Name Placeholder */}
-                        {idConfig.COLLEGE_NAME && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${idConfig.COLLEGE_NAME.x}px`,
-                              top: `${idConfig.COLLEGE_NAME.y}px`,
-                              fontSize: `${idConfig.COLLEGE_NAME.fontSize || 14}px`,
-                              color: idConfig.COLLEGE_NAME.color || '#f0abfc',
-                              textAlign: idConfig.COLLEGE_NAME.align || 'center',
-                              transform: idConfig.COLLEGE_NAME.align === 'center' ? 'translateX(-50%)' : 'none',
-                              whiteSpace: 'nowrap',
-                              fontWeight: 'bold'
-                            }}
-                          >
-                            {student.collegeName || ''}
-                          </div>
-                        )}
-
-                        {/* 4. Team Name Placeholder */}
-                        {idConfig.TEAM_NAME && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${idConfig.TEAM_NAME.x}px`,
-                              top: `${idConfig.TEAM_NAME.y}px`,
-                              fontSize: `${idConfig.TEAM_NAME.fontSize || 13}px`,
-                              color: idConfig.TEAM_NAME.color || '#e2e8f0',
-                              textAlign: idConfig.TEAM_NAME.align || 'center',
-                              transform: idConfig.TEAM_NAME.align === 'center' ? 'translateX(-50%)' : 'none',
-                              whiteSpace: 'nowrap',
-                              fontWeight: '600'
-                            }}
-                          >
-                            {student.teamName || ''}
-                          </div>
-                        )}
-
-                        {/* 5. Department Placeholder */}
-                        {idConfig.DEPARTMENT && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${idConfig.DEPARTMENT.x}px`,
-                              top: `${idConfig.DEPARTMENT.y}px`,
-                              fontSize: `${idConfig.DEPARTMENT.fontSize || 12}px`,
-                              color: idConfig.DEPARTMENT.color || '#cbd5e1',
-                              textAlign: idConfig.DEPARTMENT.align || 'center',
-                              transform: idConfig.DEPARTMENT.align === 'center' ? 'translateX(-50%)' : 'none',
-                              whiteSpace: 'nowrap',
-                              fontWeight: '600'
-                            }}
-                          >
-                            {student.department || ''}
-                          </div>
-                        )}
-
-                        {/* 6. Degree Program Placeholder */}
-                        {idConfig.DEGREE_PROGRAM && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: `${idConfig.DEGREE_PROGRAM.x}px`,
-                              top: `${idConfig.DEGREE_PROGRAM.y}px`,
-                              fontSize: `${idConfig.DEGREE_PROGRAM.fontSize || 12}px`,
-                              color: idConfig.DEGREE_PROGRAM.color || '#94a3b8',
-                              textAlign: idConfig.DEGREE_PROGRAM.align || 'center',
-                              transform: idConfig.DEGREE_PROGRAM.align === 'center' ? 'translateX(-50%)' : 'none',
-                              whiteSpace: 'nowrap',
-                              fontWeight: '500'
-                            }}
-                          >
-                            {student.degreeProgram || ''}
-                          </div>
-                        )}
-
-                      </div>
-
-                      {/* Attached Dedicated QR Pass Card (Only QR Code on Card) */}
-                      <div
-                        className="id-card-item rounded-3xl border border-slate-200 dark:border-slate-800 shadow-lg relative overflow-hidden text-center select-none p-6 flex flex-col items-center justify-between bg-white"
-                        style={{
-                          width: '360px',
-                          height: '500px',
-                          margin: '0 auto',
-                          backgroundColor: '#ffffff'
-                        }}
-                      >
-                        {/* Header */}
-                        <div className="w-full space-y-1 pt-2 z-10">
-                          <div className="flex items-center justify-center gap-1.5 mb-1">
-                            <img src="/logo.png?v=3" alt="Avento Logo" className="h-6 w-auto object-contain" />
-                            <span className="text-xs font-black tracking-wider uppercase text-slate-900">AVENTO</span>
-                          </div>
-                          <span className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
-                            OFFICIAL EVENT ENTRY PASS
-                          </span>
-                          <h4 className="text-sm font-black text-slate-900 line-clamp-1 pt-0.5">
-                            {student.name}
-                          </h4>
                         </div>
-
-                        {/* Centered Large QR Code Box */}
-                        <div className="p-3.5 bg-white rounded-3xl shadow-xl border-4 border-slate-900 my-auto flex items-center justify-center relative z-10">
-                          <QRCodeSVG
-                            value={String(student.registrationId || student.id || '')}
-                            size={230}
-                            level="H"
-                            includeMargin={false}
-                          />
-                        </div>
-
-                        {/* Pass Details */}
-                        <div className="w-full space-y-1 pb-1 z-10">
-                          <div className="text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
-                            {student.registrationId || 'VENUE ENTRY PASS'}
-                          </div>
-                          {student.collegeName && (
-                            <div className="text-[11px] font-bold text-slate-700 line-clamp-1">{student.collegeName}</div>
-                          )}
-                        </div>
-                      </div>
-                    </React.Fragment>
-                  ))}
+                      </React.Fragment>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Shared Off-Screen Target for Single-Click Scalable Card Downloads (1000+ Students) */}
       {selectedStudentForCard && (
