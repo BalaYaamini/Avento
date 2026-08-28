@@ -40,16 +40,17 @@ const Home = () => {
   const [loadingOrganizers, setLoadingOrganizers] = useState(false);
 
   // Team Registration States
-  const [studentsList, setStudentsList] = useState([]);
   const [isTeamRegOpen, setIsTeamRegOpen] = useState(false);
   const [teamRegEvent, setTeamRegEvent] = useState(null);
   const [teamName, setTeamName] = useState('');
-  const [selectedTeamMembers, setSelectedTeamMembers] = useState([]);
-  const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
-  const [studentSearchTerm, setStudentSearchTerm] = useState('');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isCheckingName, setIsCheckingName] = useState(false);
   const [nameUnavailable, setNameUnavailable] = useState(false);
+  
+  // External member invite state
+  const [externalInviteName, setExternalInviteName] = useState('');
+  const [externalInviteEmail, setExternalInviteEmail] = useState('');
+  const [invitingExternal, setInvitingExternal] = useState(false);
+  const [externalInvites, setExternalInvites] = useState([]);
   
   // Debounce team name checking
   useEffect(() => {
@@ -80,15 +81,6 @@ const Home = () => {
 
     return () => clearTimeout(delayDebounceFn);
   }, [teamName, teamRegEvent]);
-
-  const fetchEligibleStudents = async (eventId) => {
-    try {
-      const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
-      setStudentsList(res.data);
-    } catch (err) {
-      console.error('Error fetching eligible students:', err);
-    }
-  };
 
   const handleViewOrganizers = async (event) => {
     setOrgModalEvent(event);
@@ -196,11 +188,16 @@ const Home = () => {
     if (event.registration_type === 'team') {
       setTeamRegEvent(event);
       setTeamName('');
-      setSelectedTeamMembers([]);
-      setSelectedStudentToAdd('');
+      setExternalInvites([]);
+      setExternalInviteName('');
+      setExternalInviteEmail('');
       setIsTeamRegOpen(true);
-      fetchEligibleStudents(event._id || event.id);
     } else {
+      if (!user.phone || !user.college || !user.gender) {
+        setFeedback({ type: 'error', message: 'Please complete your profile (phone, college, gender) before registering.' });
+        setTimeout(() => setFeedback(null), 4000);
+        return;
+      }
       setConfirmRegEvent(event);
       setIsConfirmRegOpen(true);
     }
@@ -338,7 +335,7 @@ const Home = () => {
     const eventId = teamRegEvent._id || teamRegEvent.id;
     
     const leaderCount = teamRegEvent.team_leader_registration_required !== false ? 1 : 0;
-    const totalMembers = selectedTeamMembers.length + leaderCount;
+    const totalMembers = externalInvites.length + leaderCount;
     const minSize = teamRegEvent.min_team_size || 1;
     const maxSize = teamRegEvent.max_team_size || 4;
 
@@ -356,15 +353,26 @@ const Home = () => {
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
-      const memberIds = selectedTeamMembers.map(m => m.id);
-      await axios.post('/api/registrations/team', {
+      const teamRes = await axios.post('/api/registrations/team', {
         eventId,
         teamName,
-        memberIds
+        memberIds: []
       });
+
+      const teamId = teamRes.data?.team?.id;
+      if (teamId && externalInvites.length > 0) {
+        for (const inv of externalInvites) {
+          await axios.post(`/api/registrations/team/${teamId}/invite-external`, {
+            email: inv.email,
+            name: inv.name
+          }).catch(() => {});
+        }
+      }
+
       setFeedback({ type: 'success', message: 'Successfully registered team for the event!' });
       setIsTeamRegOpen(false);
       setTeamRegEvent(null);
+      setExternalInvites([]);
       await Promise.all([fetchEvents(), fetchMyRegistrations()]);
     } catch (err) {
       if (err.response?.data?.profileIncomplete) {
@@ -896,114 +904,71 @@ const Home = () => {
                   )}
                 </div>
 
-                <div className="relative">
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Add Team Members</label>
+                {/* Invite Team Members by Email */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
+                    Invite Team Members by Email
+                  </label>
                   <div className="flex gap-2">
-                    <div className="relative flex-grow">
-                      <div 
-                        className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body flex justify-between items-center cursor-pointer"
-                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                      >
-                        <span className="truncate">
-                          {selectedStudentToAdd 
-                            ? (studentsList.find(s => s.id === selectedStudentToAdd)?.fullName || 'Selected Student') 
-                            : '-- Select Student --'}
-                        </span>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-
-                      {isDropdownOpen && (
-                        <div className="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-lg border border-slate-200/60 overflow-hidden">
-                          <div className="p-2 border-b border-slate-100">
-                            <input
-                              type="text"
-                              autoFocus
-                              placeholder="Search by Name, Roll No or Email..."
-                              value={studentSearchTerm}
-                              onChange={(e) => setStudentSearchTerm(e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
-                            />
-                          </div>
-                          <div className="max-h-48 overflow-y-auto">
-                            {studentsList
-                              .filter(s => s.id !== user?.id && !selectedTeamMembers.some(m => m.id === s.id))
-                              .filter(s => {
-                                const term = studentSearchTerm.toLowerCase();
-                                return (
-                                  (s.fullName || s.name || '').toLowerCase().includes(term) ||
-                                  (s.email || '').toLowerCase().includes(term) ||
-                                  (s.rollNumber || '').toLowerCase().includes(term)
-                                );
-                              })
-                              .map(std => {
-                                const email = std.email || '';
-                                const rollNum = email ? email.split('@')[0] : '';
-                                return (
-                                  <div
-                                    key={std.id}
-                                    onClick={() => {
-                                      setSelectedStudentToAdd(std.id);
-                                      setIsDropdownOpen(false);
-                                      setStudentSearchTerm('');
-                                    }}
-                                    className={`px-3 py-2 text-sm cursor-pointer hover:bg-fuchsia-50 transition-colors ${selectedStudentToAdd === std.id ? 'bg-fuchsia-50/50 font-semibold' : ''}`}
-                                  >
-                                    <div>{std.displayLabel || std.fullName || std.name}</div>
-                                    <div className="text-[10px] text-slate-500">{rollNum} • {std.department || 'Unknown Dept'}</div>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
+                    <input
+                      type="text"
+                      placeholder="Full Name"
+                      value={externalInviteName}
+                      onChange={(e) => setExternalInviteName(e.target.value)}
+                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      value={externalInviteEmail}
+                      onChange={(e) => setExternalInviteEmail(e.target.value)}
+                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                    />
                     <button
                       type="button"
-                      disabled={!selectedStudentToAdd || selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) >= teamRegEvent.max_team_size}
+                      disabled={!externalInviteName.trim() || !externalInviteEmail.trim() || invitingExternal}
                       onClick={() => {
-                        if (!selectedStudentToAdd) return;
-                        if (selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) >= teamRegEvent.max_team_size) return;
-                        const student = studentsList.find(s => s.id === selectedStudentToAdd);
-                        if (student) {
-                          setSelectedTeamMembers([...selectedTeamMembers, student]);
-                          setSelectedStudentToAdd('');
+                        if (!externalInviteName.trim() || !externalInviteEmail.trim()) return;
+                        const leaderCount = teamRegEvent.team_leader_registration_required !== false ? 1 : 0;
+                        if (externalInvites.length + leaderCount >= teamRegEvent.max_team_size) {
+                          setFeedback({ type: 'error', message: 'Cannot add more members. Maximum team size reached.' });
+                          setTimeout(() => setFeedback(null), 4000);
+                          return;
                         }
+                        setExternalInvites([...externalInvites, { name: externalInviteName.trim(), email: externalInviteEmail.trim() }]);
+                        setExternalInviteName('');
+                        setExternalInviteEmail('');
                       }}
-                      className="px-4 py-2 text-xs font-bold rounded-xl bg-fuchsia-600 text-white hover:bg-fuchsia-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm disabled:opacity-50"
                     >
-                      Add
+                      + Add
                     </button>
                   </div>
-                  {selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) >= teamRegEvent.max_team_size && (
-                    <p className="text-xs text-red-500 mt-2 font-semibold">Maximum team size reached.</p>
-                  )}
                 </div>
 
-                {/* Selected Members */}
+                {/* Selected Members & Invites */}
                 <div>
                   <h4 className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
-                    Current Members ({selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0)})
+                    Current Members ({externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0)})
                   </h4>
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {teamRegEvent.team_leader_registration_required !== false && (
                       <div className="flex items-center justify-between p-2.5 bg-fuchsia-500/5 rounded-lg border border-fuchsia-500/10">
                         <div className="text-sm font-semibold text-slate-800">
-                          {user?.fullName || user?.name} <span className="text-[10px] ml-1 text-fuchsia-500">(Leader)</span>
+                          {user?.fullName || user?.name} <span className="text-[10px] ml-1 text-fuchsia-500 font-bold uppercase">(Leader)</span>
                         </div>
                       </div>
                     )}
-                    {selectedTeamMembers.map(member => (
-                      <div key={member.id} className="flex items-center justify-between p-2.5 bg-white/40 rounded-lg border border-slate-200/40">
+                    {externalInvites.map((inv, i) => (
+                      <div key={`ext-${i}`} className="flex items-center justify-between p-2.5 bg-emerald-50/50 rounded-lg border border-emerald-200/50">
                         <div className="text-sm font-semibold text-slate-800">
-                          {member.fullName || member.name}
-                          <div className="text-[10px] text-slate-500 font-medium">{member.department}</div>
+                          {inv.name}
+                          <span className="text-[10px] ml-1 text-slate-500">({inv.email})</span>
+                          <span className="text-[10px] ml-1 text-emerald-600 font-bold uppercase">— email invite</span>
                         </div>
                         <button
                           type="button"
-                          onClick={() => setSelectedTeamMembers(selectedTeamMembers.filter(m => m.id !== member.id))}
+                          onClick={() => setExternalInvites(externalInvites.filter((_, idx) => idx !== i))}
                           className="text-red-400 hover:text-red-600 text-xs font-bold px-2 py-1"
                         >
                           Remove
@@ -1013,16 +978,16 @@ const Home = () => {
                   </div>
                   <div className="mt-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
                     <p className="text-xs text-indigo-700 font-medium">
-                      <strong className="font-bold">Note:</strong> Upon creating the team, all selected members will receive an invitation to join. They must accept the invitation before the event's deadline. Once the minimum required members accept, you will be able to confirm the team and officially register for the event.
+                      <strong className="font-bold">Note:</strong> Upon creating the team, invited members will receive an email to join. They must sign up on Avento and accept the invitation. Once the minimum required members accept, you can confirm the team.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size && (
+              {externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size && (
                 <div className="mb-2 p-3 bg-red-50 border border-red-100 rounded-xl">
                   <p className="text-xs text-red-600 font-semibold text-center">
-                    Please add at least {teamRegEvent.min_team_size} members to create the team.
+                    Please invite at least {teamRegEvent.min_team_size} members to create the team.
                   </p>
                 </div>
               )}
@@ -1033,6 +998,7 @@ const Home = () => {
                   onClick={() => {
                     setIsTeamRegOpen(false);
                     setTeamRegEvent(null);
+                    setExternalInvites([]);
                   }}
                   className="px-5 py-2.5 text-xs font-bold rounded-xl btn-secondary"
                 >
@@ -1040,7 +1006,7 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (selectedTeamMembers.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable}
+                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable}
                   className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
                 >
                   {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}

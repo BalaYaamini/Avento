@@ -13,7 +13,11 @@ const AuthCallback = () => {
         const result = await completeGoogleLogin();
         if (result.success) {
           setStatus('Success! Redirecting...');
-          navigate('/', { replace: true });
+          if (result.hasPassword === false) {
+            navigate('/set-password', { replace: true });
+          } else {
+            navigate('/', { replace: true });
+          }
         } else {
           setStatus('Sign-in failed. Redirecting to login...');
           setTimeout(() => navigate('/login', { replace: true }), 2000);

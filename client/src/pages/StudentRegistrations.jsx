@@ -30,21 +30,21 @@ const StudentRegistrations = () => {
   // Edit Team state
   const [editTeamData, setEditTeamData] = useState(null);
   const [editTeamName, setEditTeamName] = useState('');
-  const [eligibleStudentsEdit, setEligibleStudentsEdit] = useState([]);
-  const [selectedStudentEdit, setSelectedStudentEdit] = useState('');
   const [isEditTeamOpen, setIsEditTeamOpen] = useState(false);
   const [teamEditFeedback, setTeamEditFeedback] = useState(null);
   const [isCheckingName, setIsCheckingName] = useState(false);
   const [nameUnavailable, setNameUnavailable] = useState(false);
   
+  // External invite state for Edit Team
+  const [editInviteName, setEditInviteName] = useState('');
+  const [editInviteEmail, setEditInviteEmail] = useState('');
+  const [editInvitingExternal, setEditInvitingExternal] = useState(false);
+  const [editExternalInvites, setEditExternalInvites] = useState([]);
+  
   // Leader Contact Number for Team Confirmation
   const [leaderContactNumber, setLeaderContactNumber] = useState('');
   const [contactNumberError, setContactNumberError] = useState('');
   const [teamUtr, setTeamUtr] = useState('');
-  
-  // Searchable dropdown states for Add/Replace Member
-  const [isEditDropdownOpen, setIsEditDropdownOpen] = useState(false);
-  const [studentSearchTermEdit, setStudentSearchTermEdit] = useState('');
   
   // Debounce team name checking for Edit Team
   useEffect(() => {
@@ -392,6 +392,9 @@ const StudentRegistrations = () => {
   const handleEditTeamOpen = async (reg) => {
     setEditTeamData(reg);
     setEditTeamName(reg.teamId?.name || '');
+    setEditExternalInvites([]);
+    setEditInviteName('');
+    setEditInviteEmail('');
     setIsEditTeamOpen(true);
     setTeamEditFeedback(null);
     setSelectedStudentEdit('');
@@ -422,25 +425,25 @@ const StudentRegistrations = () => {
     }
   };
 
-  const handleAddTeamMember = async () => {
-    if (!selectedStudentEdit || !editTeamData) return;
+  const handleInviteExternalEdit = async () => {
+    if (!editInviteName.trim() || !editInviteEmail.trim() || !editTeamData) return;
     const teamId = editTeamData.teamId.id;
-    setProcessingId(`add-${teamId}`);
+    setEditInvitingExternal(true);
     setTeamEditFeedback(null);
     try {
-      await axios.post(`/api/registrations/team/${teamId}/members`, { memberId: selectedStudentEdit });
-      setTeamEditFeedback({ type: 'success', message: 'Team member invited successfully.' });
-      setSelectedStudentEdit('');
+      await axios.post(`/api/registrations/team/${teamId}/invite-external`, {
+        email: editInviteEmail.trim(),
+        name: editInviteName.trim()
+      });
+      setTeamEditFeedback({ type: 'success', message: `Invitation sent to ${editInviteEmail.trim()}.` });
+      setEditExternalInvites([...editExternalInvites, { name: editInviteName.trim(), email: editInviteEmail.trim() }]);
+      setEditInviteName('');
+      setEditInviteEmail('');
       fetchRegistrations();
-      
-      // Refresh eligible students to remove the newly invited one
-      const eventId = editTeamData.eventId?.id || editTeamData.eventId?._id;
-      const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
-      setEligibleStudentsEdit(res.data);
     } catch (err) {
-      setTeamEditFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to invite team member.' });
+      setTeamEditFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to send invitation.' });
     } finally {
-      setProcessingId(null);
+      setEditInvitingExternal(false);
     }
   };
 
@@ -1891,113 +1894,59 @@ const StudentRegistrations = () => {
                 </div>
               </div>
 
-              {/* Add Member */}
+              {/* Invite External Member by Email */}
               {(() => {
                 const currentCount = editTeamData.teamDetails?.members?.filter(m => m.status === 'registered' || m.status === 'pending' || m.id === editTeamData.teamId.leader_id).length || 0;
                 const maxCount = editTeamData.eventId?.max_team_size || 999;
                 
                 if (currentCount < maxCount) {
                   return (
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Add Member</label>
+                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Invite Member by Email</label>
                       <div className="flex gap-2">
-                        <div className="relative flex-grow">
-                          <div 
-                            className={`w-full bg-white border text-slate-800 text-sm rounded-xl px-3 py-2.5 font-body flex justify-between items-center transition-colors ${
-                              !!processingId || eligibleStudentsEdit.length === 0 
-                                ? 'opacity-50 cursor-not-allowed border-slate-200' 
-                                : 'cursor-pointer border-slate-200 hover:border-emerald-500'
-                            }`}
-                            onClick={async () => {
-                              if (!processingId) {
-                                if (!isEditDropdownOpen) {
-                                  // Fetch fresh data when opening dropdown
-                                  const eventId = editTeamData.eventId?.id || editTeamData.eventId?._id;
-                                  try {
-                                    const res = await axios.get(`/api/registrations/event/${eventId}/eligible-students`);
-                                    setEligibleStudentsEdit(res.data);
-                                    if (res.data.length > 0) setIsEditDropdownOpen(true);
-                                  } catch (err) {
-                                    console.error('Error fetching eligible students:', err);
-                                  }
-                                } else {
-                                  setIsEditDropdownOpen(false);
-                                }
-                              }
-                            }}
-                          >
-                            <span className="truncate">
-                              {selectedStudentEdit 
-                                ? (eligibleStudentsEdit.find(s => s.id === selectedStudentEdit)?.displayLabel || 'Selected Student') 
-                                : (eligibleStudentsEdit.length === 0 ? 'No eligible students available' : 'Select a student to invite...')}
-                            </span>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-
-                          {isEditDropdownOpen && (
-                            <div className="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-lg border border-slate-200/60 overflow-hidden">
-                              <div className="p-2 border-b border-slate-100">
-                                <input
-                                  type="text"
-                                  autoFocus
-                                  placeholder="Search by Name, Roll No or Email..."
-                                  value={studentSearchTermEdit}
-                                  onChange={(e) => setStudentSearchTermEdit(e.target.value)}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 transition-all duration-300"
-                                />
-                              </div>
-                              <div className="max-h-48 overflow-y-auto">
-                                {eligibleStudentsEdit
-                                  .filter(s => {
-                                    const term = studentSearchTermEdit.toLowerCase();
-                                    return (
-                                      (s.fullName || s.name || '').toLowerCase().includes(term) ||
-                                      (s.email || '').toLowerCase().includes(term) ||
-                                      (s.rollNumber || '').toLowerCase().includes(term)
-                                    );
-                                  })
-                                  .map(std => (
-                                    <div
-                                      key={std.id}
-                                      onClick={() => {
-                                        setSelectedStudentEdit(std.id);
-                                        setIsEditDropdownOpen(false);
-                                        setStudentSearchTermEdit('');
-                                      }}
-                                      className="px-3 py-2.5 hover:bg-emerald-50 cursor-pointer border-b border-slate-50/50 last:border-none transition-colors"
-                                    >
-                                      <p className="text-sm font-semibold text-slate-700">{std.fullName || std.name || 'Unknown'}</p>
-                                      <p className="text-[10px] text-slate-500 font-medium">
-                                        {std.email} {std.rollNumber && `• ${std.rollNumber}`}
-                                      </p>
-                                    </div>
-                                  ))}
-                                {eligibleStudentsEdit.filter(s => {
-                                    const term = studentSearchTermEdit.toLowerCase();
-                                    return (
-                                      (s.fullName || s.name || '').toLowerCase().includes(term) ||
-                                      (s.email || '').toLowerCase().includes(term) ||
-                                      (s.rollNumber || '').toLowerCase().includes(term)
-                                    );
-                                }).length === 0 && (
-                                  <div className="px-3 py-4 text-center text-xs text-slate-500">
-                                    No students match your search.
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                        <input
+                          type="text"
+                          placeholder="Full Name"
+                          value={editInviteName}
+                          onChange={(e) => setEditInviteName(e.target.value)}
+                          disabled={!!processingId}
+                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500 transition-all duration-300"
+                        />
+                        <input
+                          type="email"
+                          placeholder="Email"
+                          value={editInviteEmail}
+                          onChange={(e) => setEditInviteEmail(e.target.value)}
+                          disabled={!!processingId}
+                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500 transition-all duration-300"
+                        />
                         <button
-                          onClick={handleAddTeamMember}
-                          disabled={!!processingId || !selectedStudentEdit}
-                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+                          onClick={handleInviteExternalEdit}
+                          disabled={!!processingId || !editInviteName.trim() || !editInviteEmail.trim()}
+                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
                         >
-                          {processingId === `add-${editTeamData.teamId.id}` ? 'Adding...' : 'Invite'}
+                          {editInvitingExternal ? 'Sending...' : 'Invite'}
                         </button>
                       </div>
+                      {editExternalInvites.length > 0 && (
+                        <div className="space-y-1.5">
+                          {editExternalInvites.map((inv, i) => (
+                            <div key={i} className="flex items-center justify-between p-2 bg-violet-50/50 rounded-lg border border-violet-200/50">
+                              <div className="text-xs">
+                                <span className="font-bold text-slate-700">{inv.name}</span>
+                                <span className="text-slate-500 ml-1">({inv.email})</span>
+                                <span className="ml-1 text-violet-600 font-bold">— invite sent</span>
+                              </div>
+                              <button
+                                onClick={() => setEditExternalInvites(editExternalInvites.filter((_, idx) => idx !== i))}
+                                className="text-red-400 hover:text-red-600 text-xs font-bold px-2"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 } else {

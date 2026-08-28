@@ -696,12 +696,23 @@ exports.deleteUser = async (req, res) => {
       return res.status(403).json({ message: 'Action restricted: Cannot delete an administrator account.' });
     }
 
+    // Clean up related records first (avoid FK constraint errors)
+    await supabase.from('event_registrations').delete().eq('user_id', String(userId));
+    await supabase.from('team_email_invites').delete().eq('invited_by', String(userId));
+    await supabase.from('team_email_invites').delete().eq('email', profile?.email || '');
+
+    // Delete from Supabase Auth
     const { error: authErr } = await supabase.auth.admin.deleteUser(String(userId));
     if (authErr) {
       console.warn('Supabase Auth delete warning:', authErr.message);
     }
 
-    await supabase.from('profiles').delete().eq('id', String(userId));
+    // Delete profile
+    const { error: profileErr } = await supabase.from('profiles').delete().eq('id', String(userId));
+    if (profileErr) {
+      console.error('Profile delete error:', profileErr.message);
+      return res.status(500).json({ message: 'Failed to delete user profile.', error: profileErr.message });
+    }
 
     res.json({ message: 'User deleted successfully.' });
   } catch (err) {
@@ -737,13 +748,25 @@ exports.bulkDeleteUsers = async (req, res) => {
     for (const uId of eligibleUserIds) {
       const idStr = String(uId);
 
+      // Clean up related records first
+      await supabase.from('event_registrations').delete().eq('user_id', idStr);
+      await supabase.from('team_email_invites').delete().eq('invited_by', idStr);
+      const { data: p } = await supabase.from('profiles').select('email').eq('id', idStr).single();
+      if (p?.email) {
+        await supabase.from('team_email_invites').delete().eq('email', p.email);
+      }
+
       try {
         await supabase.auth.admin.deleteUser(idStr);
       } catch (authErr) {
         console.warn(`Supabase Auth bulk delete warning for ${idStr}:`, authErr.message);
       }
 
-      await supabase.from('profiles').delete().eq('id', idStr);
+      const { error: delErr } = await supabase.from('profiles').delete().eq('id', idStr);
+      if (delErr) {
+        console.error(`Profile bulk delete error for ${idStr}:`, delErr.message);
+        continue;
+      }
 
       deletedCount++;
     }
@@ -755,5 +778,81 @@ exports.bulkDeleteUsers = async (req, res) => {
   } catch (err) {
     console.error('bulkDeleteUsers error:', err.message);
     res.status(500).json({ message: 'Failed to perform bulk user deletion.', error: err.message });
+  }
+};
+
+// ─── UPDATE FULL PROFILE (photo, phone, college, gender) ──────────────────
+exports.updateFullProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { phone, college, gender, avatar_url } = req.body;
+
+    const updates = {};
+    if (phone !== undefined) updates.phone = phone;
+    if (college !== undefined) updates.college = college;
+    if (gender !== undefined) updates.gender = gender;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'No fields to update.' });
+    }
+
+    const { error } = await supabase.from('profiles').update(updates).eq('id', String(userId));
+    if (error) throw error;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, name, email, phone, college, gender, avatar_url, role')
+      .eq('id', String(userId))
+      .single();
+
+    res.json({
+      message: 'Profile updated successfully.',
+      user: {
+        id: profile.id,
+        fullName: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        college: profile.college,
+        gender: profile.gender,
+        avatarUrl: profile.avatar_url,
+        roles: [profile.role],
+      }
+    });
+  } catch (err) {
+    console.error('updateFullProfile error:', err.message);
+    res.status(500).json({ message: 'Failed to update profile.', error: err.message });
+  }
+};
+
+// ─── GET FULL PROFILE ─────────────────────────────────────────────────────
+exports.getFullProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, phone, college, gender, avatar_url, role, department, roll_number')
+      .eq('id', String(userId))
+      .single();
+
+    if (error || !profile) {
+      return res.status(404).json({ message: 'Profile not found.' });
+    }
+
+    res.json({
+      id: profile.id,
+      fullName: profile.name,
+      email: profile.email,
+      phone: profile.phone,
+      college: profile.college,
+      gender: profile.gender,
+      avatarUrl: profile.avatar_url,
+      roles: [profile.role],
+      department: profile.department,
+      rollNumber: profile.roll_number,
+    });
+  } catch (err) {
+    console.error('getFullProfile error:', err.message);
+    res.status(500).json({ message: 'Failed to fetch profile.', error: err.message });
   }
 };

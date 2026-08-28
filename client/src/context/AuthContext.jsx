@@ -62,12 +62,24 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
+      // First check with backend if account needs password setup
+      const res = await axios.post('/api/auth/login', { email: email.trim(), password });
+
+      // If backend says needsPassword, return that info without trying Supabase
+      if (res.data.needsPassword) {
+        return { success: false, needsPassword: true, message: res.data.message };
+      }
+
+      // Now sign in via Supabase Auth (password verified by backend, but Supabase session needed)
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password
       });
 
-      const res = await axios.post('/api/auth/login', { email: email.trim(), password });
+      if (authError) {
+        setError(authError.message);
+        return { success: false, message: authError.message };
+      }
       
       const { token, user: userData } = res.data;
       
@@ -78,6 +90,10 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (e) {
       const msg = e.response?.data?.message || e.message;
+      const needsPassword = e.response?.data?.needsPassword || false;
+      if (needsPassword) {
+        return { success: false, needsPassword: true, message: msg };
+      }
       setError(msg);
       return { success: false, message: msg };
     } finally {
@@ -125,7 +141,7 @@ export const AuthProvider = ({ children }) => {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(userData);
 
-      return { success: true };
+      return { success: true, hasPassword: userData.hasPassword };
     } catch (e) {
       const msg = e.response?.data?.message || e.message;
       setError(msg);
@@ -150,14 +166,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (fullName, email, password, otp) => {
+  const register = async (fullName, email, password, otp, profileData = {}) => {
     try {
       setLoading(true);
       await axios.post('/api/auth/register', { 
         fullName, 
         email: email.trim().toLowerCase(), 
         password, 
-        otp 
+        otp,
+        phone: profileData.phone || '',
+        college: profileData.college || '',
+        gender: profileData.gender || ''
       });
       return { success: true };
     } catch (e) {
@@ -190,35 +209,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const uploadAvatar = async (file) => {
-    try {
-      const formData = new FormData();
-      formData.append('photo', file);
-      const res = await axios.put('/api/users/profile/photo', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      if (res.data?.avatarUrl) {
-        setUser(prev => ({ ...prev, avatarUrl: res.data.avatarUrl }));
-      }
-      return { success: true, avatarUrl: res.data.avatarUrl };
-    } catch (e) {
-      const msg = e.response?.data?.message || e.message;
-      return { success: false, message: msg };
-    }
-  };
-
-  const removeAvatar = async () => {
-    try {
-      // Send an empty body to clear the avatar
-      const res = await axios.put('/api/users/profile/photo', {});
-      setUser(prev => ({ ...prev, avatarUrl: null }));
-      return { success: true };
-    } catch (e) {
-      const msg = e.response?.data?.message || e.message;
-      return { success: false, message: msg };
-    }
-  };
-
   const clearError = () => setError(null);
 
   const value = {
@@ -233,8 +223,6 @@ export const AuthProvider = ({ children }) => {
     logout,
     sendOtp,
     updateProfile,
-    uploadAvatar,
-    removeAvatar,
     clearError,
     getRedirectPath,
     inferRole,

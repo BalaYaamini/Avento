@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ImportUsersModal from '../components/ImportUsersModal';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +24,7 @@ const AdminUsers = () => {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [tempPassword, setTempPassword] = useState('');
+  const [openDropdownId, setOpenDropdownId] = useState(null);
   
   // Edit form state
   const [editForm, setEditForm] = useState({ fullName: '', department: '', role: '' });
@@ -52,6 +53,16 @@ const AdminUsers = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (openDropdownId !== null && !e.target.closest('[data-dropdown]')) {
+        setOpenDropdownId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openDropdownId]);
 
   // Split users by registration method
   const importedUsers = users.filter(u => u.registrationMethod === 'imported' || u.registrationMethod === 'admin');
@@ -151,11 +162,13 @@ const AdminUsers = () => {
 
   const handleDelete = async () => {
     try {
-      await axios.delete(`/api/users/${actionUser.id || actionUser._id}`);
+      const userId = actionUser.id || actionUser._id;
+      await axios.delete(`/api/users/${userId}`);
+      setUsers(prev => prev.filter(u => (u.id || u._id) !== userId));
       setIsDeleteModalOpen(false);
-      fetchUsers();
     } catch (err) {
-      alert('Failed to delete user.');
+      console.error('Delete failed:', err.response?.data || err.message);
+      alert(err.response?.data?.message || 'Failed to delete user.');
     }
   };
 
@@ -483,19 +496,24 @@ const AdminUsers = () => {
                         {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="relative group inline-block">
-                          <button className="text-slate-400 hover:text-violet-500 transition-colors p-1">
+                        <div className="relative inline-block" data-dropdown>
+                          <button 
+                            onClick={() => setOpenDropdownId(openDropdownId === (user.id || user._id) ? null : (user.id || user._id))}
+                            className="text-slate-400 hover:text-violet-500 transition-colors p-1"
+                          >
                             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
                           </button>
-                          <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-xl border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 overflow-hidden">
-                            <button onClick={() => openEditModal(user)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Edit User</button>
-                            {(!user.roles || !user.roles.some(r => r.includes('admin'))) && (
-                              <>
-                                <button onClick={() => { setActionUser(user); setIsResetModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Reset Password</button>
-                                <button onClick={() => { setActionUser(user); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors">Delete User</button>
-                              </>
-                            )}
-                          </div>
+                          {openDropdownId === (user.id || user._id) && (
+                            <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl shadow-xl border border-slate-100 z-50 overflow-hidden">
+                              <button onClick={() => { setOpenDropdownId(null); openEditModal(user); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Edit User</button>
+                              {(!user.roles || !user.roles.some(r => r.includes('admin'))) && (
+                                <>
+                                  <button onClick={() => { setOpenDropdownId(null); setActionUser(user); setIsResetModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-violet-500 transition-colors">Reset Password</button>
+                                  <button onClick={() => { setOpenDropdownId(null); setActionUser(user); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition-colors">Delete User</button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

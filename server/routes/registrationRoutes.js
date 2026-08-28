@@ -16,6 +16,9 @@ router.put('/:registrationId/payment-status', authMiddleware, registrationContro
 router.put('/team/:teamId', authMiddleware, registrationController.updateTeamName);
 router.post('/team/:teamId/members', authMiddleware, registrationController.addTeamMember);
 router.delete('/team/:teamId/members/:userId', authMiddleware, registrationController.removeTeamMember);
+router.post('/team/:teamId/invite-external', authMiddleware, registrationController.inviteExternalMember);
+router.get('/team/:teamId/invites', authMiddleware, registrationController.getTeamInvites);
+router.delete('/team/:teamId/invites/:inviteId', authMiddleware, registrationController.revokeTeamInvite);
 router.get('/my-registrations', authMiddleware, registrationController.getMyRegistrations);
 router.get('/event/:id/eligible-students', authMiddleware, registrationController.getEligibleStudents);
 router.get('/event/:id/check-team-name', authMiddleware, registrationController.checkTeamName);
@@ -25,6 +28,10 @@ router.delete('/:id', authMiddleware, registrationController.cancelRegistration)
 router.post('/:registrationId/accept', authMiddleware, registrationController.acceptTeamInvitation);
 router.post('/:registrationId/reject', authMiddleware, registrationController.rejectTeamInvitation);
 router.post('/team/leave', authMiddleware, registrationController.leaveTeam);
+
+// Public invite routes (no auth required)
+router.get('/invite/:token', registrationController.getInviteByToken);
+router.post('/invite/:token/accept', authMiddleware, registrationController.acceptInviteByToken);
 
 // Admin-only features (protected with adminMiddleware)
 router.get('/all', authMiddleware, adminMiddleware, registrationController.getAllRegistrations);

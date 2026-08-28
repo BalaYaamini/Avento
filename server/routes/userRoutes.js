@@ -35,6 +35,10 @@ router.put('/profile/details', authMiddleware, userController.updateProfileDetai
 // Authenticated user: upload profile photo
 router.put('/profile/photo', authMiddleware, upload.single('photo'), userController.uploadProfilePhoto);
 
+// Authenticated user: full profile update (photo, phone, college, gender)
+router.put('/profile/full', authMiddleware, userController.updateFullProfile);
+router.get('/profile/full', authMiddleware, userController.getFullProfile);
+
 // Public route for contact form
 router.post('/contact', userController.submitContactForm);
 

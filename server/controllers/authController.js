@@ -26,6 +26,7 @@ const upsertProfile = async (userId, email, name, role, employeeId = null, rollN
   };
   if (role === 'faculty' && employeeId) profile.employee_id = employeeId;
   if (role === 'student' && rollNumber) profile.roll_number = rollNumber;
+  if (registrationMethod === 'otp') profile.has_password = true;
 
   const { error } = await supabase
     .from('profiles')
@@ -37,7 +38,7 @@ const upsertProfile = async (userId, email, name, role, employeeId = null, rollN
 // ─── REGISTER ───────────────────────────────────────
 exports.register = async (req, res) => {
   try {
-    const { fullName, email, password, otp } = req.body;
+    const { fullName, email, password, otp, phone, college, gender } = req.body;
     if (!fullName || !email || !password || !otp) {
       return res.status(400).json({ message: 'Please provide fullName, email, password, and OTP.' });
     }
@@ -106,10 +107,47 @@ exports.register = async (req, res) => {
       rollNumber = null;
     }
 
-    await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
+    const profile = await upsertProfile(userId, emailLower, fullName, role, employeeId, rollNumber, 'otp');
+
+    if (phone || college || gender) {
+      const updates = {};
+      if (phone) updates.phone = phone;
+      if (college) updates.college = college;
+      if (gender) updates.gender = gender;
+      await supabase.from('profiles').update(updates).eq('id', userId);
+    }
 
     // Remove OTP after successful registration
     await supabase.from('otps').delete().eq('email', emailLower);
+
+    // Auto-link pending team email invites
+    try {
+      const { data: pendingInvites } = await supabase
+        .from('team_email_invites')
+        .select('id, event_id, team_id, events(title), event_teams(name)')
+        .eq('email', emailLower)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString());
+
+      if (pendingInvites && pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          const { error: regErr } = await supabase
+            .from('event_registrations')
+            .insert({
+              user_id: userId,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          if (!regErr || regErr.code === '23505') {
+            await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+          }
+        }
+      }
+    } catch (linkErr) {
+      console.warn('[Register] Auto-link invites error:', linkErr.message);
+    }
 
     return res.status(201).json({
       message: 'Registration successful. You can now log in.',
@@ -140,13 +178,31 @@ exports.login = async (req, res) => {
     const emailLower = email.toLowerCase().trim();
     console.log('[AUTH] Incoming login attempt for email:', emailLower);
 
+    // Check if user registered via Google and has no password set
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('registration_method, has_password')
+      .eq('email', emailLower)
+      .maybeSingle();
+
+    if (existingProfile && existingProfile.registration_method === 'google' && !existingProfile.has_password) {
+      return res.status(400).json({ 
+        message: 'This account was created with Google Sign-In. Please log in with Google, or set a password first from your profile.',
+        needsPassword: true
+      });
+    }
+
     // Use Supabase Auth for password verification
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: emailLower,
       password: password,
     });
 
+    // If sign-in fails, check if this is a Google-only user without a password
     if (authError || !authData?.user) {
+      // Profile with google registration already caught above.
+      // If no profile exists, we can't determine provider without listing all users.
+      // Just return invalid credentials — user should use Google sign-in.
       console.log(`[AUTH] Login Failed for '${emailLower}':`, authError?.message || 'No user returned');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -156,9 +212,9 @@ exports.login = async (req, res) => {
     // Query full profile from Supabase profiles table (single source of truth)
     const { data: profileData, error: profileErr } = await supabase
       .from('profiles')
-      .select('*')
-      .eq('email', emailLower)
-      .maybeSingle();
+      .select('status, first_login, role, name')
+      .eq('id', supaUser.id)
+      .single();
 
     if (profileErr) {
       console.warn('[AUTH] Profile lookup warning:', profileErr.message);
@@ -184,6 +240,35 @@ exports.login = async (req, res) => {
       roles.push('student');
     }
 
+    // Auto-link pending team email invites
+    try {
+      const { data: pendingInvites } = await supabase
+        .from('team_email_invites')
+        .select('id, event_id, team_id')
+        .eq('email', emailLower)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString());
+
+      if (pendingInvites && pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          const { error: regErr } = await supabase
+            .from('event_registrations')
+            .insert({
+              user_id: supaUser.id,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          if (!regErr || regErr.code === '23505') {
+            await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+          }
+        }
+      }
+    } catch (linkErr) {
+      console.warn('[Login] Auto-link invites error:', linkErr.message);
+    }
+
     const fullName = profileData?.name || supaUser.user_metadata?.full_name || emailLower.split('@')[0];
 
     // Generate JWT
@@ -200,16 +285,9 @@ exports.login = async (req, res) => {
         email: supaUser.email,
         fullName: fullName,
         roles: roles,
-        employeeId: profileData?.employee_id || null,
-        rollNumber: profileData?.roll_number || null,
-        department: profileData?.department || null,
-        first_login: profileData ? profileData.first_login : false,
-        avatarUrl: profileData?.avatar_url || null,
-        phone: profileData?.phone || null,
-        gender: profileData?.gender || null,
-        degreeProgram: profileData?.degree_program || null,
-        yearOfStudy: profileData?.year_of_study || null,
-        collegeName: profileData?.college_name || null,
+        employeeId: null,
+        rollNumber: null,
+        first_login: profileData ? profileData.first_login : false
       }
     });
   } catch (err) {
@@ -381,7 +459,7 @@ exports.googleLogin = async (req, res) => {
 
     let { data: profileData } = await supabase
       .from('profiles')
-      .select('role, status, first_login, registration_method')
+      .select('role, status, first_login, registration_method, has_password')
       .eq('id', supaUser.id)
       .maybeSingle();
 
@@ -400,11 +478,15 @@ exports.googleLogin = async (req, res) => {
         created_at: new Date().toISOString(),
         first_login: false,
         registration_method: 'google',
+        has_password: false,
       };
       const { error: upsertErr } = await supabase
         .from('profiles')
         .upsert(newProfile, { onConflict: 'id' });
-      if (upsertErr) console.error('[Google Login] Profile upsert error:', upsertErr.message);
+      if (upsertErr) {
+        console.error('[Google Login] Profile upsert error:', upsertErr.message);
+        return res.status(500).json({ message: 'Failed to create user profile.', error: upsertErr.message });
+      }
       if (avatarUrl) {
         const { error: avatarErr } = await supabase
           .from('profiles')
@@ -431,6 +513,35 @@ exports.googleLogin = async (req, res) => {
     let roles = [userRole];
     if (userRole === 'organizer') roles.push('student');
 
+    // Auto-link pending team email invites
+    try {
+      const { data: pendingInvites } = await supabase
+        .from('team_email_invites')
+        .select('id, event_id, team_id')
+        .eq('email', emailLower)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString());
+
+      if (pendingInvites && pendingInvites.length > 0) {
+        for (const invite of pendingInvites) {
+          const { error: regErr } = await supabase
+            .from('event_registrations')
+            .insert({
+              user_id: supaUser.id,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          if (!regErr || regErr.code === '23505') {
+            await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+          }
+        }
+      }
+    } catch (linkErr) {
+      console.warn('[Google Login] Auto-link invites error:', linkErr.message);
+    }
+
     const token = jwt.sign(
       { id: supaUser.id, email: emailLower, role: userRole },
       process.env.JWT_SECRET || 'avento_super_secret_key_12345',
@@ -447,6 +558,11 @@ exports.googleLogin = async (req, res) => {
         employeeId: null,
         rollNumber: null,
         first_login: profileData.first_login || false,
+        phone: profileData?.phone || null,
+        college: profileData?.college || null,
+        gender: profileData?.gender || null,
+        avatarUrl: profileData?.avatar_url || null,
+        hasPassword: profileData?.has_password || false,
       }
     });
   } catch (err) {
@@ -485,5 +601,175 @@ exports.syncPassword = async (req, res) => {
   } catch (err) {
     console.error('syncPassword error:', err.message);
     res.status(500).json({ message: 'Server error syncing password', error: err.message });
+  }
+};
+
+// ─── SET PASSWORD (for Google-only users) ─────────────────────────────────
+exports.setPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const userId = req.user.id;
+
+    if (!password) {
+      return res.status(400).json({ message: 'Please provide a password.' });
+    }
+
+    if (!validatePasswordStrength(password)) {
+      return res.status(400).json({ message: 'Password does not meet strength requirements.' });
+    }
+
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, { password });
+    if (authError) {
+      return res.status(500).json({ message: 'Failed to set password.', error: authError.message });
+    }
+
+    await supabase.from('profiles').update({ has_password: true }).eq('id', userId);
+
+    res.json({ message: 'Password set successfully. You can now log in with email and password.' });
+  } catch (err) {
+    console.error('[SetPassword] Error:', err.message);
+    res.status(500).json({ message: 'Server error setting password.', error: err.message });
+  }
+};
+
+// ─── SEND SET-PASSWORD OTP (public — for Google-only users) ────────────────
+exports.sendSetPasswordOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required.' });
+
+    const emailLower = email.toLowerCase().trim();
+
+    const { data: profile, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, registration_method, has_password')
+      .eq('email', emailLower)
+      .maybeSingle();
+    if (profErr) throw profErr;
+
+    if (!profile) {
+      return res.status(400).json({ message: 'No account found. Please sign in with Google first to set up your account.' });
+    } else if (profile.registration_method !== 'google' || profile.has_password) {
+      return res.status(400).json({ message: 'This account can use email/password login directly.' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const { error: otpUpsertErr } = await supabase
+      .from('otps')
+      .upsert({ email: emailLower, otp, created_at: new Date().toISOString() }, { onConflict: 'email' });
+    if (otpUpsertErr) throw otpUpsertErr;
+
+    const otpHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background-color:#F8FAFC;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
+        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
+          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
+            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
+          </h1>
+          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Set Your Password</p>
+        </td></tr>
+        <tr><td style="padding:30px 40px;">
+          <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>
+          <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Use the code below to set a password for your <strong>Avento</strong> account so you can also log in with email.</p>
+          <table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td align="center">
+            <div style="background-color:#f1f5f9;border-radius:12px;padding:24px;display:inline-block;min-width:200px;">
+              <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#1e293b;text-align:center;margin-left:8px;">${otp}</div>
+            </div>
+            <p style="margin:15px 0 0 0;font-size:14px;color:#64748b;text-align:center;">This code is valid for 5 minutes.</p>
+          </td></tr></table>
+          <p style="margin:25px 0 0 0;font-size:13px;color:#94a3b8;line-height:1.5;">If you did not request this, you can safely ignore this email.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px 40px;">
+          <hr style="border:0;border-top:1px solid #e2e8f0;margin:0 0 20px 0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">This is an automated message from Avento.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    await sendEmailNotification({
+      recipientEmail: emailLower,
+      subject: 'Avento — Set Your Password',
+      htmlBody: otpHtml,
+    });
+
+    console.log(`[SetPasswordOTP] OTP sent to ${emailLower}`);
+    return res.json({ message: `OTP sent to ${emailLower}. Please check your inbox.` });
+  } catch (err) {
+    console.error('[SetPasswordOTP] SendOtp error:', err.message);
+    return res.status(500).json({ message: 'Failed to send OTP.' });
+  }
+};
+
+// ─── SET PASSWORD WITH OTP (public — for Google-only users) ────────────────
+exports.setPasswordWithOtp = async (req, res) => {
+  try {
+    const { email, otp, password } = req.body;
+    if (!email || !otp || !password) {
+      return res.status(400).json({ message: 'Email, OTP, and password are required.' });
+    }
+
+    const emailLower = email.toLowerCase().trim();
+
+    if (!validatePasswordStrength(password)) {
+      return res.status(400).json({ message: 'Password does not meet strength requirements.' });
+    }
+
+    const { data: profile, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, registration_method, has_password')
+      .eq('email', emailLower)
+      .maybeSingle();
+    if (profErr) throw profErr;
+
+    if (!profile) {
+      return res.status(400).json({ message: 'No account found. Please sign in with Google first to set up your account.' });
+    } else if (profile.registration_method !== 'google' || profile.has_password) {
+      return res.status(400).json({ message: 'This account already has a password set.' });
+    }
+
+    const { data: otpRecord, error: otpFetchErr } = await supabase
+      .from('otps')
+      .select('otp, created_at')
+      .eq('email', emailLower)
+      .maybeSingle();
+    if (otpFetchErr) throw otpFetchErr;
+
+    if (!otpRecord) {
+      return res.status(400).json({ message: 'OTP expired or not requested. Please request a new one.' });
+    }
+
+    const otpAge = (new Date() - new Date(otpRecord.created_at)) / 1000;
+    if (otpAge > 300) {
+      await supabase.from('otps').delete().eq('email', emailLower);
+      return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
+    }
+
+    if (otpRecord.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP. Please try again.' });
+    }
+
+    const userId = profile.id;
+    const { error: authErr } = await supabase.auth.admin.updateUserById(userId, { password });
+    if (authErr) {
+      return res.status(500).json({ message: 'Failed to set password.', error: authErr.message });
+    }
+
+    await supabase.from('profiles').update({ has_password: true }).eq('id', userId);
+    await supabase.from('otps').delete().eq('email', emailLower);
+
+    res.json({ message: 'Password set successfully. You can now log in with email and password.' });
+  } catch (err) {
+    console.error('[SetPasswordWithOtp] Error:', err.message);
+    res.status(500).json({ message: 'Server error setting password.', error: err.message });
   }
 };
