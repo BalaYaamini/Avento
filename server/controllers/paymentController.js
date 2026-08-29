@@ -386,7 +386,7 @@ exports.devBypass = async (req, res) => {
     const fakePaymentId = `pay_dev_${Date.now()}`;
 
     // Insert order as paid
-    await supabase.from('payment_orders').insert({
+    const { error: insertErr } = await supabase.from('payment_orders').insert({
       team_id: teamId,
       event_id: event.id,
       user_id: userId,
@@ -398,16 +398,26 @@ exports.devBypass = async (req, res) => {
       member_count: memberCount
     });
 
-    // Finalize team registration
-    const { data: acceptedRegs } = await supabase
-      .from('event_registrations')
-      .select('user_id')
-      .eq('team_id', teamId)
-      .eq('status', 'registered');
+    if (insertErr) {
+      console.error('Dev bypass insert order error:', insertErr.message);
+      return res.status(500).json({ message: 'Failed to create payment record.', error: insertErr.message });
+    }
 
-    const acceptedUserIds = (acceptedRegs || []).map(r => r.user_id);
-    const { finalizeTeamRegistration } = require('./registrationController');
-    await finalizeTeamRegistration(teamId, event, teamData.leader_id, acceptedUserIds);
+    // Finalize team registration
+    try {
+      const { data: acceptedRegs } = await supabase
+        .from('event_registrations')
+        .select('user_id')
+        .eq('team_id', teamId)
+        .eq('status', 'registered');
+
+      const acceptedUserIds = (acceptedRegs || []).map(r => r.user_id);
+      const { finalizeTeamRegistration } = require('./registrationController');
+      await finalizeTeamRegistration(teamId, event, teamData.leader_id, acceptedUserIds);
+    } catch (finalizeErr) {
+      console.error('Dev bypass finalize error:', finalizeErr.message, finalizeErr.stack);
+      // Still return success — payment order is marked paid, registration may need manual fix
+    }
 
     res.json({ status: 'SUCCESS', message: 'Dev bypass: payment simulated. Team confirmed!' });
   } catch (err) {

@@ -130,6 +130,7 @@ const checkProfileCompleteness = (profile) => {
 
 exports.fetchCompleteProfile = fetchCompleteProfile;
 exports.checkProfileCompleteness = checkProfileCompleteness;
+exports.finalizeTeamRegistration = finalizeTeamRegistration;
 
 // Register a user for an event
 exports.registerForEvent = async (req, res) => {
