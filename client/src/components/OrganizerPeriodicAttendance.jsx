@@ -172,10 +172,13 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
 
     try {
       setUpdatingInterval(true);
+      const startIso = eventStartInput ? new Date(eventStartInput).toISOString() : null;
+      const endIso = calculatedEndTimeStr ? new Date(calculatedEndTimeStr).toISOString() : null;
+
       const res = await axios.post(`/api/attendance/event/${eventId}/periods/auto-generate`, { 
         intervalHours: hrs,
-        eventStart: eventStartInput,
-        eventEnd: calculatedEndTimeStr
+        eventStart: startIso,
+        eventEnd: endIso
       });
       alert(res.data.message || `Attendance checkpoints generated for ${calculatedDurationHours}-hour event duration!`);
       await fetchPeriodicData();
@@ -193,10 +196,16 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
       return;
     }
     try {
+      const periodPayload = {
+        ...periodForm,
+        startTime: new Date(periodForm.startTime).toISOString(),
+        endTime: new Date(periodForm.endTime).toISOString()
+      };
+
       if (editingPeriodId) {
-        await axios.put(`/api/attendance/event/${eventId}/periods/${editingPeriodId}`, periodForm);
+        await axios.put(`/api/attendance/event/${eventId}/periods/${editingPeriodId}`, periodPayload);
       } else {
-        await axios.post(`/api/attendance/event/${eventId}/periods`, periodForm);
+        await axios.post(`/api/attendance/event/${eventId}/periods`, periodPayload);
       }
       setShowPeriodModal(false);
       setEditingPeriodId(null);
