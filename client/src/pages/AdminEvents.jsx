@@ -42,6 +42,7 @@ const AdminEvents = () => {
   const [allowCrossDepartment, setAllowCrossDepartment] = useState(true);
   const [registrationDeadline, setRegistrationDeadline] = useState('');
   const [paymentEnabled, setPaymentEnabled] = useState(false);
+  const [paymentModel, setPaymentModel] = useState('utr');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentUpiId, setPaymentUpiId] = useState('');
   const [paymentQrUrl, setPaymentQrUrl] = useState('');
@@ -202,7 +203,7 @@ const AdminEvents = () => {
     setMaxTeamSize('4');
     setAllowCrossDepartment(true);
     setRegistrationDeadline('');
-    setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
+    setPaymentEnabled(false); setPaymentModel('utr'); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
     setFeedbackQuestions([]);
     setFeedback(null);
@@ -233,6 +234,7 @@ const AdminEvents = () => {
     setRegistrationDeadline(formatToDatetimeLocal(event.registration_deadline));
 
     setPaymentEnabled(!!event.payment_enabled);
+    setPaymentModel(event.payment_model || 'utr');
     setPaymentAmount(event.payment_amount ? String(event.payment_amount) : '');
     setPaymentUpiId(event.payment_upi_id || '');
     setPaymentQrUrl(event.payment_qr_url || '');
@@ -269,8 +271,8 @@ const AdminEvents = () => {
         return;
       }
     }
-    if (paymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (!paymentQrUrl && !paymentQrFile))) {
-      setFeedback({ type: 'error', message: 'Paid events require an amount and payment QR code.' }); return;
+    if (paymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (paymentModel === 'utr' && !paymentQrUrl && !paymentQrFile))) {
+      setFeedback({ type: 'error', message: paymentModel === 'utr' ? 'Paid events require an amount and payment QR code.' : 'Paid events require an amount.' }); return;
     }
 
     const selectedDate = new Date(date);
@@ -337,7 +339,7 @@ const AdminEvents = () => {
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : undefined,
         allowCrossDepartment: registrationType === 'team' ? allowCrossDepartment : undefined,
         registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : undefined,
-        paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
+        paymentEnabled, paymentModel: paymentEnabled ? paymentModel : undefined, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
         scoringEnabled,
         feedbackQuestions,
@@ -1045,8 +1047,33 @@ const AdminEvents = () => {
                 </div>
               )}
               <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-                <div className="flex items-center justify-between"><div><h4 className="text-xs font-bold text-slate-800">Enable Payment</h4><p className="text-[10px] text-slate-600">Require UTR verification at team confirmation.</p></div><input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} /></div>
-                {paymentEnabled && <><input type="number" min="1" step="0.01" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount (Rs.)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input value={paymentUpiId} onChange={(e) => setPaymentUpiId(e.target.value)} placeholder="UPI ID (optional)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input type="file" accept="image/*" required={!paymentQrUrl} onChange={(e) => setPaymentQrFile(e.target.files[0] || null)} className="w-full text-sm" /><textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Payment instructions (optional)" rows={2} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />{paymentQrUrl && <img src={paymentQrUrl} alt="Payment QR preview" className="h-24 w-24 rounded-lg object-contain" />}</>}
+                <div className="flex items-center justify-between"><div><h4 className="text-xs font-bold text-slate-800">Enable Payment</h4><p className="text-[10px] text-slate-600">Require payment at team confirmation.</p></div><input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} /></div>
+                {paymentEnabled && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700">Payment Model</label>
+                      <select value={paymentModel} onChange={(e) => setPaymentModel(e.target.value)} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm">
+                        <option value="utr">Manual UTR Verification</option>
+                        <option value="per_team">Online Payment — Fixed per Team</option>
+                        <option value="per_member">Online Payment — Per Member</option>
+                      </select>
+                      <p className="text-[10px] text-slate-500">
+                        {paymentModel === 'utr' && 'Students submit UTR number for manual organizer verification.'}
+                        {paymentModel === 'per_team' && 'Each team pays a fixed amount via Razorpay payment gateway.'}
+                        {paymentModel === 'per_member' && 'Each team pays amount × number of members via Razorpay payment gateway.'}
+                      </p>
+                    </div>
+                    <input type="number" min="1" step="0.01" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount (Rs.)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />
+                    {paymentModel === 'utr' && (
+                      <>
+                        <input value={paymentUpiId} onChange={(e) => setPaymentUpiId(e.target.value)} placeholder="UPI ID (optional)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />
+                        <input type="file" accept="image/*" required={!paymentQrUrl} onChange={(e) => setPaymentQrFile(e.target.files[0] || null)} className="w-full text-sm" />
+                        <textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Payment instructions (optional)" rows={2} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />
+                        {paymentQrUrl && <img src={paymentQrUrl} alt="Payment QR preview" className="h-24 w-24 rounded-lg object-contain" />}
+                      </>
+                    )}
+                  </>
+                )}
               </div>
               <label className="mt-4 flex items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4 text-xs font-bold text-slate-700"><input type="checkbox" checked={scoringEnabled} onChange={e => setScoringEnabled(e.target.checked)} /> Enable scoring module for this event</label>
             </div>

@@ -23,6 +23,13 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true
 }));
+
+// Webhook route needs raw body for signature verification - must come before express.json()
+app.use('/api/payments/webhook', express.raw({ type: '*/*' }), (req, res, next) => {
+  req.rawBody = req.body.toString('utf8');
+  next();
+}, require('./routes/paymentRoutes'));
+
 app.use(express.json());
 
 // Initialize Supabase integration check (Optional: log initialization)
@@ -35,6 +42,7 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/announcements', require('./routes/announcementRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/registrations', require('./routes/registrationRoutes'));
+app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/tasks', require('./routes/taskRoutes'));
 app.use('/api/certificates', require('./routes/certificateRoutes'));

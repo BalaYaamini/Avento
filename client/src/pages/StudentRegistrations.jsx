@@ -7,6 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { supabase, useAuth } from '../context/AuthContext';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import PaymentSection, { isValidUtr } from '../components/PaymentSection';
+import PaymentGateway from '../components/PaymentGateway';
 
 const StudentRegistrations = () => {
   const { user } = useAuth();
@@ -317,7 +318,16 @@ const StudentRegistrations = () => {
       sessionStorage.removeItem('pendingAcceptRegId');
       sessionStorage.removeItem('profile_redirect_url');
       setFeedback({ type: 'success', message: 'Team invitation accepted successfully!' });
-      fetchRegistrations();
+      setRegistrations(prev => prev.map(r => {
+        if (r.id === regId) {
+          const updatedMembers = (r.teamDetails?.members || []).map(m =>
+            (m.id || m.user_id) === r.user_id ? { ...m, status: 'registered' } : m
+          );
+          return { ...r, status: 'registered', teamDetails: { ...r.teamDetails, members: updatedMembers } };
+        }
+        return r;
+      }));
+      await fetchRegistrations();
     } catch (err) {
       const errData = err.response?.data;
       if (errData?.profileIncomplete) {
@@ -699,13 +709,16 @@ const StudentRegistrations = () => {
                                     }
                                   });
                                   const acceptedCount = acceptedUserIds.size;
-                                  const minRequired = evt.min_team_size || 1;
-                                  const isReady = acceptedCount >= minRequired;
+                                  const totalInvited = members.length + 1;
+                                  const isReady = acceptedCount >= totalInvited;
                                    if (evt.payment_enabled && reg.payment_status === 'submitted') {
                                      return <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-blue-500/8 text-blue-500 border-blue-500/15">Payment Verification Pending</span>;
                                    }
                                    if (evt.payment_enabled && reg.payment_status === 'rejected') {
                                      return <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-red-500/8 text-red-500 border-red-500/15">Payment Rejected: Resubmit UTR</span>;
+                                   }
+                                   if (evt.payment_enabled && reg.payment_status === 'failed') {
+                                     return <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-red-500/8 text-red-500 border-red-500/15">Payment Failed: Retry</span>;
                                    }
                                    return isReady ? (
                                     <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-blue-500/8 text-blue-500 border-blue-500/15 flex items-center gap-1.5">
@@ -1674,10 +1687,33 @@ const StudentRegistrations = () => {
         >
           {confirmTeamReg && (
             <div className="space-y-4">
-              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-                <p className="text-sm font-bold text-emerald-800">The minimum required members have accepted the invitation.</p>
-                <p className="text-sm mt-2 text-emerald-700">You may confirm your team now, or wait until additional invited members accept before the registration deadline.</p>
-              </div>
+              {(() => {
+                const leaderId = confirmTeamReg.teamDetails?.leader_id || confirmTeamReg.teamId?.leader_id || confirmTeamReg.user_id;
+                const members = confirmTeamReg.teamDetails?.members || [];
+                const acceptedUserIds = new Set();
+                if (leaderId) acceptedUserIds.add(String(leaderId));
+                members.forEach(m => {
+                  if (m.status === 'registered') acceptedUserIds.add(String(m.id || m.user_id));
+                });
+                const acceptedCount = acceptedUserIds.size;
+                const totalInvited = members.length + 1;
+                const allAccepted = acceptedCount >= totalInvited;
+                const pendingCount = totalInvited - acceptedCount;
+                const isGatewayPayment = confirmTeamReg.eventId?.payment_enabled && (confirmTeamReg.eventId?.payment_model === 'per_team' || confirmTeamReg.eventId?.payment_model === 'per_member');
+
+                return (
+                  <>
+                    {allAccepted ? (
+                      <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
+                        <p className="text-sm font-bold text-emerald-800">All team members have accepted the invitation.</p>
+                        <p className="text-sm mt-1 text-emerald-700">You may now confirm your team.</p>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+                        <p className="text-sm font-bold text-amber-800">Waiting for {pendingCount} member(s) to accept their invitation.</p>
+                        <p className="text-sm mt-1 text-amber-700">All members must accept before you can confirm the team.</p>
+                      </div>
+                    )}
 
               {confirmTeamReg.eventId?.registration_deadline && (
                 <div className="p-4 bg-slate-100 rounded-xl border border-slate-200">
@@ -1720,7 +1756,23 @@ const StudentRegistrations = () => {
                 </div>
               </div>
 
-              <PaymentSection event={confirmTeamReg.eventId} utr={teamUtr} onUtrChange={setTeamUtr} rejectionReason={confirmTeamReg.payment_rejection_reason} />
+              {isGatewayPayment ? (
+                <PaymentGateway
+                  event={confirmTeamReg.eventId}
+                  teamId={confirmTeamReg.teamId.id}
+                  teamMembers={confirmTeamReg.teamDetails?.members}
+                  onSuccess={() => {
+                    setIsConfirmTeamOpen(false);
+                    setConfirmTeamReg(null);
+                    fetchRegistrations();
+                  }}
+                  onError={(err) => {
+                    setFeedback({ type: 'error', message: err.response?.data?.message || 'Payment failed.' });
+                  }}
+                />
+              ) : (
+                <PaymentSection event={confirmTeamReg.eventId} utr={teamUtr} onUtrChange={setTeamUtr} rejectionReason={confirmTeamReg.payment_rejection_reason} />
+              )}
               
               <div className="flex gap-3 justify-end pt-4 mt-2 border-t border-slate-200/20">
                 <button
@@ -1736,25 +1788,30 @@ const StudentRegistrations = () => {
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmTeamSubmit}
-                  disabled={processingId === confirmTeamReg.teamId.id}
-                  className="px-5 py-2.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/20 transition-all duration-300 disabled:opacity-50 flex items-center justify-center min-w-[120px]"
-                >
-                  {processingId === confirmTeamReg.teamId.id ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Processing...
-                    </span>
-                  ) : (
-                    'Confirm Team'
-                  )}
-                </button>
+                {!isGatewayPayment && (
+                  <button
+                    type="button"
+                    onClick={handleConfirmTeamSubmit}
+                    disabled={processingId === confirmTeamReg.teamId.id || !allAccepted}
+                    className="px-5 py-2.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/20 transition-all duration-300 disabled:opacity-50 flex items-center justify-center min-w-[120px]"
+                  >
+                    {processingId === confirmTeamReg.teamId.id ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Processing...
+                      </span>
+                    ) : (
+                      'Confirm Team'
+                    )}
+                  </button>
+                )}
               </div>
+              </>
+              );
+            })()}
             </div>
           )}
         </Modal>
@@ -2117,9 +2174,9 @@ const StudentRegistrations = () => {
                   {isSubmittingPs ? 'Confirming...' : 'Confirm Selection'}
                 </button>
               </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
       </div>
     </div>

@@ -618,7 +618,7 @@ exports.googleLogin = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('[Google Login] Error:', err.message);
+    console.error('[Google Login] Error:', err.message, err.stack);
     return res.status(500).json({ message: 'Server error during Google login.', error: err.message });
   }
 };

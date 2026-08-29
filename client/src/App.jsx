@@ -18,6 +18,8 @@ import ChangePassword from './pages/ChangePassword';
 import AcceptInvite from './pages/AcceptInvite';
 import SetPassword from './pages/SetPassword';
 import VerifyCertificate from './pages/VerifyCertificate';
+import PaymentSuccess from './pages/PaymentSuccess';
+import PaymentFailed from './pages/PaymentFailed';
 
 // Protected Student views
 import Profile from './pages/Profile';
@@ -109,6 +111,8 @@ const AnimatedRoutes = () => {
         <Route path="/set-password" element={<ProtectedRoute><SetPassword /></ProtectedRoute>} />
         <Route path="/verify/:certificateId" element={<VerifyCertificate />} />
         <Route path="/verify-certificate/:certificateId" element={<VerifyCertificate />} />
+        <Route path="/payment-callback" element={<PaymentSuccess />} />
+        <Route path="/payment-failed" element={<PaymentFailed />} />
 
         {/* Student Paths — accessible to both student and student_organizer */}
         <Route

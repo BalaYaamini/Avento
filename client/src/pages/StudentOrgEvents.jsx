@@ -259,8 +259,8 @@ const StudentOrgEvents = () => {
         return;
       }
     }
-    if (paymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (!paymentQrUrl && !paymentQrFile))) {
-      setFeedback({ type: 'error', message: 'Paid events require an amount and payment QR code.' }); return;
+    if (paymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (paymentModel === 'utr' && !paymentQrUrl && !paymentQrFile))) {
+      setFeedback({ type: 'error', message: paymentModel === 'utr' ? 'Paid events require an amount and payment QR code.' : 'Paid events require an amount.' }); return;
     }
 
     const selectedDate = new Date(date);

@@ -979,7 +979,8 @@ exports.registerTeamForEvent = async (req, res) => {
       allTeamUserIds.push(leaderId);
     }
 
-    const teamSize = allTeamUserIds.length;
+    // Count unresolved external invite emails toward team size (they haven't signed up yet but are invited)
+    const teamSize = allTeamUserIds.length + externalUnresolvedEmails.length;
 
     if (teamSize < event.min_team_size || teamSize > event.max_team_size) {
       return res.status(400).json({ message: `Team size must be between ${event.min_team_size} and ${event.max_team_size} members.` });
@@ -1412,7 +1413,20 @@ exports.acceptTeamInvitation = async (req, res) => {
       throw updateErr;
     }
 
-    // 2. Notify Team Leader that a member accepted
+    // 3. Mark matching email invite as 'claimed' so getMyRegistrations won't re-process it
+    try {
+      await supabase
+        .from('team_email_invites')
+        .update({ status: 'claimed' })
+        .eq('team_id', reg.team_id)
+        .eq('event_id', event.id)
+        .ilike('email', userProfile?.email || '')
+        .eq('status', 'pending');
+    } catch (claimErr) {
+      console.warn('Notice marking email invite as claimed:', claimErr.message);
+    }
+
+    // 4. Notify Team Leader that a member accepted
     try {
       const { data: teamInfo } = await supabase.from('event_teams').select('name, leader_id').eq('id', reg.team_id).maybeSingle();
       if (teamInfo && teamInfo.leader_id) {
@@ -1616,11 +1630,23 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(404).json({ message: 'Associated event not found.' });
     }
 
-    // MANDATORY PROFILE CHECK: Ensure all members who joined the team have completed their profile details
+    // MANDATORY: All members must have accepted their invitations before team can be confirmed
     const { data: teamRegs } = await supabase
       .from('event_registrations')
       .select('user_id, status')
       .eq('team_id', teamId);
+
+    const allMembersAccepted = (teamRegs || []).every(r =>
+      r.status === 'registered' || r.user_id === leaderId
+    );
+    if (!allMembersAccepted) {
+      const pendingCount = (teamRegs || []).filter(r => r.status === 'pending').length;
+      return res.status(400).json({
+        message: `Cannot confirm team yet. ${pendingCount} member(s) have not accepted their invitation. All members must accept before confirmation.`,
+        allMembersAccepted: false,
+        pendingCount
+      });
+    }
 
     const checkUserIds = [...new Set((teamRegs || []).map(r => r.user_id))];
     if (checkUserIds.length > 0) {
@@ -1651,8 +1677,22 @@ exports.confirmTeamRegistration = async (req, res) => {
       }
     }
 
-    if (event.payment_enabled && !validateUtr(utrNumber)) {
-      return res.status(400).json({ message: 'A valid UTR is required before confirming this team.' });
+    // Payment check: handle both UTR and gateway payment models
+    if (event.payment_enabled) {
+      const paymentModel = event.payment_model || 'utr';
+      if (paymentModel === 'utr') {
+        // UTR-based: require UTR number
+        if (!validateUtr(utrNumber)) {
+          return res.status(400).json({ message: 'A valid UTR is required before confirming this team.' });
+        }
+      } else {
+        // Gateway-based (per_team or per_member): redirect to payment flow
+        return res.status(402).json({
+          message: 'This event requires online payment. Please use the Pay button to complete payment.',
+          paymentRequired: true,
+          paymentModel: paymentModel
+        });
+      }
     }
 
     // 2. STRICT CHECK: Event published status
@@ -1714,8 +1754,8 @@ exports.confirmTeamRegistration = async (req, res) => {
       return res.status(400).json({ message: contactErr.message || 'Failed to save team leader contact number.' });
     }
 
-    // Store payment against the leader registration before final confirmation.
-    if (event.payment_enabled) {
+    // Store payment against the leader registration before final confirmation (UTR only).
+    if (event.payment_enabled && (event.payment_model || 'utr') === 'utr') {
       const { data: paymentRegistration, error: paymentErr } = await supabase
         .from('event_registrations')
         .update({ utr_number: utrNumber.trim().toUpperCase(), payment_status: 'submitted' })
@@ -2666,11 +2706,146 @@ exports.revokeTeamInvite = async (req, res) => {
 };
 
 exports.getInviteByToken = async (req, res) => {
-  return res.status(404).json({ message: 'Invite link not found or expired.' });
+  try {
+    const { token } = req.params;
+
+    const { data: invite, error } = await supabase
+      .from('team_email_invites')
+      .select('email, name, status, expires_at, events(title, date, venue), event_teams(name)')
+      .eq('invite_token', token)
+      .maybeSingle();
+
+    if (error || !invite) {
+      return res.status(404).json({ message: 'Invalid invitation.' });
+    }
+
+    res.json({
+      email: invite.email,
+      name: invite.name,
+      status: invite.status,
+      expiresAt: invite.expires_at,
+      eventTitle: invite.events?.title,
+      eventDate: invite.events?.date,
+      eventVenue: invite.events?.venue,
+      teamName: invite.event_teams?.name
+    });
+  } catch (err) {
+    console.error('Error fetching invite:', err);
+    res.status(500).json({ message: 'Server error.', error: err.message });
+  }
 };
 
 exports.acceptInviteByToken = async (req, res) => {
-  return res.status(400).json({ message: 'Invite link invalid or expired.' });
+  try {
+    const { token } = req.params;
+    const userId = req.user?.id;
+
+    const { data: invite, error: inviteErr } = await supabase
+      .from('team_email_invites')
+      .select('*, events(id, title, date, venue, registration_deadline, registration_type), event_teams(id, name, leader_id, status)')
+      .eq('invite_token', token)
+      .maybeSingle();
+
+    if (inviteErr || !invite) {
+      return res.status(404).json({ message: 'Invalid or expired invitation.' });
+    }
+
+    if (invite.status !== 'pending') {
+      return res.status(400).json({ message: `This invitation has already been ${invite.status}.` });
+    }
+
+    if (new Date(invite.expires_at) < new Date()) {
+      await supabase.from('team_email_invites').update({ status: 'expired' }).eq('id', invite.id);
+      return res.status(400).json({ message: 'This invitation has expired.' });
+    }
+
+    const event = invite.events;
+    const team = invite.event_teams;
+
+    if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
+      return res.status(400).json({ message: 'Registration deadline has passed.' });
+    }
+
+    if (team.status === 'registered') {
+      return res.status(400).json({ message: 'This team is already confirmed.' });
+    }
+
+    if (!userId) {
+      return res.status(200).json({
+        requiresAuth: true,
+        invite: {
+          email: invite.email,
+          name: invite.name,
+          eventTitle: event.title,
+          teamName: team.name,
+          eventDate: event.date,
+          eventVenue: event.venue
+        }
+      });
+    }
+
+    const { data: profile } = await supabase.from('profiles').select('id, email').eq('id', userId).maybeSingle();
+    if (!profile || profile.email.toLowerCase() !== invite.email.toLowerCase()) {
+      return res.status(403).json({ message: 'This invitation was sent to a different email address.' });
+    }
+
+    const { data: existingReg } = await supabase
+      .from('event_registrations')
+      .select('id, status, team_id')
+      .eq('event_id', event.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existingReg && existingReg.status === 'registered') {
+      return res.status(400).json({ message: 'You already have an active registration for this event.' });
+    }
+
+    if (existingReg && existingReg.status === 'pending' && existingReg.team_id === team.id) {
+      await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+      return res.json({
+        message: `You have joined team "${team.name}" for "${event.title}".`,
+        teamName: team.name,
+        eventTitle: event.title
+      });
+    }
+
+    if (existingReg && existingReg.status === 'pending' && existingReg.team_id !== team.id) {
+      return res.status(400).json({ message: 'You are already pending for another team in this event. Leave that team first.' });
+    }
+
+    const { error: regErr } = await supabase
+      .from('event_registrations')
+      .insert({
+        user_id: userId,
+        event_id: event.id,
+        team_id: team.id,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      });
+
+    if (regErr) {
+      if (regErr.code === '23505') {
+        await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+        return res.json({
+          message: `You have joined team "${team.name}" for "${event.title}".`,
+          teamName: team.name,
+          eventTitle: event.title
+        });
+      }
+      throw regErr;
+    }
+
+    await supabase.from('team_email_invites').update({ status: 'accepted' }).eq('id', invite.id);
+
+    res.json({
+      message: `You have joined team "${team.name}" for "${event.title}".`,
+      teamName: team.name,
+      eventTitle: event.title
+    });
+  } catch (err) {
+    console.error('Error accepting invite:', err);
+    res.status(500).json({ message: 'Server error accepting invitation.', error: err.message });
+  }
 };
 
 // Student Photo Import Endpoints & Public Image Proxy

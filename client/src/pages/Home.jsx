@@ -454,8 +454,8 @@ const Home = () => {
       }
     });
     const acceptedCount = acceptedUserIds.size;
-    const minRequired = event.min_team_size || 1;
-    const isReady = acceptedCount >= minRequired;
+    const totalInvited = members.length + 1;
+    const isReady = acceptedCount >= totalInvited;
     
     return isReady ? 'Ready for Team Confirmation' : 'Waiting for Member Approval';
   };

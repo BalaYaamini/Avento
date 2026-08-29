@@ -292,7 +292,7 @@ const createEvent = async (req, res) => {
     const {
       title, description, category, venue, date, capacity, imageUrl, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
-      registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
+      registrationDeadline, paymentEnabled, paymentModel, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
       , scoringEnabled, scoreboardVisible
     } = req.body;
 
@@ -309,8 +309,8 @@ const createEvent = async (req, res) => {
     }
 
     const isPaymentEnabled = paymentEnabled === true || paymentEnabled === 'true';
-    if (isPaymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || !paymentQrUrl)) {
-      return res.status(400).json({ message: 'Paid events require a valid amount and payment QR code.' });
+    if (isPaymentEnabled && (!paymentAmount || Number(paymentAmount) <= 0 || (paymentModel === 'utr' && !paymentQrUrl))) {
+      return res.status(400).json({ message: paymentModel === 'utr' ? 'Paid events require a valid amount and payment QR code.' : 'Paid events require a valid amount.' });
     }
 
     if (date) {
@@ -410,6 +410,7 @@ const createEvent = async (req, res) => {
       join_team_enabled: false,
       faculty_id: facultyId,
       payment_enabled: isPaymentEnabled,
+      payment_model: isPaymentEnabled ? (paymentModel || 'utr') : 'utr',
       payment_amount: isPaymentEnabled ? Number(paymentAmount) : null,
       payment_upi_id: isPaymentEnabled ? (paymentUpiId || null) : null,
       payment_qr_url: isPaymentEnabled ? (paymentQrUrl || null) : null,
@@ -522,7 +523,7 @@ const editEvent = async (req, res) => {
     const { 
       title, description, category, venue, date, capacity, imageUrl, status, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
-      registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
+      registrationDeadline, paymentEnabled, paymentModel, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
       , scoringEnabled, scoreboardVisible
     } = req.body;
 
@@ -590,12 +591,14 @@ const editEvent = async (req, res) => {
       updates.scoreboard_visible = !!event.scoring_enabled && (scoreboardVisible === true || scoreboardVisible === 'true');
     }
 
-    if (paymentEnabled !== undefined || paymentAmount !== undefined || paymentUpiId !== undefined || paymentQrUrl !== undefined || paymentInstructions !== undefined) {
+    if (paymentEnabled !== undefined || paymentModel !== undefined || paymentAmount !== undefined || paymentUpiId !== undefined || paymentQrUrl !== undefined || paymentInstructions !== undefined) {
       const isPaymentEnabled = paymentEnabled !== undefined ? (paymentEnabled === true || paymentEnabled === 'true') : !!event.payment_enabled;
-      if (isPaymentEnabled && (!paymentAmount && !event.payment_amount || Number(paymentAmount ?? event.payment_amount) <= 0 || !(paymentQrUrl || event.payment_qr_url))) {
-        return res.status(400).json({ message: 'Paid events require a valid amount and payment QR code.' });
+      const effectivePaymentModel = paymentModel !== undefined ? paymentModel : (event.payment_model || 'utr');
+      if (isPaymentEnabled && (!paymentAmount && !event.payment_amount || Number(paymentAmount ?? event.payment_amount) <= 0 || (effectivePaymentModel === 'utr' && !(paymentQrUrl || event.payment_qr_url)))) {
+        return res.status(400).json({ message: effectivePaymentModel === 'utr' ? 'Paid events require a valid amount and payment QR code.' : 'Paid events require a valid amount.' });
       }
       updates.payment_enabled = isPaymentEnabled;
+      updates.payment_model = paymentModel !== undefined ? paymentModel : (event.payment_model || 'utr');
       updates.payment_amount = isPaymentEnabled ? Number(paymentAmount ?? event.payment_amount) : null;
       updates.payment_upi_id = isPaymentEnabled ? (paymentUpiId ?? event.payment_upi_id ?? null) : null;
       updates.payment_qr_url = isPaymentEnabled ? (paymentQrUrl ?? event.payment_qr_url ?? null) : null;
