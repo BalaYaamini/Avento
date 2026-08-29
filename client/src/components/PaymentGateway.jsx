@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import axios from 'axios';
 
+const isTestMode = import.meta.env.DEV;
+
 const PaymentGateway = ({ event, teamId, teamMembers, onSuccess, onError }) => {
   const [loading, setLoading] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState(null);
 
   const memberCount = (teamMembers || []).length;
@@ -94,6 +97,23 @@ const PaymentGateway = ({ event, teamId, teamMembers, onSuccess, onError }) => {
     }
   };
 
+  const handleDevBypass = async () => {
+    setSimulating(true);
+    setError(null);
+    try {
+      const { data } = await axios.post('/api/payments/dev-bypass', { teamId });
+      if (data.status === 'SUCCESS') {
+        if (onSuccess) onSuccess(data);
+      } else {
+        setError(data.message || 'Simulation failed.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Simulation failed.');
+    } finally {
+      setSimulating(false);
+    }
+  };
+
   return (
     <div className="border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-5 mb-4">
       <div className="flex items-center gap-3 mb-4">
@@ -151,6 +171,16 @@ const PaymentGateway = ({ event, teamId, teamMembers, onSuccess, onError }) => {
       <p className="text-xs text-center text-amber-600 mt-3">
         Secure payment powered by Razorpay
       </p>
+
+      {isTestMode && (
+        <button
+          onClick={handleDevBypass}
+          disabled={simulating}
+          className="w-full mt-3 py-2.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-500 text-xs font-bold hover:bg-slate-100 transition-all disabled:opacity-50"
+        >
+          {simulating ? 'Simulating...' : 'Simulate Payment (Dev Only)'}
+        </button>
+      )}
     </div>
   );
 };

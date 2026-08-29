@@ -331,6 +331,91 @@ exports.handleWebhook = async (req, res) => {
   }
 };
 
+// POST /api/payments/dev-bypass — test-only: skip Razorpay and mark payment as successful
+exports.devBypass = async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ message: 'Not available in production.' });
+    }
+
+    const { teamId } = req.body;
+    const userId = req.user.id;
+
+    if (!teamId) {
+      return res.status(400).json({ message: 'Team ID is required.' });
+    }
+
+    const { data: teamData, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('id, event_id, leader_id, status, events(*)')
+      .eq('id', teamId)
+      .single();
+
+    if (teamErr || !teamData) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (teamData.leader_id !== userId) {
+      return res.status(403).json({ message: 'Only the team leader can initiate payment.' });
+    }
+
+    if (teamData.status !== 'pending') {
+      return res.status(400).json({ message: 'Team is not in pending status.' });
+    }
+
+    const event = teamData.events;
+    if (!event || !event.payment_enabled) {
+      return res.status(400).json({ message: 'Payment is not enabled for this event.' });
+    }
+
+    // Delete any old pending orders
+    await supabase
+      .from('payment_orders')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('status', 'created');
+
+    const { data: teamRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id, status')
+      .eq('team_id', teamId);
+
+    const memberCount = (teamRegs || []).length;
+    const amountPaise = computeAmountPaise(event, memberCount);
+    const fakeOrderId = `dev_${teamId.substring(0, 8)}_${Date.now()}`;
+    const fakePaymentId = `pay_dev_${Date.now()}`;
+
+    // Insert order as paid
+    await supabase.from('payment_orders').insert({
+      team_id: teamId,
+      event_id: event.id,
+      user_id: userId,
+      cashfree_order_id: fakeOrderId,
+      cashfree_payment_id: fakePaymentId,
+      amount: amountPaise / 100,
+      currency: 'INR',
+      status: 'paid',
+      member_count: memberCount
+    });
+
+    // Finalize team registration
+    const { data: acceptedRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('team_id', teamId)
+      .eq('status', 'registered');
+
+    const acceptedUserIds = (acceptedRegs || []).map(r => r.user_id);
+    const { finalizeTeamRegistration } = require('./registrationController');
+    await finalizeTeamRegistration(teamId, event, teamData.leader_id, acceptedUserIds);
+
+    res.json({ status: 'SUCCESS', message: 'Dev bypass: payment simulated. Team confirmed!' });
+  } catch (err) {
+    console.error('Dev bypass error:', err.message);
+    res.status(500).json({ message: 'Server error during dev bypass.', error: err.message });
+  }
+};
+
 // POST /api/payments/retry
 exports.retryPayment = async (req, res) => {
   try {

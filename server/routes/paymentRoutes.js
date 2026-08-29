@@ -7,6 +7,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.post('/create-order', authMiddleware, paymentController.createOrder);
 router.post('/verify', authMiddleware, paymentController.verifyPayment);
 router.post('/retry', authMiddleware, paymentController.retryPayment);
+router.post('/dev-bypass', authMiddleware, paymentController.devBypass);
 router.get('/order-status/:orderId', authMiddleware, paymentController.getOrderStatus);
 
 // Payment webhook (no auth - Cashfree calls this)
