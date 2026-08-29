@@ -67,21 +67,12 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // Check if there's already a pending order for this team
-    const { data: existingOrder } = await supabase
+    // Delete any old pending orders for this team (stale from abandoned checkouts)
+    await supabase
       .from('payment_orders')
-      .select('id, cashfree_order_id, status')
+      .delete()
       .eq('team_id', teamId)
-      .eq('status', 'created')
-      .maybeSingle();
-
-    if (existingOrder) {
-      return res.json({
-        orderId: existingOrder.cashfree_order_id,
-        amount: null,
-        existing: true
-      });
-    }
+      .eq('status', 'created');
 
     const memberCount = (teamRegs || []).length;
     const amountPaise = computeAmountPaise(event, memberCount);

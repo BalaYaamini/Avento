@@ -20,12 +20,6 @@ const PaymentGateway = ({ event, teamId, teamMembers, onSuccess, onError }) => {
         teamId
       });
 
-      if (orderData.existing) {
-        // Existing order — reload page to re-initiate
-        window.location.reload();
-        return;
-      }
-
       // Step 2: Load Razorpay SDK
       if (!window.Razorpay) {
         const script = document.createElement('script');
