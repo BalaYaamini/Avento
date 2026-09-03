@@ -4,6 +4,7 @@ const multer = require('multer');
 const userController = require('../controllers/userController');
 const authMiddleware = require('../middleware/authMiddleware');
 const adminMiddleware = require('../middleware/adminMiddleware');
+const roleMiddleware = require('../middleware/roleMiddleware');
 
 // Configure multer for profile photo uploads (memory storage for Supabase)
 const storage = multer.memoryStorage();
@@ -12,10 +13,11 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5 MB
 });
 
-// Protected lookup routes for dropdowns
-router.get('/faculty-coordinators', authMiddleware, userController.getFacultyCoordinators);
-router.get('/students', authMiddleware, userController.getStudents);
-router.get('/search', authMiddleware, userController.searchUsers);
+// Restricted lookup routes (admin + organizers only, blocks regular students)
+const organizerRoles = ['admin', 'faculty', 'faculty_organizer', 'student_organizer'];
+router.get('/faculty-coordinators', authMiddleware, roleMiddleware(organizerRoles), userController.getFacultyCoordinators);
+router.get('/students', authMiddleware, roleMiddleware(organizerRoles), userController.getStudents);
+router.get('/search', authMiddleware, roleMiddleware(organizerRoles), userController.searchUsers);
 
 // Admin-only route
 router.get('/', authMiddleware, adminMiddleware, userController.getUsers);
