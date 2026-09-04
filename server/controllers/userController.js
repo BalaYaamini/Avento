@@ -142,48 +142,15 @@ exports.updateProfileDetails = async (req, res) => {
     const department = body.department !== undefined ? body.department : (body.dept || body.branch);
 
     // ── 1. Display Name Validation ──
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({ message: 'Display Name is required.' });
-    }
-    const trimmedName = String(name).trim();
-    if (trimmedName.length < 2 || trimmedName.length > 80) {
-      return res.status(400).json({ message: 'Display Name must be between 2 and 80 characters long.' });
-    }
-    if (/<[^>]*>|http:\/\/|https:\/\/|www\.|&[a-z0-9]+;/i.test(trimmedName)) {
-      return res.status(400).json({ message: 'Display Name cannot contain links or HTML tags.' });
-    }
-    if (!/^[a-zA-Z\u00C0-\u024F\s\.\'\-]+$/.test(trimmedName)) {
-      return res.status(400).json({ message: 'Display Name can only contain letters, spaces, initials, hyphens (-), and apostrophes (\').' });
-    }
+    const trimmedName = String(name || '').trim() || req.user?.name || req.user?.fullName || 'User';
 
     // ── 2. Institution / College Name Validation ──
-    if (!collegeName || !String(collegeName).trim()) {
-      return res.status(400).json({ message: 'Institution / College Name is required.' });
-    }
-    const trimmedCollege = String(collegeName).trim();
-    if (trimmedCollege.length < 2 || trimmedCollege.length > 150) {
-      return res.status(400).json({ message: 'Institution name must be between 2 and 150 characters long.' });
-    }
-    if (!/[a-zA-Z\u00C0-\u024F]/.test(trimmedCollege)) {
-      return res.status(400).json({ message: 'Institution name must contain letters and cannot consist only of numbers or special characters.' });
-    }
+    const trimmedCollege = String(collegeName || '').trim();
 
     // ── 3. Roll Number Validation ──
-    const isStudent = req.user?.roles?.includes('student');
-    let finalRollNumber = null;
-    if (rollNumber !== undefined && rollNumber !== null) {
-      const trimmedRoll = String(rollNumber).trim();
-      if (isStudent && !trimmedRoll) {
-        return res.status(400).json({ message: 'College Roll Number is required for students.' });
-      }
-      if (trimmedRoll) {
-        if (!/^[a-zA-Z0-9\-\/]+$/.test(trimmedRoll)) {
-          return res.status(400).json({ message: 'Roll Number can only contain letters, numbers, hyphens (-), and slashes (/).' });
-        }
-        finalRollNumber = trimmedRoll.toUpperCase();
-      }
-    } else if (isStudent) {
-      return res.status(400).json({ message: 'College Roll Number is required for students.' });
+    let finalRollNumber = String(rollNumber || '').trim().toUpperCase();
+    if (!finalRollNumber && req.user?.rollNumber) {
+      finalRollNumber = String(req.user.rollNumber).trim().toUpperCase();
     }
 
     // ── 4. Phone Validation ──

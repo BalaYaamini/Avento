@@ -140,44 +140,27 @@ const Profile = () => {
 
   const validateForm = () => {
     const errs = {};
-    const isStudent = user?.roles?.includes('student') || user?.roles?.includes('student_organizer');
-    const trimmedName = fullName.trim();
+    const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role || 'student'];
+    const isStudent = userRoles.includes('student') || userRoles.includes('student_organizer');
 
-    if (!trimmedName) {
+    if (!fullName.trim()) {
       errs.fullName = 'Display Name is required.';
-    } else if (trimmedName.length < 2 || trimmedName.length > 80) {
-      errs.fullName = 'Display Name must be between 2 and 80 characters long.';
-    } else if (/<[^>]*>|http:\/\/|https:\/\/|www\.|&[a-z0-9]+;/i.test(trimmedName)) {
-      errs.fullName = 'Display Name cannot contain links or HTML tags.';
-    } else if (!/^[a-zA-Z\u00C0-\u024F\s\.\'\-]+$/.test(trimmedName)) {
-      errs.fullName = "Display Name can only contain letters, spaces, initials, hyphens (-), and apostrophes (').";
     }
 
-    // 2. Phone Validation (Optional, but if provided must be valid 10-digit mobile)
     if (phone && phone.trim()) {
       const digits = phone.replace(/[^0-9]/g, '');
       const last10 = digits.slice(-10);
       if (last10.length < 10) {
-        errs.phone = 'Please enter a valid 10-digit mobile number (e.g. 9876543210).';
+        errs.phone = 'Please enter a valid 10-digit mobile number.';
       }
     }
 
-    // 3. College Name Validation
-    const trimmedCollege = collegeName.trim();
-    if (!trimmedCollege) {
+    if (!collegeName.trim()) {
       errs.collegeName = 'College / Institution Name is required.';
-    } else if (trimmedCollege.length < 2 || trimmedCollege.length > 150) {
-      errs.collegeName = 'Institution name must be between 2 and 150 characters long.';
-    } else if (!/[a-zA-Z\u00C0-\u024F]/.test(trimmedCollege)) {
-      errs.collegeName = 'Institution name must contain letters and cannot consist only of numbers.';
     }
 
-    // 4. Roll Number Validation
-    const trimmedRoll = rollNumber.trim();
-    if (isStudent && !trimmedRoll) {
+    if (isStudent && !rollNumber.trim()) {
       errs.rollNumber = 'College Roll Number is required for students.';
-    } else if (trimmedRoll && !/^[a-zA-Z0-9\-\/]+$/.test(trimmedRoll)) {
-      errs.rollNumber = 'Roll Number can only contain letters, numbers, hyphens (-), and slashes (/).';
     }
 
     setErrors(errs);
