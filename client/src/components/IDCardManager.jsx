@@ -59,6 +59,7 @@ const IDCardManager = ({ eventId, event }) => {
   const [batchPage, setBatchPage] = useState(1);
   const [batchPageSize, setBatchPageSize] = useState(50); // 50 participants per batch (100 cards = 25 A4 pages) for 100% reliable printing without dropouts
   const [showAllForPrint, setShowAllForPrint] = useState(false);
+  const [printTarget, setPrintTarget] = useState(null); // 'batch' | 'single' | null
   const [showFormatGuide, setShowFormatGuide] = useState(true);
   const [idTemplateUrl, setIdTemplateUrl] = useState(null);
 
@@ -738,8 +739,53 @@ const IDCardManager = ({ eventId, event }) => {
     }
   };
 
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintTarget(null);
+      setIsBatchPrinting(false);
+      setShowAllForPrint(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  const handlePrintSingleCard = () => {
+    setPrintTarget('single');
+    setTimeout(() => {
+      window.print();
+    }, 200);
+  };
+
+  const handlePrintBatch = () => {
+    if (isBatchPrinting) return;
+    setIsBatchPrinting(true);
+    setPrintTarget('batch');
+    setShowAllForPrint(false);
+    setTimeout(() => {
+      window.print();
+      setIsBatchPrinting(false);
+    }, 400);
+  };
+
+  const handlePrintAllCards = () => {
+    if (isBatchPrinting) return;
+    setIsBatchPrinting(true);
+    setShowAllForPrint(true);
+    setIsBatchViewOpen(true);
+    setPrintTarget('batch');
+    setTimeout(() => {
+      window.print();
+      setIsBatchPrinting(false);
+      setShowAllForPrint(false);
+    }, 600);
+  };
+
   const handlePrintCard = () => {
-    window.print();
+    if (isSingleCardModalOpen) {
+      handlePrintSingleCard();
+    } else {
+      handlePrintBatch();
+    }
   };
 
   const downloadCardAsImage = async (studentOrElemId, filename, format = 'png') => {
@@ -789,53 +835,83 @@ const IDCardManager = ({ eventId, event }) => {
 
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className={`space-y-8 animate-fade-in ${printTarget === 'single' ? 'print-target-single' : ''} ${printTarget === 'batch' ? 'print-target-batch' : ''}`}>
       {/* CSS for print mode */}
       <style>{`
         @media print {
           @page {
             size: A4 portrait;
-            margin: 0 !important;
+            margin: 6mm 4mm;
           }
+
           html, body {
             margin: 0 !important;
             padding: 0 !important;
             width: 100% !important;
             height: auto !important;
+            min-height: 100% !important;
             overflow: visible !important;
-            background: white !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
-          body * {
-            visibility: hidden !important;
-          }
-          #printable-id-cards, #printable-id-cards *,
-          #single-card-front, #single-card-front *,
-          #single-card-back, #single-card-back * {
-            visibility: visible !important;
-          }
-          #printable-id-cards {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
+
+          /* Reset all React layout ancestors to allow unclipped multi-page flow */
+          #root,
+          #root > div,
+          main,
+          .container,
+          .animate-fade-in,
+          .space-y-8 {
+            overflow: visible !important;
             height: auto !important;
-            overflow: visible !important;
-            background: white !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            position: static !important;
             padding: 0 !important;
             margin: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: transparent !important;
           }
-          #single-card-front, #single-card-back {
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          .no-print {
+
+          /* Hide all non-printable chrome */
+          nav,
+          footer,
+          .no-print,
+          .fixed.inset-0:not(.single-card-modal-overlay),
+          [aria-hidden="true"],
+          .glass-panel:not(#printable-id-cards) {
             display: none !important;
           }
+
+          /* ── Batch Printing Mode ── */
+          #printable-id-cards {
+            display: block !important;
+            position: relative !important;
+            width: 100% !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+
+          .id-card-print-pages-container {
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+          }
+
           .id-card-print-page {
-            width: 210mm !important;
-            height: 297mm !important;
-            max-height: 297mm !important;
+            width: 100% !important;
+            max-width: 202mm !important;
+            min-height: 275mm !important;
+            max-height: 284mm !important;
             page-break-after: always !important;
             break-after: page !important;
             page-break-inside: avoid !important;
@@ -843,20 +919,40 @@ const IDCardManager = ({ eventId, event }) => {
             margin: 0 auto !important;
             padding: 4mm 0 !important;
             box-sizing: border-box !important;
-            display: block !important;
-            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            align-items: center !important;
+            overflow: visible !important;
+            background: #ffffff !important;
           }
+
+          .id-card-print-page:last-child {
+            page-break-after: auto !important;
+            break-after: auto !important;
+          }
+
           .id-card-grid-4 {
             display: grid !important;
             grid-template-columns: 360px 360px !important;
             grid-template-rows: 500px 500px !important;
-            gap: 16px 20px !important;
+            gap: 12px 16px !important;
             justify-content: center !important;
             align-items: center !important;
             margin: 0 auto !important;
-            transform: scale(0.72) !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            zoom: 0.72 !important;
             transform-origin: top center !important;
           }
+
+          @supports not (zoom: 1) {
+            .id-card-grid-4 {
+              transform: scale(0.72) !important;
+              margin-bottom: -280px !important;
+            }
+          }
+
           .id-card-item {
             width: 360px !important;
             height: 500px !important;
@@ -866,67 +962,109 @@ const IDCardManager = ({ eventId, event }) => {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+
           .id-card-item svg, .id-card-item canvas, .id-card-item img {
             visibility: visible !important;
             display: block !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* ── Single Card Print Mode ── */
+          .print-target-single #printable-id-cards {
+            display: none !important;
+          }
+
+          .single-card-modal-overlay.print-single-only {
+            position: static !important;
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+
+          .single-card-modal-content {
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            width: 100% !important;
+            max-width: 202mm !important;
+          }
+
+          .single-card-print-grid {
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: center !important;
+            align-items: center !important;
+            gap: 20px !important;
+            zoom: 0.76 !important;
+            padding-top: 10mm !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          @supports not (zoom: 1) {
+            .single-card-print-grid {
+              transform: scale(0.76) !important;
+              transform-origin: top center !important;
+            }
           }
         }
       `}</style>
 
-      {/* Header & Stats Banner */}
-      <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-white/10 relative overflow-hidden">
-        <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-fuchsia-500/10 rounded-full blur-3xl" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-bold text-fuchsia-300 border border-white/15 mb-3">
-              <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse" />
-              Admin ID Card Workspace
+      {/* Non-Printable Management Chrome & Student Table */}
+      <div className="no-print space-y-8">
+        {/* Header & Stats Banner */}
+        <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-white/10 relative overflow-hidden">
+          <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-fuchsia-500/10 rounded-full blur-3xl" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-bold text-fuchsia-300 border border-white/15 mb-3">
+                <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse" />
+                Admin ID Card Workspace
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Student ID Cards Generator</h2>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Student ID Cards Generator</h2>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsBatchViewOpen(!isBatchViewOpen)}
+                className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-500 to-indigo-600 hover:from-fuchsia-600 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-fuchsia-500/25 transition-all duration-300 flex items-center gap-2 cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span>{isBatchViewOpen ? 'Hide Batch Preview' : 'Preview All ID Cards'}</span>
+              </button>
+
+              <button
+                onClick={handlePrintAllCards}
+                disabled={isBatchPrinting}
+                className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm rounded-xl shadow-lg transition-all duration-300 flex items-center gap-2 cursor-pointer disabled:opacity-75"
+              >
+                {isBatchPrinting && showAllForPrint ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Preparing All {totalRegistered} ID Cards...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                    <span>Print All Registered Cards ({totalRegistered})</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsBatchViewOpen(!isBatchViewOpen)}
-              className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-500 to-indigo-600 hover:from-fuchsia-600 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-fuchsia-500/25 transition-all duration-300 flex items-center gap-2 cursor-pointer"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              <span>{isBatchViewOpen ? 'Hide Batch Preview' : 'Preview All ID Cards'}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (isBatchPrinting) return;
-                setIsBatchPrinting(true);
-                setIsBatchViewOpen(true);
-                setTimeout(() => {
-                  window.print();
-                  setIsBatchPrinting(false);
-                }, 600);
-              }}
-              disabled={isBatchPrinting}
-              className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm rounded-xl shadow-lg transition-all duration-300 flex items-center gap-2 cursor-pointer disabled:opacity-75"
-            >
-              {isBatchPrinting ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Preparing {totalRegistered} ID Cards...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                  </svg>
-                  <span>Print / Download All Cards ({totalRegistered})</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Stats Grid */}
+          {/* Quick Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/10">
           <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10">
             <span className="text-xs text-slate-400 font-medium">Total Registered Students</span>
@@ -1438,12 +1576,13 @@ const IDCardManager = ({ eventId, event }) => {
           </table>
         </div>
       </div>
+      </div>
 
       {/* Single ID Card Modal (Two-Sided Front & Back Pass) */}
       {isSingleCardModalOpen && selectedStudentForCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in no-print overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6 my-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+        <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto single-card-modal-overlay ${printTarget === 'single' ? 'print-single-only' : 'no-print'}`}>
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6 my-auto single-card-modal-content">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 no-print">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>📇</span> Two-Sided Student ID Pass & Scannable QR Code
@@ -1461,7 +1600,7 @@ const IDCardManager = ({ eventId, event }) => {
             </div>
 
             {/* Front & Back Cards Display Container */}
-            <div className="flex flex-wrap lg:flex-nowrap items-center justify-center gap-8 py-2">
+            <div className="flex flex-wrap lg:flex-nowrap items-center justify-center gap-8 py-2 single-card-print-grid">
               {/* Side 1: Front ID Card */}
               <div className="space-y-2 text-center">
                 <span className="text-xs font-bold text-fuchsia-400 uppercase tracking-wider block">
@@ -1683,7 +1822,7 @@ const IDCardManager = ({ eventId, event }) => {
             </div>
 
             {/* Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800 no-print">
               <button
                 onClick={() => setIsSingleCardModalOpen(false)}
                 className="px-4 py-2 text-xs font-bold rounded-xl btn-secondary"
@@ -1709,7 +1848,7 @@ const IDCardManager = ({ eventId, event }) => {
                 </button>
 
                 <button
-                  onClick={handlePrintCard}
+                  onClick={handlePrintSingleCard}
                   className="px-4 py-2 bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
                   title="Print or Save Two-Sided Pass as PDF Document"
                 >
@@ -1730,7 +1869,7 @@ const IDCardManager = ({ eventId, event }) => {
         const totalBatchPages = batchPageSize === 'all' ? 1 : Math.ceil(students.length / Number(batchPageSize));
 
         return (
-          <div id="printable-id-cards" className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+          <div id="printable-id-cards" className={`glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 ${printTarget === 'single' ? 'no-print' : ''}`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4 no-print">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">Batch ID Cards Preview</h3>
@@ -1791,18 +1930,28 @@ const IDCardManager = ({ eventId, event }) => {
                 </div>
 
                 <button
-                  onClick={handlePrintCard}
-                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs rounded-xl shadow-md hover:from-emerald-700 hover:to-teal-700 transition-colors flex items-center gap-2 cursor-pointer"
+                  onClick={handlePrintBatch}
+                  disabled={isBatchPrinting}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs rounded-xl shadow-md hover:from-emerald-700 hover:to-teal-700 transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-60"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                  </svg>
-                  <span>🖨️ Print Batch {batchPageSize === 'all' ? 'All' : batchPage} ({displayList.length} Students • {Math.ceil(displayList.length / 2)} A4 Pages)</span>
+                  {isBatchPrinting && printTarget === 'batch' ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Preparing Batch {batchPageSize === 'all' ? 'All' : batchPage}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                      </svg>
+                      <span>🖨️ Print Batch {batchPageSize === 'all' ? 'All' : batchPage} ({displayList.length} Students • {Math.ceil(displayList.length / 2)} A4 Pages)</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
 
-            <div className="space-y-8">
+            <div className="space-y-8 id-card-print-pages-container">
               {chunkArray(displayList, 2).map((pageStudents, pageIdx) => (
                 <div key={pageIdx} className="id-card-print-page space-y-3">
                   <div className="no-print flex items-center justify-between text-xs font-bold text-fuchsia-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2 w-full max-w-3xl">
@@ -2013,7 +2162,7 @@ const IDCardManager = ({ eventId, event }) => {
       {selectedStudentForCard && (
         <div
           id="shared-download-card"
-          className="fixed -left-[9999px] -top-[9999px] rounded-3xl border border-white/20 text-center bg-cover bg-center select-none pointer-events-none"
+          className="fixed -left-[9999px] -top-[9999px] rounded-3xl border border-white/20 text-center bg-cover bg-center select-none pointer-events-none no-print"
           style={{
             width: '360px',
             height: '500px',
