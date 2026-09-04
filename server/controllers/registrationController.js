@@ -99,7 +99,9 @@ const checkProfileCompleteness = (profile) => {
   const collegeName = profile.college_name || profile.collegeName || profile.college || profile.institution;
   const department = profile.department || profile.dept || profile.branch;
   const degreeProgram = profile.degree_program || profile.degreeProgram || profile.program || profile.degree;
-  const yearOfStudy = profile.year_of_study !== undefined && profile.year_of_study !== null ? profile.year_of_study : (profile.yearOfStudy || profile.year);
+  const yearOfStudy = profile.year_of_study !== undefined && profile.year_of_study !== null && String(profile.year_of_study).trim() !== ''
+    ? profile.year_of_study
+    : (profile.yearOfStudy || profile.year);
   const rollNumber = profile.roll_number || profile.rollNumber || profile.roll_no || profile.rollNo;
 
   if (!name || !String(name).trim()) missingFields.push('Full Name');
@@ -113,7 +115,12 @@ const checkProfileCompleteness = (profile) => {
   if (!department || !String(department).trim()) missingFields.push('Department');
   if (!degreeProgram || !String(degreeProgram).trim()) missingFields.push('Degree / Program');
   if (yearOfStudy === undefined || yearOfStudy === null || !String(yearOfStudy).trim()) missingFields.push('Year of Study');
-  if (!rollNumber || !String(rollNumber).trim()) missingFields.push('Roll Number');
+
+  const userRoles = Array.isArray(profile.roles) ? profile.roles : [profile.role || 'student'];
+  const isStudent = userRoles.includes('student') || userRoles.includes('student_organizer');
+  if (isStudent && (!rollNumber || !String(rollNumber).trim())) {
+    missingFields.push('Roll Number');
+  }
 
   return {
     isComplete: missingFields.length === 0,

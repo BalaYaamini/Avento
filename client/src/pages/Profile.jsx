@@ -153,11 +153,12 @@ const Profile = () => {
       errs.fullName = "Display Name can only contain letters, spaces, initials, hyphens (-), and apostrophes (').";
     }
 
-    // 2. Phone Validation (Optional, but if provided must be valid 10-digit Indian mobile)
+    // 2. Phone Validation (Optional, but if provided must be valid 10-digit mobile)
     if (phone && phone.trim()) {
-      const cleaned = phone.replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
-      if (!/^[6-9]\d{9}$/.test(cleaned)) {
-        errs.phone = 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).';
+      const digits = phone.replace(/[^0-9]/g, '');
+      const last10 = digits.slice(-10);
+      if (last10.length < 10) {
+        errs.phone = 'Please enter a valid 10-digit mobile number (e.g. 9876543210).';
       }
     }
 

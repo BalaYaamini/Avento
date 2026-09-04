@@ -189,11 +189,12 @@ exports.updateProfileDetails = async (req, res) => {
     // ── 4. Phone Validation ──
     let cleanPhone = null;
     if (phone !== undefined && phone !== null && phone !== '') {
-      const cleaned = String(phone).replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
-      if (!/^[6-9]\d{9}$/.test(cleaned)) {
-        return res.status(400).json({ message: 'Please enter a valid 10-digit Indian mobile number.' });
+      const digits = String(phone).replace(/[^0-9]/g, '');
+      const last10 = digits.slice(-10);
+      if (last10.length < 10) {
+        return res.status(400).json({ message: 'Please enter a valid 10-digit mobile number.' });
       }
-      cleanPhone = cleaned;
+      cleanPhone = last10;
     }
 
     // Build Supabase profile update object
