@@ -289,36 +289,49 @@ exports.getMyRegistrations = async (req, res) => {
 
     // 2. Claim any pending team email invitations matching this email
     if (userEmail) {
-      const { data: pendingEmailInvites } = await supabase
-        .from('team_email_invites')
-        .select('*')
-        .ilike('email', userEmail)
-        .eq('status', 'pending');
+      try {
+        const { data: pendingEmailInvites } = await supabase
+          .from('team_email_invites')
+          .select('*')
+          .ilike('email', userEmail)
+          .eq('status', 'pending');
 
-      if (pendingEmailInvites && pendingEmailInvites.length > 0) {
-        for (const invite of pendingEmailInvites) {
-          const { data: existingReg } = await supabase
-            .from('event_registrations')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('team_id', invite.team_id)
-            .maybeSingle();
+        if (pendingEmailInvites && pendingEmailInvites.length > 0) {
+          for (const invite of pendingEmailInvites) {
+            const { data: existingReg } = await supabase
+              .from('event_registrations')
+              .select('id, status')
+              .eq('user_id', userId)
+              .eq('event_id', invite.event_id)
+              .maybeSingle();
 
-          if (!existingReg) {
-            await supabase.from('event_registrations').insert({
-              user_id: userId,
-              event_id: invite.event_id,
-              team_id: invite.team_id,
-              status: 'pending',
-              created_at: new Date().toISOString()
-            });
+            if (!existingReg) {
+              await supabase.from('event_registrations').insert({
+                user_id: userId,
+                event_id: invite.event_id,
+                team_id: invite.team_id,
+                status: 'pending',
+                created_at: new Date().toISOString()
+              });
+            } else if (existingReg.status !== 'registered') {
+              await supabase
+                .from('event_registrations')
+                .update({
+                  team_id: invite.team_id,
+                  status: 'pending',
+                  created_at: new Date().toISOString()
+                })
+                .eq('id', existingReg.id);
+            }
+
+            await supabase
+              .from('team_email_invites')
+              .update({ status: 'claimed' })
+              .eq('id', invite.id);
           }
-
-          await supabase
-            .from('team_email_invites')
-            .update({ status: 'claimed' })
-            .eq('id', invite.id);
         }
+      } catch (claimErr) {
+        console.warn('Notice claiming team email invites:', claimErr.message);
       }
     }
 
@@ -1113,6 +1126,7 @@ exports.registerTeamForEvent = async (req, res) => {
             team_id: team.id,
             event_id: eventId,
             email: unresEmail,
+            invited_by: leaderId,
             status: 'pending',
             created_at: new Date().toISOString()
           });
@@ -1396,6 +1410,23 @@ exports.acceptTeamInvitation = async (req, res) => {
         return res.status(400).json({ message: 'You are already a member of a team for this event. A student can only have one active team per event.' });
       }
       throw updateErr;
+    }
+
+    // 2. Notify Team Leader that a member accepted
+    try {
+      const { data: teamInfo } = await supabase.from('event_teams').select('name, leader_id').eq('id', reg.team_id).maybeSingle();
+      if (teamInfo && teamInfo.leader_id) {
+        const studentName = userProfile?.name || userProfile?.fullName || req.user?.fullName || req.user?.name || 'A teammate';
+        await notifyUser({
+          recipientId: teamInfo.leader_id,
+          title: 'Teammate Accepted Invitation',
+          message: `${studentName} has accepted your invitation to join team "${teamInfo.name}" for "${event.title}".`,
+          type: 'info',
+          eventId: event.id
+        });
+      }
+    } catch (notifErr) {
+      console.warn('Notice sending accept notification to leader:', notifErr.message);
     }
 
     res.json({ message: 'Team invitation accepted successfully.' });
@@ -2587,6 +2618,7 @@ exports.inviteExternalMember = async (req, res) => {
           team_id: teamId,
           event_id: event.id,
           email: emailLower,
+          invited_by: userId,
           status: 'pending',
           created_at: new Date().toISOString()
         });

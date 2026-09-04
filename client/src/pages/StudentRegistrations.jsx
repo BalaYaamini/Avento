@@ -586,6 +586,27 @@ const StudentRegistrations = () => {
         {/* Sub-tab: Registrations list */}
         {activeSubTab === 'registrations' && (
           <>
+            {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length > 0 && (
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-violet-600/15 via-purple-600/15 to-indigo-600/15 border border-violet-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-violet-500/5 animate-fade-in-up">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center text-lg font-bold shrink-0 shadow-md">
+                    📩
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">
+                      You have {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length} pending team invitation(s)!
+                    </h4>
+                    <p className="text-xs text-slate-600">A team leader has invited you to join their team for an event.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveSubTab('invitations')}
+                  className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
+                >
+                  View Team Invitations →
+                </button>
+              </div>
+            )}
             {loading ? (
               <div className="glass-panel rounded-2xl overflow-hidden">
                 <div className="p-6 space-y-4">
@@ -806,7 +827,7 @@ const StudentRegistrations = () => {
                                            const acceptedUserIds = new Set();
                                            if (leaderId) acceptedUserIds.add(String(leaderId));
                                            members.forEach(m => {
-                                             if (m.status === 'registered') {
+                                             if (m.status === 'registered' || m.status === 'accepted') {
                                                acceptedUserIds.add(String(m.id || m.user_id));
                                              }
                                            });

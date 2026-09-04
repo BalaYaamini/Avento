@@ -163,7 +163,7 @@ const generateEmailHtml = (title, message, data = {}) => {
 
   if (data.isTeamInvite || (data.teamName && !data.isLeader)) {
     actionBtnText = 'Accept Team Invitation';
-    actionBtnUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/registrations?tab=invitations`;
+    actionBtnUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/my-registrations?tab=invitations`;
     btnGradient = 'linear-gradient(135deg,#10b981,#059669)';
     btnShadow = 'rgba(16,185,129,0.35)';
   }

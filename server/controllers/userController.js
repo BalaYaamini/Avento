@@ -168,6 +168,7 @@ exports.updateProfileDetails = async (req, res) => {
     const profileUpdate = {
       name: trimmedName,
       college_name: trimmedCollege,
+      college: trimmedCollege,
     };
     if (phone !== undefined) profileUpdate.phone = cleanPhone;
     if (gender !== undefined) profileUpdate.gender = gender ? String(gender).trim() : null;
@@ -180,6 +181,7 @@ exports.updateProfileDetails = async (req, res) => {
     }
 
     let savedDbProfile = null;
+    let lastError = null;
 
     // 1. Primary write: Update existing profile by ID
     const { data: updatedById, error: updateErr } = await supabase
@@ -192,17 +194,21 @@ exports.updateProfileDetails = async (req, res) => {
     if (updatedById) {
       savedDbProfile = updatedById;
     } else {
-      if (updateErr) console.warn('Supabase profile update warning by ID:', updateErr.message);
+      if (updateErr) {
+        console.warn('Supabase profile update warning by ID:', updateErr.message);
+        lastError = updateErr;
+      }
 
       // Fallback 1: Update by Email
       if (req.user?.email) {
-        const { data: updatedByEmail } = await supabase
+        const { data: updatedByEmail, error: emailErr } = await supabase
           .from('profiles')
           .update(profileUpdate)
           .eq('email', String(req.user.email).toLowerCase())
           .select()
           .maybeSingle();
         if (updatedByEmail) savedDbProfile = updatedByEmail;
+        else if (emailErr) lastError = emailErr;
       }
 
       // Fallback 2: Upsert full record if row does not exist yet
@@ -215,13 +221,22 @@ exports.updateProfileDetails = async (req, res) => {
           role: Array.isArray(req.user?.roles) ? (req.user.roles.includes('organizer') ? 'organizer' : 'student') : (req.user?.role || 'student'),
           ...profileUpdate
         };
-        const { data: upsertData } = await supabase
+        const { data: upsertData, error: upsertErr } = await supabase
           .from('profiles')
           .upsert(fullProfileRecord, { onConflict: 'id' })
           .select()
           .maybeSingle();
         if (upsertData) savedDbProfile = upsertData;
+        else if (upsertErr) lastError = upsertErr;
       }
+    }
+
+    if (!savedDbProfile && lastError) {
+      console.error('Failed to save profile to Supabase:', lastError.message);
+      return res.status(500).json({
+        message: `Failed to save profile: ${lastError.message}`,
+        error: lastError.message
+      });
     }
 
     // 3. Update Supabase Auth user_metadata
