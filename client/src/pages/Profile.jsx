@@ -35,12 +35,8 @@ const Profile = () => {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
-  const hasLoadedRef = useRef(false);
-
   useEffect(() => {
     clearError();
-    if (hasLoadedRef.current) return; // Only load once
-    hasLoadedRef.current = true;
 
     const loadProfileData = async () => {
       let activeUser = user;
@@ -52,15 +48,15 @@ const Profile = () => {
       } catch (e) {}
 
       if (activeUser) {
-        setFullName(activeUser.fullName || activeUser.name || '');
-        setRollNumber(activeUser.rollNumber || activeUser.roll_number || '');
-        setPhone(activeUser.phone || '');
-        setGender(activeUser.gender || '');
-        setCollegeName(activeUser.collegeName || activeUser.college_name || activeUser.college || '');
-        setDepartment(activeUser.department || '');
-        setDegreeProgram(activeUser.degreeProgram || activeUser.degree_program || '');
-        setYearOfStudy(activeUser.yearOfStudy || activeUser.year_of_study || '');
-        setAvatarUrl(activeUser.avatarUrl || activeUser.avatar_url || '');
+        setFullName(prev => prev || activeUser.fullName || activeUser.name || '');
+        setRollNumber(prev => prev || activeUser.rollNumber || activeUser.roll_number || '');
+        setPhone(prev => prev || activeUser.phone || '');
+        setGender(prev => prev || activeUser.gender || '');
+        setCollegeName(prev => prev || activeUser.collegeName || activeUser.college_name || activeUser.college || '');
+        setDepartment(prev => prev || activeUser.department || '');
+        setDegreeProgram(prev => prev || activeUser.degreeProgram || activeUser.degree_program || '');
+        setYearOfStudy(prev => prev || activeUser.yearOfStudy || activeUser.year_of_study || '');
+        setAvatarUrl(prev => prev || activeUser.avatarUrl || activeUser.avatar_url || '');
       }
     };
     loadProfileData();
@@ -182,8 +178,7 @@ const Profile = () => {
 
     setSubmitting(true);
     try {
-      // Call the API directly to avoid setUser triggering useEffect re-render
-      const res = await axios.put('/api/users/profile/details', {
+      const payload = {
         name: fullName.trim(),
         fullName: fullName.trim(),
         rollNumber: rollNumber.trim(),
@@ -199,20 +194,22 @@ const Profile = () => {
         year_of_study: yearOfStudy || undefined,
         avatarUrl: avatarUrl || undefined,
         avatar_url: avatarUrl || undefined
-      });
+      };
 
-      if (res.data?.user) {
+      const result = await updateProfile(payload);
+
+      if (result.success) {
         setErrors({});
         sessionStorage.removeItem('pendingEventId');
         sessionStorage.removeItem('profile_redirect_url');
 
         setFeedback({ 
           type: 'success', 
-          message: '✅ Profile saved successfully!' 
+          message: '✅ Profile details saved successfully!' 
         });
         setTimeout(() => setFeedback(null), 4000);
       } else {
-        setFeedback({ type: 'error', message: 'Save returned no data. Please try again.' });
+        setFeedback({ type: 'error', message: result.message || 'Failed to update profile details.' });
         setTimeout(() => setFeedback(null), 4000);
       }
     } catch (err) {

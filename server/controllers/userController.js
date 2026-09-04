@@ -179,39 +179,23 @@ exports.updateProfileDetails = async (req, res) => {
       profileUpdate.avatar_url = req.body.avatarUrl || req.body.avatar_url || null;
     }
 
-    // 1. Upsert into Supabase profiles table (ensures row is created if missing, or updated if existing)
-    const fullProfileRecord = {
-      id: String(userId),
-      email: String(req.user.email).toLowerCase(),
-      role: Array.isArray(req.user.roles) ? (req.user.roles.includes('organizer') ? 'organizer' : 'student') : (req.user.role || 'student'),
-      ...profileUpdate
-    };
-
     let savedDbProfile = null;
 
-    const { data: upsertData, error: profileErr } = await supabase
+    // 1. Primary write: Update existing profile by ID
+    const { data: updatedById, error: updateErr } = await supabase
       .from('profiles')
-      .upsert(fullProfileRecord, { onConflict: 'id' })
+      .update(profileUpdate)
+      .eq('id', String(userId))
       .select()
       .maybeSingle();
 
-    if (upsertData) {
-      savedDbProfile = upsertData;
+    if (updatedById) {
+      savedDbProfile = updatedById;
     } else {
-      if (profileErr) console.warn('Supabase profile upsert warning by ID, trying update by ID/Email:', profileErr.message);
+      if (updateErr) console.warn('Supabase profile update warning by ID:', updateErr.message);
 
-      // Fallback 1: Update by ID
-      const { data: updatedById } = await supabase
-        .from('profiles')
-        .update(profileUpdate)
-        .eq('id', String(userId))
-        .select()
-        .maybeSingle();
-
-      if (updatedById) {
-        savedDbProfile = updatedById;
-      } else if (req.user?.email) {
-        // Fallback 2: Update by Email
+      // Fallback 1: Update by Email
+      if (req.user?.email) {
         const { data: updatedByEmail } = await supabase
           .from('profiles')
           .update(profileUpdate)
@@ -219,6 +203,24 @@ exports.updateProfileDetails = async (req, res) => {
           .select()
           .maybeSingle();
         if (updatedByEmail) savedDbProfile = updatedByEmail;
+      }
+
+      // Fallback 2: Upsert full record if row does not exist yet
+      if (!savedDbProfile) {
+        const safeName = trimmedName || req.user?.name || req.user?.fullName || (req.user?.email ? req.user.email.split('@')[0] : 'User');
+        const fullProfileRecord = {
+          id: String(userId),
+          email: String(req.user?.email || '').toLowerCase(),
+          name: safeName,
+          role: Array.isArray(req.user?.roles) ? (req.user.roles.includes('organizer') ? 'organizer' : 'student') : (req.user?.role || 'student'),
+          ...profileUpdate
+        };
+        const { data: upsertData } = await supabase
+          .from('profiles')
+          .upsert(fullProfileRecord, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
+        if (upsertData) savedDbProfile = upsertData;
       }
     }
 
@@ -240,20 +242,21 @@ exports.updateProfileDetails = async (req, res) => {
       email: req.user.email,
       name: trimmedName,
       fullName: trimmedName,
+      full_name: trimmedName,
       roles: req.user.roles,
-      phone: finalProf.phone !== undefined ? finalProf.phone : (req.user.phone || null),
-      gender: finalProf.gender !== undefined ? finalProf.gender : (req.user.gender || null),
-      degreeProgram: (finalProf.degree_program || finalProf.degreeProgram) !== undefined ? (finalProf.degree_program || finalProf.degreeProgram) : (req.user.degreeProgram || null),
-      degree_program: (finalProf.degree_program || finalProf.degreeProgram) !== undefined ? (finalProf.degree_program || finalProf.degreeProgram) : (req.user.degree_program || null),
-      yearOfStudy: (finalProf.year_of_study || finalProf.yearOfStudy) !== undefined ? (finalProf.year_of_study || finalProf.yearOfStudy) : (req.user.yearOfStudy || null),
-      year_of_study: (finalProf.year_of_study || finalProf.yearOfStudy) !== undefined ? (finalProf.year_of_study || finalProf.yearOfStudy) : (req.user.year_of_study || null),
-      collegeName: (finalProf.college_name || finalProf.collegeName) !== undefined ? (finalProf.college_name || finalProf.collegeName) : (req.user.collegeName || null),
-      college_name: (finalProf.college_name || finalProf.collegeName) !== undefined ? (finalProf.college_name || finalProf.collegeName) : (req.user.college_name || null),
-      rollNumber: (finalProf.roll_number || finalProf.rollNumber) !== undefined ? (finalProf.roll_number || finalProf.rollNumber) : (req.user.rollNumber || null),
-      roll_number: (finalProf.roll_number || finalProf.rollNumber) !== undefined ? (finalProf.roll_number || finalProf.rollNumber) : (req.user.roll_number || null),
-      department: finalProf.department !== undefined ? finalProf.department : (req.user.department || null),
-      avatarUrl: (finalProf.avatar_url || finalProf.avatarUrl) !== undefined ? (finalProf.avatar_url || finalProf.avatarUrl) : (req.user.avatarUrl || req.user.avatar_url || null),
-      avatar_url: (finalProf.avatar_url || finalProf.avatarUrl) !== undefined ? (finalProf.avatar_url || finalProf.avatarUrl) : (req.user.avatar_url || req.user.avatarUrl || null),
+      phone: (finalProf.phone !== undefined && finalProf.phone !== null) ? finalProf.phone : (req.user.phone || null),
+      gender: (finalProf.gender !== undefined && finalProf.gender !== null) ? finalProf.gender : (req.user.gender || null),
+      degreeProgram: finalProf.degree_program || finalProf.degreeProgram || req.user.degreeProgram || req.user.degree_program || null,
+      degree_program: finalProf.degree_program || finalProf.degreeProgram || req.user.degree_program || req.user.degreeProgram || null,
+      yearOfStudy: finalProf.year_of_study || finalProf.yearOfStudy || req.user.yearOfStudy || req.user.year_of_study || null,
+      year_of_study: finalProf.year_of_study || finalProf.yearOfStudy || req.user.year_of_study || req.user.yearOfStudy || null,
+      collegeName: finalProf.college_name || finalProf.collegeName || req.user.collegeName || req.user.college_name || null,
+      college_name: finalProf.college_name || finalProf.collegeName || req.user.college_name || req.user.collegeName || null,
+      rollNumber: finalProf.roll_number || finalProf.rollNumber || req.user.rollNumber || req.user.roll_number || null,
+      roll_number: finalProf.roll_number || finalProf.rollNumber || req.user.roll_number || req.user.rollNumber || null,
+      department: (finalProf.department !== undefined && finalProf.department !== null) ? finalProf.department : (req.user.department || null),
+      avatarUrl: finalProf.avatar_url || finalProf.avatarUrl || req.user.avatarUrl || req.user.avatar_url || null,
+      avatar_url: finalProf.avatar_url || finalProf.avatarUrl || req.user.avatar_url || req.user.avatarUrl || null,
     };
 
     res.json({
