@@ -64,18 +64,24 @@ module.exports = async (req, res, next) => {
     req.user = {
       id: profileData.id || decoded.id,
       email: email,
+      name: profileData.name || email.split('@')[0],
       fullName: profileData.name || email.split('@')[0],
       roles: roles,
       employeeId: profileData.employee_id || null,
       rollNumber: userRollNo,
+      roll_number: userRollNo,
       department: profileData.department || null,
       first_login: profileData.first_login !== false,
       avatarUrl: profileData.avatar_url || null,
+      avatar_url: profileData.avatar_url || null,
       phone: profileData.phone || null,
       gender: profileData.gender || null,
       degreeProgram: profileData.degree_program || null,
+      degree_program: profileData.degree_program || null,
       yearOfStudy: profileData.year_of_study || null,
+      year_of_study: profileData.year_of_study || null,
       collegeName: profileData.college_name || null,
+      college_name: profileData.college_name || null,
     };
 
     // Enforce first_login on backend for all protected routes except profile and change-password

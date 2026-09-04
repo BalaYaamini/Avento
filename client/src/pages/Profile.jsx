@@ -198,36 +198,17 @@ const Profile = () => {
     if (result.success) {
       setErrors({});
 
-      // Check for saved redirect target or pending event registration
-      const pendingEventId = sessionStorage.getItem('pendingEventId');
-      const storedRedirectUrl = sessionStorage.getItem('profile_redirect_url');
-      const queryRedirect = searchParams.get('redirect');
-      const queryAutoEventId = searchParams.get('autoRegisterEventId');
+      // Clear any temporary pending redirect tokens
+      sessionStorage.removeItem('pendingEventId');
+      sessionStorage.removeItem('profile_redirect_url');
 
-      let targetUrl = null;
-
-      if (pendingEventId || queryAutoEventId) {
-        const eventId = pendingEventId || queryAutoEventId;
-        sessionStorage.removeItem('pendingEventId');
-        sessionStorage.removeItem('profile_redirect_url');
-        targetUrl = `/?autoRegisterEventId=${eventId}`;
-      } else if (storedRedirectUrl || queryRedirect) {
-        targetUrl = storedRedirectUrl || queryRedirect;
-        sessionStorage.removeItem('profile_redirect_url');
-      }
-
-      if (targetUrl) {
-        setFeedback({ 
-          type: 'success', 
-          message: 'Profile details updated successfully! Redirecting you back to complete your event registration...' 
-        });
-        setTimeout(() => {
-          navigate(targetUrl);
-        }, 1200);
-      } else {
-        setFeedback({ type: 'success', message: 'Profile details updated successfully!' });
-        setTimeout(() => setFeedback(null), 4000);
-      }
+      setFeedback({ 
+        type: 'success', 
+        message: 'Profile details updated successfully! Redirecting to home page...' 
+      });
+      setTimeout(() => {
+        navigate('/');
+      }, 1200);
     } else {
       setFeedback({ type: 'error', message: result.message || 'Failed to update profile details.' });
       setTimeout(() => setFeedback(null), 4000);

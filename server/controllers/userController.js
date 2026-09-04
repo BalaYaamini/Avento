@@ -131,13 +131,21 @@ exports.getStudents = async (req, res) => {
 exports.updateProfileDetails = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, phone, gender, degreeProgram, yearOfStudy, collegeName, rollNumber, department } = req.body;
+    const body = req.body || {};
+    const name = body.name || body.fullName || body.full_name;
+    const phone = body.phone !== undefined ? body.phone : (body.phoneNumber || body.phone_number);
+    const gender = body.gender;
+    const degreeProgram = body.degreeProgram !== undefined ? body.degreeProgram : (body.degree_program || body.program || body.degree);
+    const yearOfStudy = body.yearOfStudy !== undefined ? body.yearOfStudy : (body.year_of_study || body.year);
+    const collegeName = body.collegeName !== undefined ? body.collegeName : (body.college_name || body.college || body.institution);
+    const rollNumber = body.rollNumber !== undefined ? body.rollNumber : (body.roll_number || body.roll_no || body.rollNo);
+    const department = body.department !== undefined ? body.department : (body.dept || body.branch);
 
     // ── 1. Display Name Validation ──
-    if (!name || !name.trim()) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({ message: 'Display Name is required.' });
     }
-    const trimmedName = name.trim();
+    const trimmedName = String(name).trim();
     if (trimmedName.length < 2 || trimmedName.length > 80) {
       return res.status(400).json({ message: 'Display Name must be between 2 and 80 characters long.' });
     }
@@ -149,10 +157,10 @@ exports.updateProfileDetails = async (req, res) => {
     }
 
     // ── 2. Institution / College Name Validation ──
-    if (!collegeName || !collegeName.trim()) {
+    if (!collegeName || !String(collegeName).trim()) {
       return res.status(400).json({ message: 'Institution / College Name is required.' });
     }
-    const trimmedCollege = collegeName.trim();
+    const trimmedCollege = String(collegeName).trim();
     if (trimmedCollege.length < 2 || trimmedCollege.length > 150) {
       return res.status(400).json({ message: 'Institution name must be between 2 and 150 characters long.' });
     }
@@ -164,7 +172,7 @@ exports.updateProfileDetails = async (req, res) => {
     const isStudent = req.user?.roles?.includes('student');
     let finalRollNumber = null;
     if (rollNumber !== undefined && rollNumber !== null) {
-      const trimmedRoll = rollNumber.trim();
+      const trimmedRoll = String(rollNumber).trim();
       if (isStudent && !trimmedRoll) {
         return res.status(400).json({ message: 'College Roll Number is required for students.' });
       }
@@ -181,7 +189,7 @@ exports.updateProfileDetails = async (req, res) => {
     // ── 4. Phone Validation ──
     let cleanPhone = null;
     if (phone !== undefined && phone !== null && phone !== '') {
-      const cleaned = phone.replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
+      const cleaned = String(phone).replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
       if (!/^[6-9]\d{9}$/.test(cleaned)) {
         return res.status(400).json({ message: 'Please enter a valid 10-digit Indian mobile number.' });
       }
@@ -194,11 +202,11 @@ exports.updateProfileDetails = async (req, res) => {
       college_name: trimmedCollege,
     };
     if (phone !== undefined) profileUpdate.phone = cleanPhone;
-    if (gender !== undefined) profileUpdate.gender = gender || null;
-    if (degreeProgram !== undefined) profileUpdate.degree_program = degreeProgram ? degreeProgram.trim() : null;
-    if (yearOfStudy !== undefined) profileUpdate.year_of_study = yearOfStudy || null;
+    if (gender !== undefined) profileUpdate.gender = gender ? String(gender).trim() : null;
+    if (degreeProgram !== undefined) profileUpdate.degree_program = degreeProgram ? String(degreeProgram).trim() : null;
+    if (yearOfStudy !== undefined) profileUpdate.year_of_study = yearOfStudy ? String(yearOfStudy).trim() : null;
     if (rollNumber !== undefined) profileUpdate.roll_number = finalRollNumber;
-    if (department !== undefined) profileUpdate.department = department ? department.trim() : null;
+    if (department !== undefined) profileUpdate.department = department ? String(department).trim() : null;
     if (req.body.avatarUrl !== undefined || req.body.avatar_url !== undefined) {
       profileUpdate.avatar_url = req.body.avatarUrl || req.body.avatar_url || null;
     }
@@ -209,11 +217,14 @@ exports.updateProfileDetails = async (req, res) => {
       .update(profileUpdate)
       .eq('id', String(userId));
 
-    if (profileErr && req.user?.email) {
-      await supabase
-        .from('profiles')
-        .update(profileUpdate)
-        .eq('email', String(req.user.email).toLowerCase());
+    if (profileErr) {
+      console.warn('Supabase profile update warning by ID:', profileErr.message);
+      if (req.user?.email) {
+        await supabase
+          .from('profiles')
+          .update(profileUpdate)
+          .eq('email', String(req.user.email).toLowerCase());
+      }
     }
 
     // 3. Update Supabase Auth user_metadata
@@ -225,24 +236,31 @@ exports.updateProfileDetails = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
-    // Return updated user object
+    // Return updated user object with dual-casing property aliases
+    const updatedUser = {
+      id: userId,
+      email: req.user.email,
+      name: trimmedName,
+      fullName: trimmedName,
+      roles: req.user.roles,
+      phone: profileUpdate.phone !== undefined ? profileUpdate.phone : (req.user.phone || null),
+      gender: profileUpdate.gender !== undefined ? profileUpdate.gender : (req.user.gender || null),
+      degreeProgram: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : (req.user.degreeProgram || null),
+      degree_program: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : (req.user.degree_program || null),
+      yearOfStudy: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : (req.user.yearOfStudy || null),
+      year_of_study: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : (req.user.year_of_study || null),
+      collegeName: profileUpdate.college_name !== undefined ? profileUpdate.college_name : (req.user.collegeName || null),
+      college_name: profileUpdate.college_name !== undefined ? profileUpdate.college_name : (req.user.college_name || null),
+      rollNumber: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : (req.user.rollNumber || null),
+      roll_number: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : (req.user.roll_number || null),
+      department: profileUpdate.department !== undefined ? profileUpdate.department : (req.user.department || null),
+      avatarUrl: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatarUrl || req.user.avatar_url || null),
+      avatar_url: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatar_url || req.user.avatarUrl || null),
+    };
+
     res.json({
       message: 'Profile updated successfully.',
-      user: {
-        id: userId,
-        email: req.user.email,
-        fullName: trimmedName,
-        roles: req.user.roles,
-        phone: profileUpdate.phone !== undefined ? profileUpdate.phone : req.user.phone,
-        gender: profileUpdate.gender !== undefined ? profileUpdate.gender : req.user.gender,
-        degreeProgram: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : req.user.degreeProgram,
-        yearOfStudy: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : req.user.yearOfStudy,
-        collegeName: profileUpdate.college_name !== undefined ? profileUpdate.college_name : req.user.collegeName,
-        rollNumber: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : req.user.rollNumber,
-        department: profileUpdate.department !== undefined ? profileUpdate.department : req.user.department,
-        avatar_url: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : req.user.avatar_url,
-        avatarUrl: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatarUrl || req.user.avatar_url)
-      }
+      user: updatedUser
     });
   } catch (err) {
     console.error('updateProfileDetails error:', err.message);
