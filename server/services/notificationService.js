@@ -156,9 +156,21 @@ const generateEmailHtml = (title, message, data = {}) => {
   <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;white-space:pre-line;"><strong>Note / Guidelines:</strong><br>${notesContent}</p>
 </div>` : '';
 
-  const btnHtml = data.eventId ? `
-<div style="text-align:center;margin-top:40px;">
-  <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/workspace/${data.eventId}" style="display:inline-block;background:linear-gradient(135deg,#c084fc,#a78bfa);color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:30px;box-shadow:0 4px 15px rgba(167,139,250,0.4);">View Event</a>
+  let actionBtnText = data.actionButtonText || 'View Event';
+  let actionBtnUrl = data.actionButtonUrl || (data.eventId ? `${process.env.CLIENT_URL || 'http://localhost:3000'}/workspace/${data.eventId}` : `${process.env.CLIENT_URL || 'http://localhost:3000'}/registrations`);
+  let btnGradient = 'linear-gradient(135deg,#c084fc,#a78bfa)';
+  let btnShadow = 'rgba(167,139,250,0.4)';
+
+  if (data.isTeamInvite || (data.teamName && !data.isLeader)) {
+    actionBtnText = 'Accept Team Invitation';
+    actionBtnUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/registrations?tab=invitations`;
+    btnGradient = 'linear-gradient(135deg,#10b981,#059669)';
+    btnShadow = 'rgba(16,185,129,0.35)';
+  }
+
+  const btnHtml = (data.eventId || actionBtnUrl) ? `
+<div style="text-align:center;margin-top:35px;margin-bottom:10px;">
+  <a href="${actionBtnUrl}" style="display:inline-block;background:${btnGradient};color:#ffffff;font-size:16px;font-weight:800;text-decoration:none;padding:15px 36px;border-radius:30px;box-shadow:0 4px 15px ${btnShadow};letter-spacing:0.3px;">${actionBtnText} →</a>
 </div>` : '';
 
   return `
@@ -205,7 +217,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
     if (!targetEmail && recipientId) {
       try {
         const { data: profile } = await supabase
-          .from('profiles').select('email, name').eq('id', recipientId).single();
+          .from('profiles').select('email, name').eq('id', recipientId).maybeSingle();
         if (profile && profile.email) {
           targetEmail = profile.email;
           targetName = profile.name;

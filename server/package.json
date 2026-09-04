@@ -15,6 +15,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "file-type": "^20.5.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.3.1",
     "multer": "^2.2.0",
@@ -23,11 +24,11 @@
     "pdf-lib": "^1.17.1",
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
+    "sharp": "^0.35.3",
     "ws": "^8.21.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
-    "png-to-ico": "^3.0.2",
-    "sharp": "^0.35.3"
+    "png-to-ico": "^3.0.2"
   }
 }

@@ -125,7 +125,6 @@ const Register = () => {
       <div className="w-full max-w-md relative z-10 animate-fade-in-up">
         <div className="polaroid -rotate-1 p-8">
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-2 !w-28"></div>
-          
           <div className="text-center mb-8 pt-4 relative">
             <h1 className="font-heading text-3xl font-black text-text-primary tracking-wide relative inline-block">
               Join Avento

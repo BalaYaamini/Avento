@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import EventCard from '../components/EventCard';
@@ -17,6 +18,7 @@ import RegistrationCountdown from '../components/RegistrationCountdown';
 import ScoringBoard from '../components/ScoringBoard';
 
 const Home = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [myRegistrations, setMyRegistrations] = useState([]);
@@ -150,10 +152,12 @@ const Home = () => {
       alert('Registration has closed. The registration deadline has passed.');
       return;
     }
-    const isFull = (event.capacity && (event.registeredCount || 0) >= event.capacity) ||
-      (event.registration_type === 'team' && event.max_teams && (event.registeredCount || 0) >= event.max_teams);
+    const isTeam = event.registration_type === 'team';
+    const isFull = isTeam 
+      ? (event.max_teams ? (event.registeredCount || 0) >= event.max_teams : false)
+      : (event.capacity ? (event.registeredCount || 0) >= event.capacity : false);
     if (isFull) {
-      alert('No more team slots are available. Registration is full.');
+      alert(isTeam ? 'No more team slots are available. Registration is full.' : 'Event capacity has been reached.');
       return;
     }
     // Check if user already has a pending or registered status for this event
@@ -280,21 +284,48 @@ const Home = () => {
     fetchMyRegistrations();
   }, [user]);
 
+  const [profileIncompleteModalData, setProfileIncompleteModalData] = useState(null);
+
+  // Auto trigger registration if redirected back after completing profile
+  useEffect(() => {
+    if (events && events.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const autoRegisterId = params.get('autoRegisterEventId');
+      if (autoRegisterId) {
+        const targetEvent = events.find(e => String(e.id || e._id) === String(autoRegisterId));
+        if (targetEvent) {
+          if (targetEvent.registration_type === 'team') {
+            setTeamRegEvent(targetEvent);
+            setIsTeamRegOpen(true);
+            fetchEligibleStudents(targetEvent.id || targetEvent._id);
+          } else {
+            handleRegister(targetEvent.id || targetEvent._id);
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    }
+  }, [events]);
+
   const handleRegister = async (eventId) => {
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
       await axios.post('/api/registrations', { eventId });
       setFeedback({ type: 'success', message: 'Successfully registered for the event! Check My Registrations page.' });
-      
-      // Refresh events list to update count, and user registration list
-      // Await both to ensure state is updated before re-render
       await Promise.all([fetchEvents(), fetchMyRegistrations()]);
     } catch (err) {
-      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to register.' });
+      if (err.response?.data?.profileIncomplete) {
+        setProfileIncompleteModalData({
+          eventId: eventId,
+          message: err.response.data.message,
+          missingFields: err.response.data.missingFields
+        });
+      } else {
+        setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to register.' });
+      }
     } finally {
       setRegisteringIds(prev => ({ ...prev, [eventId]: false }));
-      // Auto clear feedback after 4 seconds
       setTimeout(() => setFeedback(null), 4000);
     }
   };
@@ -325,7 +356,8 @@ const Home = () => {
       const teamRes = await axios.post('/api/registrations/team', {
         eventId,
         teamName,
-        memberIds: []
+        memberIds: [],
+        externalInvites
       });
 
       const teamId = teamRes.data?.team?.id;
@@ -338,13 +370,24 @@ const Home = () => {
         }
       }
 
-      setFeedback({ type: 'success', message: 'Successfully registered team for the event!' });
+      setFeedback({ type: 'success', message: 'Successfully registered team for the event! Invitations sent to members.' });
       setIsTeamRegOpen(false);
       setTeamRegEvent(null);
       setExternalInvites([]);
       await Promise.all([fetchEvents(), fetchMyRegistrations()]);
     } catch (err) {
-      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to register team.' });
+      if (err.response?.data?.profileIncomplete) {
+        setIsTeamRegOpen(false);
+        setTeamRegEvent(null);
+        setProfileIncompleteModalData({
+          eventId: eventId,
+          message: err.response.data.message,
+          missingFields: err.response.data.missingFields,
+          incompleteMembers: err.response.data.incompleteMembers
+        });
+      } else {
+        setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to register team.' });
+      }
     } finally {
       setRegisteringIds(prev => ({ ...prev, [eventId]: false }));
       setTimeout(() => setFeedback(null), 4000);
@@ -1071,6 +1114,72 @@ const Home = () => {
             </form>
           )}
         </Modal>
+
+        {/* Profile Incomplete Warning Modal */}
+        {profileIncompleteModalData && (
+          <Modal
+            isOpen={!!profileIncompleteModalData}
+            onClose={() => setProfileIncompleteModalData(null)}
+            title="Profile Incomplete"
+          >
+            <div className="p-4 space-y-5 text-center">
+              <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto text-3xl border border-amber-500/20">
+                ⚠️
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                  Complete Profile Required
+                </h4>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5 leading-relaxed">
+                  {profileIncompleteModalData.message || 'You must complete all required profile fields (Photo, Phone Number, College, Department, Degree, Year of Study, Roll Number) before registering for events.'}
+                </p>
+              </div>
+
+              {profileIncompleteModalData.missingFields && profileIncompleteModalData.missingFields.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 rounded-2xl p-3.5 text-left space-y-1.5 text-xs">
+                  <span className="font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider text-[10px] block">
+                    Missing Required Fields:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {profileIncompleteModalData.missingFields.map((field, idx) => (
+                      <span key={idx} className="px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-950 dark:text-amber-200 font-bold rounded-lg text-[11px]">
+                        • {field}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setProfileIncompleteModalData(null)}
+                  className="px-4 py-2 text-xs font-bold rounded-xl btn-secondary cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (profileIncompleteModalData?.eventId) {
+                      sessionStorage.setItem('pendingEventId', profileIncompleteModalData.eventId);
+                    }
+                    setProfileIncompleteModalData(null);
+                    if (typeof navigate === 'function') {
+                      navigate('/profile');
+                    } else {
+                      window.location.href = '/profile';
+                    }
+                  }}
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Complete Profile Now</span>
+                  <span>→</span>
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
       </div>
     </div>
   );

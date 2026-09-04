@@ -68,7 +68,17 @@ const getEvents = async (req, res) => {
         evt.proposerName = 'Administrator';
       }
 
-
+      if (evt.registration_type === 'team') {
+        const { count: teamCount } = await supabase
+          .from('event_teams')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_id', evt.id)
+          .eq('status', 'registered');
+        const countVal = teamCount || 0;
+        evt.confirmed_teams_count = countVal;
+        evt.registered_count = countVal;
+        evt.registeredCount = countVal;
+      }
 
       return cleanEventRemarks(evt);
     }));

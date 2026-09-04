@@ -127,28 +127,96 @@ exports.getStudents = async (req, res) => {
   }
 };
 
-exports.updateDisplayName = async (req, res) => {
+// Update profile details for the authenticated user
+exports.updateProfileDetails = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name } = req.body;
+    const { name, phone, gender, degreeProgram, yearOfStudy, collegeName, rollNumber, department } = req.body;
 
+    // ── 1. Display Name Validation ──
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Name is required and cannot be empty.' });
+      return res.status(400).json({ message: 'Display Name is required.' });
+    }
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2 || trimmedName.length > 80) {
+      return res.status(400).json({ message: 'Display Name must be between 2 and 80 characters long.' });
+    }
+    if (/<[^>]*>|http:\/\/|https:\/\/|www\.|&[a-z0-9]+;/i.test(trimmedName)) {
+      return res.status(400).json({ message: 'Display Name cannot contain links or HTML tags.' });
+    }
+    if (!/^[a-zA-Z\u00C0-\u024F\s\.\'\-]+$/.test(trimmedName)) {
+      return res.status(400).json({ message: 'Display Name can only contain letters, spaces, initials, hyphens (-), and apostrophes (\').' });
     }
 
-    const trimmedName = name.trim();
+    // ── 2. Institution / College Name Validation ──
+    if (!collegeName || !collegeName.trim()) {
+      return res.status(400).json({ message: 'Institution / College Name is required.' });
+    }
+    const trimmedCollege = collegeName.trim();
+    if (trimmedCollege.length < 2 || trimmedCollege.length > 150) {
+      return res.status(400).json({ message: 'Institution name must be between 2 and 150 characters long.' });
+    }
+    if (!/[a-zA-Z\u00C0-\u024F]/.test(trimmedCollege)) {
+      return res.status(400).json({ message: 'Institution name must contain letters and cannot consist only of numbers or special characters.' });
+    }
 
-    // Update Supabase profiles table
+    // ── 3. Roll Number Validation ──
+    const isStudent = req.user?.roles?.includes('student');
+    let finalRollNumber = null;
+    if (rollNumber !== undefined && rollNumber !== null) {
+      const trimmedRoll = rollNumber.trim();
+      if (isStudent && !trimmedRoll) {
+        return res.status(400).json({ message: 'College Roll Number is required for students.' });
+      }
+      if (trimmedRoll) {
+        if (!/^[a-zA-Z0-9\-\/]+$/.test(trimmedRoll)) {
+          return res.status(400).json({ message: 'Roll Number can only contain letters, numbers, hyphens (-), and slashes (/).' });
+        }
+        finalRollNumber = trimmedRoll.toUpperCase();
+      }
+    } else if (isStudent) {
+      return res.status(400).json({ message: 'College Roll Number is required for students.' });
+    }
+
+    // ── 4. Phone Validation ──
+    let cleanPhone = null;
+    if (phone !== undefined && phone !== null && phone !== '') {
+      const cleaned = phone.replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
+      if (!/^[6-9]\d{9}$/.test(cleaned)) {
+        return res.status(400).json({ message: 'Please enter a valid 10-digit Indian mobile number.' });
+      }
+      cleanPhone = cleaned;
+    }
+
+    // Build Supabase profile update object
+    const profileUpdate = {
+      name: trimmedName,
+      college_name: trimmedCollege,
+    };
+    if (phone !== undefined) profileUpdate.phone = cleanPhone;
+    if (gender !== undefined) profileUpdate.gender = gender || null;
+    if (degreeProgram !== undefined) profileUpdate.degree_program = degreeProgram ? degreeProgram.trim() : null;
+    if (yearOfStudy !== undefined) profileUpdate.year_of_study = yearOfStudy || null;
+    if (rollNumber !== undefined) profileUpdate.roll_number = finalRollNumber;
+    if (department !== undefined) profileUpdate.department = department ? department.trim() : null;
+    if (req.body.avatarUrl !== undefined || req.body.avatar_url !== undefined) {
+      profileUpdate.avatar_url = req.body.avatarUrl || req.body.avatar_url || null;
+    }
+
+    // 1. Update Supabase profiles table (by ID, fallback to Email)
     const { error: profileErr } = await supabase
       .from('profiles')
-      .update({ name: trimmedName })
+      .update(profileUpdate)
       .eq('id', String(userId));
 
-    if (profileErr) {
-      console.warn('Profile update warning:', profileErr.message);
+    if (profileErr && req.user?.email) {
+      await supabase
+        .from('profiles')
+        .update(profileUpdate)
+        .eq('email', String(req.user.email).toLowerCase());
     }
 
-    // Update Supabase Auth user_metadata
+    // 3. Update Supabase Auth user_metadata
     try {
       await supabase.auth.admin.updateUserById(String(userId), {
         user_metadata: { full_name: trimmedName },
@@ -157,18 +225,142 @@ exports.updateDisplayName = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
+    // Return updated user object
     res.json({
-      message: 'Display name updated successfully.',
+      message: 'Profile updated successfully.',
       user: {
         id: userId,
         email: req.user.email,
         fullName: trimmedName,
         roles: req.user.roles,
+        phone: profileUpdate.phone !== undefined ? profileUpdate.phone : req.user.phone,
+        gender: profileUpdate.gender !== undefined ? profileUpdate.gender : req.user.gender,
+        degreeProgram: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : req.user.degreeProgram,
+        yearOfStudy: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : req.user.yearOfStudy,
+        collegeName: profileUpdate.college_name !== undefined ? profileUpdate.college_name : req.user.collegeName,
+        rollNumber: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : req.user.rollNumber,
+        department: profileUpdate.department !== undefined ? profileUpdate.department : req.user.department,
+        avatar_url: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : req.user.avatar_url,
+        avatarUrl: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatarUrl || req.user.avatar_url)
       }
     });
   } catch (err) {
-    console.error('updateDisplayName error:', err.message);
-    res.status(500).json({ message: 'Server error updating display name.', error: err.message });
+    console.error('updateProfileDetails error:', err.message);
+    res.status(500).json({ message: 'Server error updating profile.', error: err.message });
+  }
+};
+
+exports.updateDisplayName = exports.updateProfileDetails;
+
+// Upload profile photo for the authenticated user
+// Pipeline: validate magic bytes → correct orientation → convert to JPEG → resize 1200×1200 → compress 82%
+exports.uploadProfilePhoto = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'No photo file provided.' });
+    }
+
+    const file = req.file;
+
+    // 5 MB limit
+    if (file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ message: 'File too large. Maximum size is 5 MB.' });
+    }
+
+    // ── Step 1: Validate actual file type using magic bytes ──
+    // file-type v20+ is ESM-only, so we use dynamic import
+    const { fileTypeFromBuffer } = await import('file-type');
+    const detectedType = await fileTypeFromBuffer(file.buffer);
+
+    const allowedMimes = [
+      'image/jpeg', 'image/png', 'image/webp',
+      'image/heic', 'image/heif'
+    ];
+    // Also accept by extension for HEIC/HEIF files that may not be detected by magic bytes
+    const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+    const fileExt = (file.originalname || '').split('.').pop().toLowerCase();
+
+    const mimeOk = detectedType && allowedMimes.includes(detectedType.mime);
+    const extOk = allowedExts.includes(fileExt);
+
+    if (!mimeOk && !extOk) {
+      return res.status(400).json({
+        message: 'Invalid file type. Only JPG, JPEG, PNG, WebP, HEIC, and HEIF images are accepted.'
+      });
+    }
+
+    // ── Step 2: Process image with sharp ──
+    // - Auto-rotate using EXIF orientation
+    // - Convert HEIC/HEIF/PNG/WebP → JPEG
+    // - Resize to fit within 1200×1200 (maintain aspect ratio)
+    // - Compress at 82% JPEG quality
+    const sharp = require('sharp');
+
+    let processedBuffer;
+    try {
+      processedBuffer = await sharp(file.buffer)
+        .rotate()                          // Auto-correct EXIF orientation
+        .resize(1200, 1200, {
+          fit: 'inside',                   // Fit within 1200×1200, maintain aspect ratio
+          withoutEnlargement: true         // Don't upscale smaller images
+        })
+        .jpeg({ quality: 82, mozjpeg: true }) // Convert to JPEG, 82% quality, mozjpeg for better compression
+        .toBuffer();
+    } catch (sharpErr) {
+      console.error('Sharp processing error:', sharpErr.message);
+      return res.status(400).json({
+        message: 'Failed to process image. Please ensure the file is a valid image.'
+      });
+    }
+
+    // ── Step 3: Upload processed image to Supabase Storage ──
+    const storagePath = `avatars/${userId}_${Date.now()}.jpg`;
+    let photoUrl = null;
+
+    try {
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('documents')
+        .upload(storagePath, processedBuffer, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+
+      if (uploadErr) {
+        console.warn('Storage upload warning, using data URI fallback:', uploadErr.message);
+        const base64 = processedBuffer.toString('base64');
+        photoUrl = `data:image/jpeg;base64,${base64}`;
+      } else {
+        const { data: publicUrlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+        photoUrl = publicUrlData.publicUrl;
+      }
+    } catch (storageErr) {
+      console.warn('Storage upload exception, using data URI fallback:', storageErr.message);
+      const base64 = processedBuffer.toString('base64');
+      photoUrl = `data:image/jpeg;base64,${base64}`;
+    }
+
+    // ── Step 4: Update avatar_url in Supabase profiles table ──
+    const { error: profileErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: photoUrl })
+      .eq('id', String(userId));
+
+    if (profileErr && req.user?.email) {
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: photoUrl })
+        .eq('email', String(req.user.email).toLowerCase());
+    }
+
+    res.json({
+      message: 'Profile photo updated successfully.',
+      avatarUrl: photoUrl
+    });
+  } catch (err) {
+    console.error('uploadProfilePhoto error:', err.message);
+    res.status(500).json({ message: 'Server error uploading profile photo.', error: err.message });
   }
 };
 
@@ -310,10 +502,7 @@ exports.importUsers = async (req, res) => {
         let derivedRollNumber = user.rollNumber || null;
 
         if (role === 'student' || role === 'student_organizer') {
-          if (!derivedRollNumber && emailLower.includes('@')) {
-            derivedRollNumber = emailLower.split('@')[0].trim();
-          }
-
+          // Do not auto-fill roll number from email
           if (!derivedDepartment) {
             if (emailLower.endsWith('@cse.suh.edu.in')) derivedDepartment = 'CSE';
             else if (emailLower.endsWith('@aiml.suh.edu.in')) derivedDepartment = 'AIML';

@@ -195,22 +195,10 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  const updateProfile = async (newName) => {
+  const updateProfile = async (profileData) => {
     try {
-      const res = await axios.put('/api/users/profile/name', { name: newName });
-      if (res.data?.user) {
-        setUser(prev => ({ ...prev, fullName: res.data.user.fullName }));
-      }
-      return { success: true };
-    } catch (e) {
-      const msg = e.response?.data?.message || e.message;
-      return { success: false, message: msg };
-    }
-  };
-
-  const updateFullProfile = async (updates) => {
-    try {
-      const res = await axios.put('/api/users/profile/full', updates);
+      const res = await axios.put('/api/users/profile/details', profileData);
+      // Immediately update the local user state so changes propagate app-wide
       if (res.data?.user) {
         setUser(prev => ({ ...prev, ...res.data.user }));
       }
@@ -235,7 +223,6 @@ export const AuthProvider = ({ children }) => {
     logout,
     sendOtp,
     updateProfile,
-    updateFullProfile,
     clearError,
     getRedirectPath,
     inferRole,
