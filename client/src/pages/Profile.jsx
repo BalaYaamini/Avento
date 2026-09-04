@@ -37,17 +37,28 @@ const Profile = () => {
 
   useEffect(() => {
     clearError();
-    if (user) {
-      setFullName(user.fullName || user.name || '');
-      setRollNumber(user.rollNumber || user.roll_number || '');
-      setPhone(user.phone || '');
-      setGender(user.gender || '');
-      setCollegeName(user.collegeName || user.college_name || user.college || '');
-      setDepartment(user.department || '');
-      setDegreeProgram(user.degreeProgram || user.degree_program || '');
-      setYearOfStudy(user.yearOfStudy || user.year_of_study || '');
-      setAvatarUrl(user.avatarUrl || user.avatar_url || '');
-    }
+    const loadProfileData = async () => {
+      let activeUser = user;
+      try {
+        const res = await axios.get('/api/auth/profile');
+        if (res.data?.user) {
+          activeUser = res.data.user;
+        }
+      } catch (e) {}
+
+      if (activeUser) {
+        setFullName(activeUser.fullName || activeUser.name || '');
+        setRollNumber(activeUser.rollNumber || activeUser.roll_number || '');
+        setPhone(activeUser.phone || '');
+        setGender(activeUser.gender || '');
+        setCollegeName(activeUser.collegeName || activeUser.college_name || activeUser.college || '');
+        setDepartment(activeUser.department || '');
+        setDegreeProgram(activeUser.degreeProgram || activeUser.degree_program || '');
+        setYearOfStudy(activeUser.yearOfStudy || activeUser.year_of_study || '');
+        setAvatarUrl(activeUser.avatarUrl || activeUser.avatar_url || '');
+      }
+    };
+    loadProfileData();
   }, [user]);
 
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
@@ -184,14 +195,20 @@ const Profile = () => {
     setSubmitting(true);
     const result = await updateProfile({
       name: fullName.trim(),
+      fullName: fullName.trim(),
       rollNumber: rollNumber.trim(),
+      roll_number: rollNumber.trim(),
       phone: phone.trim(),
-      gender,
+      gender: gender || undefined,
       collegeName: collegeName.trim(),
+      college_name: collegeName.trim(),
       department: department.trim(),
       degreeProgram: degreeProgram.trim(),
-      yearOfStudy,
-      avatarUrl: avatarUrl || undefined
+      degree_program: degreeProgram.trim(),
+      yearOfStudy: yearOfStudy || undefined,
+      year_of_study: yearOfStudy || undefined,
+      avatarUrl: avatarUrl || undefined,
+      avatar_url: avatarUrl || undefined
     });
     setSubmitting(false);
 

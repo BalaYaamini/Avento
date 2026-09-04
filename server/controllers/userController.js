@@ -219,16 +219,38 @@ exports.updateProfileDetails = async (req, res) => {
       ...profileUpdate
     };
 
-    const { error: profileErr } = await supabase
-      .from('profiles')
-      .upsert(fullProfileRecord, { onConflict: 'id' });
+    let savedDbProfile = null;
 
-    if (profileErr) {
-      console.warn('Supabase profile upsert warning by ID, trying by email:', profileErr.message);
-      if (req.user?.email) {
-        await supabase
+    const { data: upsertData, error: profileErr } = await supabase
+      .from('profiles')
+      .upsert(fullProfileRecord, { onConflict: 'id' })
+      .select()
+      .maybeSingle();
+
+    if (upsertData) {
+      savedDbProfile = upsertData;
+    } else {
+      if (profileErr) console.warn('Supabase profile upsert warning by ID, trying update by ID/Email:', profileErr.message);
+
+      // Fallback 1: Update by ID
+      const { data: updatedById } = await supabase
+        .from('profiles')
+        .update(profileUpdate)
+        .eq('id', String(userId))
+        .select()
+        .maybeSingle();
+
+      if (updatedById) {
+        savedDbProfile = updatedById;
+      } else if (req.user?.email) {
+        // Fallback 2: Update by Email
+        const { data: updatedByEmail } = await supabase
           .from('profiles')
-          .upsert({ email: String(req.user.email).toLowerCase(), ...profileUpdate }, { onConflict: 'email' });
+          .update(profileUpdate)
+          .eq('email', String(req.user.email).toLowerCase())
+          .select()
+          .maybeSingle();
+        if (updatedByEmail) savedDbProfile = updatedByEmail;
       }
     }
 
@@ -241,26 +263,29 @@ exports.updateProfileDetails = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
+    const finalProf = savedDbProfile || profileUpdate;
+
     // Return updated user object with dual-casing property aliases
     const updatedUser = {
+      ...req.user,
       id: userId,
       email: req.user.email,
       name: trimmedName,
       fullName: trimmedName,
       roles: req.user.roles,
-      phone: profileUpdate.phone !== undefined ? profileUpdate.phone : (req.user.phone || null),
-      gender: profileUpdate.gender !== undefined ? profileUpdate.gender : (req.user.gender || null),
-      degreeProgram: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : (req.user.degreeProgram || null),
-      degree_program: profileUpdate.degree_program !== undefined ? profileUpdate.degree_program : (req.user.degree_program || null),
-      yearOfStudy: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : (req.user.yearOfStudy || null),
-      year_of_study: profileUpdate.year_of_study !== undefined ? profileUpdate.year_of_study : (req.user.year_of_study || null),
-      collegeName: profileUpdate.college_name !== undefined ? profileUpdate.college_name : (req.user.collegeName || null),
-      college_name: profileUpdate.college_name !== undefined ? profileUpdate.college_name : (req.user.college_name || null),
-      rollNumber: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : (req.user.rollNumber || null),
-      roll_number: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : (req.user.roll_number || null),
-      department: profileUpdate.department !== undefined ? profileUpdate.department : (req.user.department || null),
-      avatarUrl: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatarUrl || req.user.avatar_url || null),
-      avatar_url: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatar_url || req.user.avatarUrl || null),
+      phone: finalProf.phone !== undefined ? finalProf.phone : (req.user.phone || null),
+      gender: finalProf.gender !== undefined ? finalProf.gender : (req.user.gender || null),
+      degreeProgram: (finalProf.degree_program || finalProf.degreeProgram) !== undefined ? (finalProf.degree_program || finalProf.degreeProgram) : (req.user.degreeProgram || null),
+      degree_program: (finalProf.degree_program || finalProf.degreeProgram) !== undefined ? (finalProf.degree_program || finalProf.degreeProgram) : (req.user.degree_program || null),
+      yearOfStudy: (finalProf.year_of_study || finalProf.yearOfStudy) !== undefined ? (finalProf.year_of_study || finalProf.yearOfStudy) : (req.user.yearOfStudy || null),
+      year_of_study: (finalProf.year_of_study || finalProf.yearOfStudy) !== undefined ? (finalProf.year_of_study || finalProf.yearOfStudy) : (req.user.year_of_study || null),
+      collegeName: (finalProf.college_name || finalProf.collegeName) !== undefined ? (finalProf.college_name || finalProf.collegeName) : (req.user.collegeName || null),
+      college_name: (finalProf.college_name || finalProf.collegeName) !== undefined ? (finalProf.college_name || finalProf.collegeName) : (req.user.college_name || null),
+      rollNumber: (finalProf.roll_number || finalProf.rollNumber) !== undefined ? (finalProf.roll_number || finalProf.rollNumber) : (req.user.rollNumber || null),
+      roll_number: (finalProf.roll_number || finalProf.rollNumber) !== undefined ? (finalProf.roll_number || finalProf.rollNumber) : (req.user.roll_number || null),
+      department: finalProf.department !== undefined ? finalProf.department : (req.user.department || null),
+      avatarUrl: (finalProf.avatar_url || finalProf.avatarUrl) !== undefined ? (finalProf.avatar_url || finalProf.avatarUrl) : (req.user.avatarUrl || req.user.avatar_url || null),
+      avatar_url: (finalProf.avatar_url || finalProf.avatarUrl) !== undefined ? (finalProf.avatar_url || finalProf.avatarUrl) : (req.user.avatar_url || req.user.avatarUrl || null),
     };
 
     res.json({
