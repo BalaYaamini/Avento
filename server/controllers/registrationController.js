@@ -240,7 +240,52 @@ exports.registerForEvent = async (req, res) => {
 exports.getMyRegistrations = async (req, res) => {
   try {
     const userId = req.user.id;
-    // We should fetch events alongside registrations
+
+    // 1. Fetch user's profile email
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const userEmail = (userProfile?.email || req.user.email || req.user.user_metadata?.email || '').trim().toLowerCase();
+
+    // 2. Claim any pending team email invitations matching this email
+    if (userEmail) {
+      const { data: pendingEmailInvites } = await supabase
+        .from('team_email_invites')
+        .select('*')
+        .ilike('email', userEmail)
+        .eq('status', 'pending');
+
+      if (pendingEmailInvites && pendingEmailInvites.length > 0) {
+        for (const invite of pendingEmailInvites) {
+          const { data: existingReg } = await supabase
+            .from('event_registrations')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('team_id', invite.team_id)
+            .maybeSingle();
+
+          if (!existingReg) {
+            await supabase.from('event_registrations').insert({
+              user_id: userId,
+              event_id: invite.event_id,
+              team_id: invite.team_id,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            });
+          }
+
+          await supabase
+            .from('team_email_invites')
+            .update({ status: 'claimed' })
+            .eq('id', invite.id);
+        }
+      }
+    }
+
+    // 3. Fetch registrations for user
     const { data: registrations, error } = await supabase
       .from('event_registrations')
       .select(`
@@ -290,11 +335,16 @@ exports.getMyRegistrations = async (req, res) => {
         });
 
         const leaderReg = teamRegs?.find(tr => tr.user_id === reg.teamId.leader_id);
-        const isTeamRegistered = reg.teamId.status === 'registered' || (leaderReg && leaderReg.status === 'registered');
+        const isTeamRegistered = reg.teamId.status === 'registered';
+
+        // Preserve member's actual registration status (e.g. pending) if not leader
+        const effectiveStatus = (reg.user_id !== reg.teamId.leader_id && reg.status === 'pending')
+          ? 'pending'
+          : (isTeamRegistered ? 'registered' : reg.status);
 
         return {
           ...reg,
-          status: isTeamRegistered ? 'registered' : reg.status,
+          status: effectiveStatus,
           teamDetails: {
             leader_id: reg.teamId.leader_id,
             teamStatus: isTeamRegistered ? 'registered' : (reg.teamId.status || 'pending'),
@@ -639,7 +689,8 @@ exports.getEventRegistrations = async (req, res) => {
                 name: r.user_name || r.name || (r.user_email ? r.user_email.split('@')[0] : 'Student'),
                 email: r.user_email || r.email || '',
                 roll_number: r.roll_number || r.rollNo || '',
-                department: r.department || 'General'
+                department: r.department || 'General',
+                avatar_url: r.avatar_url || r.avatarUrl || null
               },
               teamId: teamMap.get(r.team_id) || null
             };
@@ -803,11 +854,28 @@ exports.updatePaymentStatus = async (req, res) => {
 // Register a team for an event
 exports.registerTeamForEvent = async (req, res) => {
   try {
-    const { eventId, teamName, memberIds } = req.body;
+    const { eventId, teamName, memberIds, externalInvites } = req.body;
     const leaderId = req.user.id;
 
-    if (!eventId || !teamName || !memberIds || !Array.isArray(memberIds)) {
-      return res.status(400).json({ message: 'Event ID, Team Name, and array of member IDs are required.' });
+    if (!eventId || !teamName) {
+      return res.status(400).json({ message: 'Event ID and Team Name are required.' });
+    }
+
+    // MANDATORY PROFILE CHECK: Ensure Team Leader profile is complete before allowing team creation
+    const { data: leaderProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', leaderId)
+      .maybeSingle();
+
+    const leaderCompleteness = checkProfileCompleteness(leaderProfile);
+    if (!leaderCompleteness.isComplete) {
+      return res.status(400).json({
+        success: false,
+        profileIncomplete: true,
+        missingFields: leaderCompleteness.missingFields,
+        message: `Incomplete Profile! Cannot create team because your profile is incomplete (${leaderCompleteness.missingFields.join(', ')}). Please complete your profile fields first.`
+      });
     }
 
     // Fetch event
@@ -834,39 +902,36 @@ exports.registerTeamForEvent = async (req, res) => {
       return res.status(400).json({ message: 'This event does not support team registration.' });
     }
 
-    // Determine effective team size (members + leader)
-    const uniqueMemberIds = [...new Set(memberIds)].filter(id => id !== leaderId);
+    // Resolve member IDs & externalInvites emails case-insensitively
+    let uniqueMemberIds = Array.isArray(memberIds) ? [...new Set(memberIds)].filter(id => id !== leaderId) : [];
+    const inviteEmails = Array.isArray(externalInvites)
+      ? externalInvites.map(i => (typeof i === 'string' ? i.trim().toLowerCase() : i.email?.trim().toLowerCase())).filter(Boolean)
+      : [];
+
+    const externalUnresolvedEmails = [];
+
+    if (inviteEmails.length > 0) {
+      const { data: allProfiles } = await supabase
+        .from('profiles')
+        .select('id, email');
+
+      inviteEmails.forEach(invEmail => {
+        const foundProf = (allProfiles || []).find(p => p.email && p.email.trim().toLowerCase() === invEmail);
+        if (foundProf && foundProf.id) {
+          if (String(foundProf.id) !== String(leaderId) && !uniqueMemberIds.includes(foundProf.id)) {
+            uniqueMemberIds.push(foundProf.id);
+          }
+        } else {
+          if (!externalUnresolvedEmails.includes(invEmail)) {
+            externalUnresolvedEmails.push(invEmail);
+          }
+        }
+      });
+    }
+
     let allTeamUserIds = [...uniqueMemberIds];
     if (event.team_leader_registration_required !== false) {
       allTeamUserIds.push(leaderId);
-    }
-
-    // MANDATORY PROFILE CHECK: Ensure all team members have completed all profile fields before registering
-    const { data: teamProfiles } = await supabase
-      .from('profiles')
-      .select('*')
-      .in('id', allTeamUserIds);
-
-    const incompleteMembers = [];
-    for (const uId of allTeamUserIds) {
-      const prof = (teamProfiles || []).find(p => String(p.id) === String(uId));
-      const completeness = checkProfileCompleteness(prof);
-      if (!completeness.isComplete) {
-        incompleteMembers.push({
-          name: prof?.name || prof?.email || 'Team Member',
-          missingFields: completeness.missingFields
-        });
-      }
-    }
-
-    if (incompleteMembers.length > 0) {
-      const details = incompleteMembers.map(m => `${m.name} (${m.missingFields.join(', ')})`).join('; ');
-      return res.status(400).json({
-        success: false,
-        profileIncomplete: true,
-        incompleteMembers,
-        message: `Incomplete Profile! Cannot register team because the following member(s) have incomplete profiles: ${details}. All members must complete their profile fields first.`
-      });
     }
 
     const teamSize = allTeamUserIds.length;
@@ -1008,6 +1073,45 @@ exports.registerTeamForEvent = async (req, res) => {
 
     if (regErr) throw regErr;
 
+    // Save unresolved external email invitations to team_email_invites
+    if (externalUnresolvedEmails.length > 0) {
+      for (const unresEmail of externalUnresolvedEmails) {
+        try {
+          await supabase.from('team_email_invites').insert({
+            team_id: team.id,
+            event_id: eventId,
+            email: unresEmail,
+            status: 'pending',
+            created_at: new Date().toISOString()
+          });
+
+          const dateStr = new Date(event.date).toLocaleDateString();
+          const leaderName = leaderProfile?.name || 'Team Leader';
+          await notifyUser({
+            recipientEmail: unresEmail,
+            title: 'Team Invitation Received',
+            message: `You have been invited by ${leaderName} to join the team "${teamName}" for "${event.title}". Please sign in to Avento to accept the invitation.`,
+            type: 'info',
+            eventId: event.id,
+            emailSubject: `Team Invitation – ${event.title}`,
+            emailData: {
+              recipientName: unresEmail.split('@')[0],
+              eventName: event.title,
+              date: dateStr,
+              venue: event.venue || 'TBA',
+              status: 'Pending Approval',
+              teamName: teamName,
+              teamLeader: leaderName,
+              isTeamInvite: true,
+              isLeader: false
+            }
+          });
+        } catch (invErr) {
+          console.warn('Error saving external email invite:', invErr.message);
+        }
+      }
+    }
+
     // DO NOT update event registered count here.
     // The count will be updated when the Team Leader confirms the team.
 
@@ -1036,6 +1140,10 @@ exports.registerTeamForEvent = async (req, res) => {
 
       for (const uid of allTeamUserIds) {
         const isLeader = uid === leaderId;
+        const memberProf = (memberProfiles || []).find(p => String(p.id) === String(uid));
+        const memberEmail = memberProf?.email || null;
+        const memberName = memberProf?.name || null;
+
         const statusText = isLeader ? 'Confirmed' : 'Pending Approval';
         const msg = isLeader 
           ? `Your team "${teamName}" has been successfully created for "${event.title}". Waiting for members to accept before you can confirm the registration.`
@@ -1043,19 +1151,23 @@ exports.registerTeamForEvent = async (req, res) => {
 
         await notifyUser({
           recipientId: uid,
+          recipientEmail: memberEmail,
           title: isLeader ? 'Team Registration Successful' : 'Team Invitation Received',
           message: msg,
           type: isLeader ? 'success' : 'info',
           eventId: event.id,
           emailSubject: isLeader ? `Team Registration Confirmed – ${event.title}` : `Team Invitation – ${event.title}`,
           emailData: {
+            recipientName: memberName,
             eventName: event.title,
             date: dateStrTeam,
             venue: event.venue || 'TBA',
             status: statusText,
             teamName: teamName,
             teamLeader: teamLeaderName,
-            teamMembers: teamMembers
+            teamMembers: teamMembers,
+            isTeamInvite: !isLeader,
+            isLeader: isLeader
           }
         });
       }
@@ -1157,6 +1269,23 @@ exports.acceptTeamInvitation = async (req, res) => {
   try {
     const { registrationId } = req.params;
     const userId = req.user.id;
+
+    // MANDATORY PROFILE CHECK: Ensure student profile is 100% complete before accepting team invitation
+    const { data: userProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const completeness = checkProfileCompleteness(userProfile);
+    if (!completeness.isComplete) {
+      return res.status(400).json({
+        success: false,
+        profileIncomplete: true,
+        missingFields: completeness.missingFields,
+        message: `Incomplete Profile! Please complete all required profile fields (${completeness.missingFields.join(', ')}) in Profile Settings before accepting team invitations.`
+      });
+    }
 
     // Fetch registration with team status
     const { data: reg, error: regErr } = await supabase
@@ -1427,6 +1556,37 @@ exports.confirmTeamRegistration = async (req, res) => {
     const event = teamData.events;
     if (!event) {
       return res.status(404).json({ message: 'Associated event not found.' });
+    }
+
+    // MANDATORY PROFILE CHECK: Ensure all members who joined the team have completed their profile details
+    const { data: teamRegs } = await supabase
+      .from('event_registrations')
+      .select('user_id, status')
+      .eq('team_id', teamId);
+
+    const checkUserIds = [...new Set((teamRegs || []).map(r => r.user_id))];
+    if (checkUserIds.length > 0) {
+      const { data: memberProfiles } = await supabase.from('profiles').select('*').in('id', checkUserIds);
+      const incompleteMembers = [];
+      for (const uId of checkUserIds) {
+        const prof = (memberProfiles || []).find(p => String(p.id) === String(uId));
+        const comp = checkProfileCompleteness(prof);
+        if (!comp.isComplete) {
+          incompleteMembers.push({
+            name: prof?.name || prof?.email || 'Team Member',
+            missingFields: comp.missingFields
+          });
+        }
+      }
+      if (incompleteMembers.length > 0) {
+        const details = incompleteMembers.map(m => `${m.name} (${m.missingFields.join(', ')})`).join('; ');
+        return res.status(400).json({
+          success: false,
+          profileIncomplete: true,
+          incompleteMembers,
+          message: `Incomplete Profile! Cannot confirm team registration because the following member(s) have incomplete profiles: ${details}. All members must complete their profile fields first.`
+        });
+      }
     }
 
     if (event.payment_enabled && !validateUtr(utrNumber)) {
@@ -2258,5 +2418,320 @@ exports.getNonOrganizerStudentsForEvent = async (req, res) => {
   } catch (err) {
     console.error('Error in getNonOrganizerStudentsForEvent:', err);
     res.status(500).json({ message: 'Server error fetching eligible students.', error: err.message });
+  }
+};
+
+// External team invitation route handlers
+exports.inviteExternalMember = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { email, name } = req.body;
+    const userId = req.user.id;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ message: 'Email address is required.' });
+    }
+
+    const emailLower = email.trim().toLowerCase();
+
+    // 1. Fetch team & event details
+    const { data: team, error: teamErr } = await supabase
+      .from('event_teams')
+      .select('*, events(*)')
+      .eq('id', teamId)
+      .maybeSingle();
+
+    if (teamErr || !team) {
+      return res.status(404).json({ message: 'Team not found.' });
+    }
+
+    if (String(team.leader_id) !== String(userId)) {
+      return res.status(403).json({ message: 'Only the Team Leader can send team invitations.' });
+    }
+
+    if (team.status === 'registered') {
+      return res.status(400).json({ message: 'Cannot edit a confirmed team.' });
+    }
+
+    const event = team.events;
+    if (!event) {
+      return res.status(404).json({ message: 'Associated event not found.' });
+    }
+
+    // 2. Check current team member count
+    const { data: currentRegs } = await supabase
+      .from('event_registrations')
+      .select('status, user_id')
+      .eq('team_id', teamId)
+      .in('status', ['registered', 'pending']);
+
+    if ((currentRegs || []).length >= event.max_team_size) {
+      return res.status(400).json({ message: `Cannot exceed maximum team size of ${event.max_team_size} members.` });
+    }
+
+    // 3. Look up if a profile exists by email
+    const { data: targetProfile } = await supabase
+      .from('profiles')
+      .select('id, name, email')
+      .ilike('email', emailLower)
+      .maybeSingle();
+
+    const targetUserId = targetProfile?.id;
+
+    if (targetUserId) {
+      // Check if already in this team
+      if ((currentRegs || []).some(r => String(r.user_id) === String(targetUserId))) {
+        return res.status(400).json({ message: 'User is already invited or in this team.' });
+      }
+
+      // Check if already in another confirmed team for this event
+      const { data: confirmedTeams } = await supabase
+        .from('event_teams')
+        .select('id')
+        .eq('event_id', event.id)
+        .eq('status', 'registered');
+
+      if (confirmedTeams && confirmedTeams.length > 0) {
+        const confirmedTeamIds = confirmedTeams.map(t => t.id);
+        const { data: alreadyInConfirmed } = await supabase
+          .from('event_registrations')
+          .select('user_id')
+          .in('team_id', confirmedTeamIds)
+          .eq('user_id', targetUserId)
+          .eq('status', 'registered');
+
+        if (alreadyInConfirmed && alreadyInConfirmed.length > 0) {
+          return res.status(400).json({ message: 'This student is already part of a confirmed team for this event.' });
+        }
+      }
+
+      // Create pending registration for existing student
+      const newReg = {
+        user_id: targetUserId,
+        event_id: event.id,
+        team_id: teamId,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      };
+
+      const { error: insertErr } = await supabase
+        .from('event_registrations')
+        .insert(newReg);
+
+      if (insertErr && insertErr.code === '23505') {
+        return res.status(400).json({ message: 'User already has a registration record for this event.' });
+      } else if (insertErr) {
+        throw insertErr;
+      }
+
+      const dateStr = new Date(event.date).toLocaleDateString();
+      const leaderName = req.user?.fullName || req.user?.name || 'Team Leader';
+
+      await notifyUser({
+        recipientId: targetUserId,
+        recipientEmail: emailLower,
+        title: 'Team Invitation Received',
+        message: `You have been invited by ${leaderName} to join the team "${team.name}" for "${event.title}". Please accept the invitation before the deadline.`,
+        type: 'info',
+        eventId: event.id,
+        emailSubject: `Team Invitation – ${event.title}`,
+        emailData: {
+          recipientName: targetProfile?.name || name || emailLower.split('@')[0],
+          eventName: event.title,
+          date: dateStr,
+          venue: event.venue || 'TBA',
+          status: 'Pending Approval',
+          teamName: team.name,
+          teamLeader: leaderName,
+          isTeamInvite: true,
+          isLeader: false
+        }
+      });
+
+      return res.json({ message: `Invitation sent successfully to ${emailLower}.` });
+    } else {
+      // For external student email without an existing profile yet
+      try {
+        await supabase.from('team_email_invites').insert({
+          team_id: teamId,
+          event_id: event.id,
+          email: emailLower,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        });
+      } catch (invErr) {
+        console.warn('team_email_invites insert warning:', invErr.message);
+      }
+
+      const dateStr = new Date(event.date).toLocaleDateString();
+      const leaderName = req.user?.fullName || req.user?.name || 'Team Leader';
+
+      await notifyUser({
+        recipientEmail: emailLower,
+        title: 'Team Invitation Received',
+        message: `You have been invited by ${leaderName} to join the team "${team.name}" for "${event.title}". Please sign in to Avento to accept the invitation.`,
+        type: 'info',
+        eventId: event.id,
+        emailSubject: `Team Invitation – ${event.title}`,
+        emailData: {
+          recipientName: name || emailLower.split('@')[0],
+          eventName: event.title,
+          date: dateStr,
+          venue: event.venue || 'TBA',
+          status: 'Pending Approval',
+          teamName: team.name,
+          teamLeader: leaderName,
+          isTeamInvite: true,
+          isLeader: false
+        }
+      });
+
+      return res.json({ message: `Invitation email sent to ${emailLower}. They can accept after signing in.` });
+    }
+  } catch (err) {
+    console.error('inviteExternalMember error:', err);
+    return res.status(500).json({ message: err.message || 'Server error sending team invitation.' });
+  }
+};
+
+exports.getTeamInvites = async (req, res) => {
+  return res.json([]);
+};
+
+exports.revokeTeamInvite = async (req, res) => {
+  return res.json({ message: 'Invite revoked.' });
+};
+
+exports.getInviteByToken = async (req, res) => {
+  return res.status(404).json({ message: 'Invite link not found or expired.' });
+};
+
+exports.acceptInviteByToken = async (req, res) => {
+  return res.status(400).json({ message: 'Invite link invalid or expired.' });
+};
+
+// Student Photo Import Endpoints & Public Image Proxy
+const axios = require('axios');
+
+exports.proxyDriveImage = async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) return res.status(400).send('URL parameter is required.');
+    const response = await axios.get(url, { responseType: 'stream' });
+    response.data.pipe(res);
+  } catch (err) {
+    res.status(500).send('Proxy error.');
+  }
+};
+
+exports.importStudentPhotos = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const files = req.files || [];
+    const mappedStudents = [];
+
+    for (const file of files) {
+      const originalName = file.originalname || '';
+      const rollNumber = originalName.split('.')[0].trim();
+      const ext = originalName.split('.').pop() || 'jpg';
+      const fileName = `avatars/${rollNumber}_${Date.now()}.${ext}`;
+
+      let photoUrl = null;
+      try {
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('documents')
+          .upload(fileName, file.buffer, {
+            contentType: file.mimetype || 'image/jpeg',
+            upsert: true
+          });
+
+        if (!uploadErr && uploadData) {
+          const { data: publicUrlData } = supabase.storage
+            .from('documents')
+            .getPublicUrl(fileName);
+          photoUrl = publicUrlData?.publicUrl;
+        }
+      } catch (sErr) {
+        console.warn('Supabase storage upload warning:', sErr.message);
+      }
+
+      if (photoUrl) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, name, roll_number, email')
+          .or(`roll_number.ilike.${rollNumber},email.ilike.${rollNumber}@%`);
+
+        if (profiles && profiles.length > 0) {
+          for (const p of profiles) {
+            await supabase
+              .from('profiles')
+              .update({ avatar_url: photoUrl })
+              .eq('id', p.id);
+            mappedStudents.push({ rollNumber: p.roll_number || rollNumber, name: p.name, avatarUrl: photoUrl });
+          }
+        } else {
+          mappedStudents.push({ rollNumber, name: rollNumber, avatarUrl: photoUrl });
+        }
+
+        setEventAvatar(eventId, rollNumber, photoUrl);
+      }
+    }
+    return res.json({ success: true, message: `Processed ${mappedStudents.length} photo(s).`, mappedStudents });
+  } catch (err) {
+    console.error('importStudentPhotos error:', err);
+    return res.status(500).json({ message: 'Error importing photos.', error: err.message });
+  }
+};
+
+exports.importStudentPhotoLinks = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { mappings } = req.body;
+    if (!Array.isArray(mappings)) return res.status(400).json({ message: 'Mappings array is required.' });
+
+    const mappedStudents = [];
+    for (const item of mappings) {
+      if (item.rollNumber && item.photoUrl) {
+        const cleanRoll = item.rollNumber.trim();
+        const photoUrl = item.photoUrl.trim();
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, name, roll_number, email')
+          .or(`roll_number.ilike.${cleanRoll},email.ilike.${cleanRoll}@%`);
+
+        if (profiles && profiles.length > 0) {
+          for (const p of profiles) {
+            const { data: updated } = await supabase
+              .from('profiles')
+              .update({ avatar_url: photoUrl })
+              .eq('id', p.id)
+              .select('id, name, roll_number, avatar_url')
+              .maybeSingle();
+
+            if (updated) {
+              mappedStudents.push({ rollNumber: updated.roll_number || cleanRoll, name: updated.name, avatarUrl: updated.avatar_url });
+            }
+          }
+        } else {
+          const { data: updatedDirect } = await supabase
+            .from('profiles')
+            .update({ avatar_url: photoUrl })
+            .ilike('roll_number', cleanRoll)
+            .select('id, name, roll_number, avatar_url')
+            .maybeSingle();
+
+          if (updatedDirect) {
+            mappedStudents.push({ rollNumber: updatedDirect.roll_number, name: updatedDirect.name, avatarUrl: updatedDirect.avatar_url });
+          }
+        }
+
+        setEventAvatar(eventId, cleanRoll, photoUrl);
+      }
+    }
+    return res.json({ success: true, message: `Successfully mapped ${mappedStudents.length} photo link(s).`, mappedStudents });
+  } catch (err) {
+    console.error('importStudentPhotoLinks error:', err);
+    return res.status(500).json({ message: 'Error importing photo links.', error: err.message });
   }
 };

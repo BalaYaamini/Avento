@@ -26,12 +26,12 @@ const resolveStudentAvatarUrl = (url) => {
                      str.match(/\/d\/([a-zA-Z0-9_-]+)/);
 
   if (driveMatch && driveMatch[1]) {
-    return `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w1000`;
+    return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
   }
 
   // Support raw Google Drive File IDs (25+ characters without slashes or spaces)
-  if (/^[a-zA-Z0-9_-]{25,}$/.test(str)) {
-    return `https://drive.google.com/thumbnail?id=${str}&sz=w1000`;
+  if (/^[a-zA-Z0-9_-]{25,}$/.test(str) && !str.startsWith('http')) {
+    return `https://lh3.googleusercontent.com/d/${str}`;
   }
 
   return str;
@@ -1384,12 +1384,7 @@ const IDCardManager = ({ eventId, event }) => {
                             alt={student.name}
                             referrerPolicy="no-referrer"
                             className="w-11 h-11 rounded-full object-cover border-2 border-fuchsia-500 shadow-sm"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              if (e.target.nextSibling) {
-                                e.target.nextSibling.style.display = 'flex';
-                              }
-                            }}
+                            onError={(e) => handleImageError(e, student.avatarUrl)}
                           />
                           <div className="hidden w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold items-center justify-center text-sm shadow-sm">
                             {student.name.charAt(0).toUpperCase()}

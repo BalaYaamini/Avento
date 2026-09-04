@@ -199,6 +199,9 @@ exports.updateProfileDetails = async (req, res) => {
     if (yearOfStudy !== undefined) profileUpdate.year_of_study = yearOfStudy || null;
     if (rollNumber !== undefined) profileUpdate.roll_number = finalRollNumber;
     if (department !== undefined) profileUpdate.department = department ? department.trim() : null;
+    if (req.body.avatarUrl !== undefined || req.body.avatar_url !== undefined) {
+      profileUpdate.avatar_url = req.body.avatarUrl || req.body.avatar_url || null;
+    }
 
     // 1. Update Supabase profiles table (by ID, fallback to Email)
     const { error: profileErr } = await supabase
@@ -237,6 +240,8 @@ exports.updateProfileDetails = async (req, res) => {
         collegeName: profileUpdate.college_name !== undefined ? profileUpdate.college_name : req.user.collegeName,
         rollNumber: profileUpdate.roll_number !== undefined ? profileUpdate.roll_number : req.user.rollNumber,
         department: profileUpdate.department !== undefined ? profileUpdate.department : req.user.department,
+        avatar_url: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : req.user.avatar_url,
+        avatarUrl: profileUpdate.avatar_url !== undefined ? profileUpdate.avatar_url : (req.user.avatarUrl || req.user.avatar_url)
       }
     });
   } catch (err) {

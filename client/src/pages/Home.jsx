@@ -356,7 +356,8 @@ const Home = () => {
       const teamRes = await axios.post('/api/registrations/team', {
         eventId,
         teamName,
-        memberIds: []
+        memberIds: [],
+        externalInvites
       });
 
       const teamId = teamRes.data?.team?.id;
@@ -369,7 +370,7 @@ const Home = () => {
         }
       }
 
-      setFeedback({ type: 'success', message: 'Successfully registered team for the event!' });
+      setFeedback({ type: 'success', message: 'Successfully registered team for the event! Invitations sent to members.' });
       setIsTeamRegOpen(false);
       setTeamRegEvent(null);
       setExternalInvites([]);

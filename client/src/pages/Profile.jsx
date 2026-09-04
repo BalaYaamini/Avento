@@ -1,40 +1,237 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import Cropper from 'react-easy-crop';
+import axios from 'axios';
 
 const Profile = () => {
   const { user, updateProfile, clearError } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   
   // ── Form state ──
   const [fullName, setFullName] = useState('');
+  const [rollNumber, setRollNumber] = useState('');
+  const [phone, setPhone] = useState('');
+  const [gender, setGender] = useState('');
+  const [collegeName, setCollegeName] = useState('');
+  const [department, setDepartment] = useState('');
+  const [degreeProgram, setDegreeProgram] = useState('');
+  const [yearOfStudy, setYearOfStudy] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+
+  // ── Photo & Modal States ──
+  const fileInputRef = useRef(null);
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
   useEffect(() => {
     clearError();
     if (user) {
-      setFullName(user.fullName || '');
+      setFullName(user.fullName || user.name || '');
+      setRollNumber(user.rollNumber || user.roll_number || '');
+      setPhone(user.phone || '');
+      setGender(user.gender || '');
+      setCollegeName(user.collegeName || user.college_name || user.college || '');
+      setDepartment(user.department || '');
+      setDegreeProgram(user.degreeProgram || user.degree_program || '');
+      setYearOfStudy(user.yearOfStudy || user.year_of_study || '');
+      setAvatarUrl(user.avatarUrl || user.avatar_url || '');
     }
   }, [user]);
+
+  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handlePhotoSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageToCrop(reader.result);
+      setShowCropModal(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleProceedUpload = () => {
+    setShowGuideModal(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleSaveCroppedImage = async () => {
+    if (!imageToCrop) return;
+    try {
+      setUploadingPhoto(true);
+      const image = new Image();
+      image.src = imageToCrop;
+      await new Promise(resolve => { image.onload = resolve; });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const pixelCrop = croppedAreaPixels || { x: 0, y: 0, width: image.width, height: image.height };
+
+      canvas.width = pixelCrop.width;
+      canvas.height = pixelCrop.height;
+
+      ctx.drawImage(
+        image,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        pixelCrop.width,
+        pixelCrop.height
+      );
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      const formData = new FormData();
+      formData.append('photo', new File([blob], `avatar_${user?.id || 'user'}.jpg`, { type: 'image/jpeg' }));
+
+      const res = await axios.put('/api/users/profile/photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const newPhotoUrl = res.data?.avatarUrl || res.data?.avatar_url || canvas.toDataURL('image/jpeg');
+      setAvatarUrl(newPhotoUrl);
+      await updateProfile({ avatarUrl: newPhotoUrl });
+
+      setFeedback({ type: 'success', message: 'Profile photo updated successfully!' });
+      setShowCropModal(false);
+    } catch (err) {
+      console.error('Error saving photo:', err);
+      setFeedback({ type: 'error', message: 'Failed to update photo.' });
+    } finally {
+      setUploadingPhoto(false);
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+  // ── Validation Errors State ──
+  const [errors, setErrors] = useState({});
+
+  const validateForm = () => {
+    const errs = {};
+    const isStudent = user?.roles?.includes('student') || user?.roles?.includes('student_organizer');
+    const trimmedName = fullName.trim();
+
+    if (!trimmedName) {
+      errs.fullName = 'Display Name is required.';
+    } else if (trimmedName.length < 2 || trimmedName.length > 80) {
+      errs.fullName = 'Display Name must be between 2 and 80 characters long.';
+    } else if (/<[^>]*>|http:\/\/|https:\/\/|www\.|&[a-z0-9]+;/i.test(trimmedName)) {
+      errs.fullName = 'Display Name cannot contain links or HTML tags.';
+    } else if (!/^[a-zA-Z\u00C0-\u024F\s\.\'\-]+$/.test(trimmedName)) {
+      errs.fullName = "Display Name can only contain letters, spaces, initials, hyphens (-), and apostrophes (').";
+    }
+
+    // 2. Phone Validation (Optional, but if provided must be valid 10-digit Indian mobile)
+    if (phone && phone.trim()) {
+      const cleaned = phone.replace(/[\s\-\(\)]/g, '').replace(/^(\+91|91|0)/, '');
+      if (!/^[6-9]\d{9}$/.test(cleaned)) {
+        errs.phone = 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210).';
+      }
+    }
+
+    // 3. College Name Validation
+    const trimmedCollege = collegeName.trim();
+    if (!trimmedCollege) {
+      errs.collegeName = 'College / Institution Name is required.';
+    } else if (trimmedCollege.length < 2 || trimmedCollege.length > 150) {
+      errs.collegeName = 'Institution name must be between 2 and 150 characters long.';
+    } else if (!/[a-zA-Z\u00C0-\u024F]/.test(trimmedCollege)) {
+      errs.collegeName = 'Institution name must contain letters and cannot consist only of numbers.';
+    }
+
+    // 4. Roll Number Validation
+    const trimmedRoll = rollNumber.trim();
+    if (isStudent && !trimmedRoll) {
+      errs.rollNumber = 'College Roll Number is required for students.';
+    } else if (trimmedRoll && !/^[a-zA-Z0-9\-\/]+$/.test(trimmedRoll)) {
+      errs.rollNumber = 'Roll Number can only contain letters, numbers, hyphens (-), and slashes (/).';
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFeedback(null);
 
-    if (!fullName.trim()) {
-      setFeedback({ type: 'error', message: 'Name cannot be empty.' });
+    if (!validateForm()) {
+      setFeedback({ type: 'error', message: 'Please fix the validation errors below before saving.' });
       return;
     }
 
     setSubmitting(true);
-    const result = await updateProfile(fullName.trim());
+    const result = await updateProfile({
+      name: fullName.trim(),
+      rollNumber: rollNumber.trim(),
+      phone: phone.trim(),
+      gender,
+      collegeName: collegeName.trim(),
+      department: department.trim(),
+      degreeProgram: degreeProgram.trim(),
+      yearOfStudy,
+      avatarUrl: avatarUrl || undefined
+    });
     setSubmitting(false);
+
     if (result.success) {
-      setFeedback({ type: 'success', message: 'Display name updated successfully!' });
+      setErrors({});
+
+      // Check for saved redirect target or pending event registration
+      const pendingEventId = sessionStorage.getItem('pendingEventId');
+      const storedRedirectUrl = sessionStorage.getItem('profile_redirect_url');
+      const queryRedirect = searchParams.get('redirect');
+      const queryAutoEventId = searchParams.get('autoRegisterEventId');
+
+      let targetUrl = null;
+
+      if (pendingEventId || queryAutoEventId) {
+        const eventId = pendingEventId || queryAutoEventId;
+        sessionStorage.removeItem('pendingEventId');
+        sessionStorage.removeItem('profile_redirect_url');
+        targetUrl = `/?autoRegisterEventId=${eventId}`;
+      } else if (storedRedirectUrl || queryRedirect) {
+        targetUrl = storedRedirectUrl || queryRedirect;
+        sessionStorage.removeItem('profile_redirect_url');
+      }
+
+      if (targetUrl) {
+        setFeedback({ 
+          type: 'success', 
+          message: 'Profile details updated successfully! Redirecting you back to complete your event registration...' 
+        });
+        setTimeout(() => {
+          navigate(targetUrl);
+        }, 1200);
+      } else {
+        setFeedback({ type: 'success', message: 'Profile details updated successfully!' });
+        setTimeout(() => setFeedback(null), 4000);
+      }
     } else {
-      setFeedback({ type: 'error', message: result.message || 'Failed to update name.' });
+      setFeedback({ type: 'error', message: result.message || 'Failed to update profile details.' });
+      setTimeout(() => setFeedback(null), 4000);
     }
-    setTimeout(() => setFeedback(null), 4000);
   };
 
   const initials = (user?.fullName || '')
@@ -122,51 +319,203 @@ const Profile = () => {
 
         {/* Profile Form */}
         <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-8 shadow-2xl shadow-violet-500/5">
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-6">
             
-            {/* Editable: Full Name */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2" htmlFor="profile-fullName">
-                Display Name
-              </label>
-              <input
-                type="text"
-                id="profile-fullName"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
-              />
-              <p className="mt-1.5 text-[10px] text-slate-500 font-medium">This name will appear across the platform — events, proposals, organizer lists, etc.</p>
+            {/* Section 1: Account & Contact */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold text-violet-600 uppercase tracking-widest border-b border-violet-100 pb-2">
+                Personal Information
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Editable: Full Name */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-fullName">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    id="profile-fullName"
+                    required
+                    value={fullName}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      if (errors.fullName) setErrors(prev => ({ ...prev, fullName: null }));
+                    }}
+                    className={`${inputCls} ${errors.fullName ? 'border-red-400 focus:border-red-500 bg-red-50/20' : ''}`}
+                    placeholder="Enter full name"
+                  />
+                  {errors.fullName && <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.fullName}</p>}
+                </div>
+
+                {/* Editable: Phone */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-phone">
+                    Phone / Mobile Number
+                  </label>
+                  <input
+                    type="tel"
+                    id="profile-phone"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (errors.phone) setErrors(prev => ({ ...prev, phone: null }));
+                    }}
+                    className={`${inputCls} ${errors.phone ? 'border-red-400 focus:border-red-500 bg-red-50/20' : ''}`}
+                    placeholder="10-digit mobile number"
+                  />
+                  {errors.phone && <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.phone}</p>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Read-only: Email */}
+                <div>
+                  <label className={labelCls}>
+                    Email Address
+                  </label>
+                  <div className={readOnlyCls}>
+                    {user?.email || '—'}
+                  </div>
+                  <p className={hintCls}>Email cannot be changed.</p>
+                </div>
+
+                {/* Editable: Gender */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-gender">
+                    Gender
+                  </label>
+                  <select
+                    id="profile-gender"
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    className={selectCls}
+                  >
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
-            {/* Read-only: Email */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
-                Email Address
-              </label>
-              <div className="w-full bg-white/30 text-slate-600 border border-slate-300/30 rounded-xl px-4 py-2.5 text-sm font-body cursor-not-allowed select-all">
-                {user?.email || '—'}
-              </div>
-              <p className="mt-1.5 text-[10px] text-slate-500 font-medium">Email cannot be changed.</p>
-            </div>
+            {/* Section 2: Academic Details */}
+            <div className="space-y-4 pt-2">
+              <h3 className="text-xs font-bold text-violet-600 uppercase tracking-widest border-b border-violet-100 pb-2">
+                Academic & Institution Details
+              </h3>
 
-            {/* Read-only: Role */}
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Account Role</label>
-              <div className="bg-white/30 border border-slate-300/30 rounded-xl px-4 py-2.5 text-sm font-bold text-violet-400 capitalize cursor-not-allowed">
-                {user?.roles?.includes('admin') ? 'Admin' :
-                 (user?.roles?.includes('faculty') || user?.roles?.includes('faculty_organizer')) ? 'Faculty' :
-                 user?.roles?.includes('student') ? 'Student' : '—'}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Roll Number */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-rollNumber">
+                    Roll Number / Student ID
+                  </label>
+                  <input
+                    type="text"
+                    id="profile-rollNumber"
+                    value={rollNumber}
+                    onChange={(e) => {
+                      setRollNumber(e.target.value);
+                      if (errors.rollNumber) setErrors(prev => ({ ...prev, rollNumber: null }));
+                    }}
+                    className={`${inputCls} ${errors.rollNumber ? 'border-red-400 focus:border-red-500 bg-red-50/20' : ''}`}
+                    placeholder="e.g. 2401100CSE0006"
+                  />
+                  {errors.rollNumber && <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.rollNumber}</p>}
+                </div>
+
+                {/* Account Role */}
+                <div>
+                  <label className={labelCls}>Account Role</label>
+                  <div className="bg-white/30 border border-slate-300/30 rounded-xl px-4 py-2.5 text-sm font-bold text-violet-600 capitalize cursor-not-allowed">
+                    {user?.roles?.includes('admin') ? 'Admin' :
+                     (user?.roles?.includes('faculty') || user?.roles?.includes('faculty_organizer')) ? 'Faculty' :
+                     user?.roles?.includes('student') ? 'Student' : '—'}
+                  </div>
+                </div>
               </div>
-              <p className="mt-1.5 text-[10px] text-slate-500 font-medium">Role is determined by your institutional email domain.</p>
+
+              {/* College / Institution Name */}
+              <div>
+                <label className={labelCls} htmlFor="profile-college">
+                  College / Institution Name
+                </label>
+                <input
+                  type="text"
+                  id="profile-college"
+                  value={collegeName}
+                  onChange={(e) => {
+                    setCollegeName(e.target.value);
+                    if (errors.collegeName) setErrors(prev => ({ ...prev, collegeName: null }));
+                  }}
+                  className={`${inputCls} ${errors.collegeName ? 'border-red-400 focus:border-red-500 bg-red-50/20' : ''}`}
+                  placeholder="Enter college or university name"
+                />
+                {errors.collegeName && <p className="mt-1 text-[11px] font-semibold text-red-500">{errors.collegeName}</p>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Department */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-dept">
+                    Department / Major
+                  </label>
+                  <input
+                    type="text"
+                    id="profile-dept"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className={inputCls}
+                    placeholder="e.g. CSE, AI&DS, ECE"
+                  />
+                </div>
+
+                {/* Degree / Program */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-degree">
+                    Degree / Program
+                  </label>
+                  <input
+                    type="text"
+                    id="profile-degree"
+                    value={degreeProgram}
+                    onChange={(e) => setDegreeProgram(e.target.value)}
+                    className={inputCls}
+                    placeholder="e.g. B.Tech, MBA, MCA"
+                  />
+                </div>
+
+                {/* Year of Study */}
+                <div>
+                  <label className={labelCls} htmlFor="profile-year">
+                    Year of Study
+                  </label>
+                  <select
+                    id="profile-year"
+                    value={yearOfStudy}
+                    onChange={(e) => setYearOfStudy(e.target.value)}
+                    className={selectCls}
+                  >
+                    <option value="">Select Year</option>
+                    <option value="1st Year">1st Year</option>
+                    <option value="2nd Year">2nd Year</option>
+                    <option value="3rd Year">3rd Year</option>
+                    <option value="4th Year">4th Year</option>
+                    <option value="Post Graduate">Post Graduate</option>
+                    <option value="Alumni">Alumni</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
             {/* Save Button */}
             <button
               type="submit"
-              disabled={submitting || fullName.trim() === (user?.fullName || '')}
-              className="w-full btn-primary py-3 rounded-xl text-sm font-display font-bold text-white shadow-lg shadow-violet-500/15 disabled:opacity-50 mt-4"
+              disabled={submitting}
+              className="w-full btn-primary py-3.5 rounded-xl text-sm font-display font-bold text-white shadow-lg shadow-violet-500/15 disabled:opacity-50 mt-6 transition-all hover:scale-[1.01]"
             >
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
@@ -174,9 +523,9 @@ const Profile = () => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                   </svg>
-                  Saving...
+                  Saving Changes...
                 </span>
-              ) : 'Update Name'}
+              ) : 'Save Profile Details'}
             </button>
           </form>
         </div>

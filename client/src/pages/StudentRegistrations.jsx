@@ -218,6 +218,28 @@ const StudentRegistrations = () => {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'invitations') {
+      setActiveSubTab('invitations');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (registrations && registrations.length > 0) {
+      const pendingRegId = sessionStorage.getItem('pendingAcceptRegId');
+      if (pendingRegId) {
+        const targetReg = registrations.find(r => String(r.id) === String(pendingRegId));
+        if (targetReg && targetReg.status === 'pending') {
+          sessionStorage.removeItem('pendingAcceptRegId');
+          handleAcceptInvitation(pendingRegId);
+        } else if (targetReg && targetReg.status === 'registered') {
+          sessionStorage.removeItem('pendingAcceptRegId');
+        }
+      }
+    }
+  }, [registrations]);
+
+  useEffect(() => {
     if (activeSubTab === 'requests') {
       fetchRequests();
     }
@@ -292,13 +314,24 @@ const StudentRegistrations = () => {
     setFeedback(null);
     try {
       await axios.post(`/api/registrations/${regId}/accept`);
-      setFeedback({ type: 'success', message: 'Team invitation accepted.' });
-      setRegistrations(prev => prev.map(r => r.id === regId ? { ...r, status: 'registered' } : r));
+      sessionStorage.removeItem('pendingAcceptRegId');
+      sessionStorage.removeItem('profile_redirect_url');
+      setFeedback({ type: 'success', message: 'Team invitation accepted successfully!' });
+      fetchRegistrations();
     } catch (err) {
-      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to accept invitation.' });
+      const errData = err.response?.data;
+      if (errData?.profileIncomplete) {
+        sessionStorage.setItem('pendingAcceptRegId', regId);
+        sessionStorage.setItem('profile_redirect_url', '/registrations?tab=invitations');
+      }
+      setFeedback({ 
+        type: 'error', 
+        message: errData?.message || 'Failed to accept invitation.',
+        profileIncomplete: !!errData?.profileIncomplete
+      });
     } finally {
       setProcessingId(null);
-      setTimeout(() => setFeedback(null), 4000);
+      setTimeout(() => setFeedback(null), 8000);
     }
   };
 
@@ -500,13 +533,24 @@ const StudentRegistrations = () => {
 
         {/* Feedback Alert */}
         {feedback && (
-          <div className={`mb-6 p-4 rounded-xl border flex items-center gap-3 animate-fade-in-up ${
+          <div className={`mb-6 p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in-up ${
             feedback.type === 'success' 
-              ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' 
-              : 'bg-red-500/8 border-red-500/15 text-red-400'
+              ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-600 dark:text-emerald-400' 
+              : 'bg-red-500/8 border-red-500/15 text-red-600 dark:text-red-400'
           }`}>
-            <span className="text-lg">{feedback.type === 'success' ? '✓' : '⚠'}</span>
-            <span className="text-sm font-semibold">{feedback.message}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-lg">{feedback.type === 'success' ? '✓' : '⚠'}</span>
+              <span className="text-sm font-semibold">{feedback.message}</span>
+            </div>
+            {feedback.profileIncomplete && (
+              <Link 
+                to="/profile?redirect=%2Fregistrations" 
+                onClick={() => sessionStorage.setItem('profile_redirect_url', '/registrations')}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-sm shrink-0 transition-all text-center cursor-pointer"
+              >
+                Complete Profile Settings →
+              </Link>
+            )}
           </div>
         )}
 
@@ -1286,40 +1330,19 @@ const StudentRegistrations = () => {
                           <span className="text-xs text-amber-600 font-bold bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-xl">
                             Team Finalized — You can no longer join this team.
                           </span>
-                        ) : hasActiveTeamForEvent ? (
-                          <div className="flex flex-col sm:flex-row items-center gap-3">
-                            <span className="text-xs text-amber-600 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 max-w-xs text-center sm:text-right">
-                              You are already a member of another team. Leave your current team before joining this team.
-                            </span>
-                            <div className="flex gap-2">
-                              <button
-                                disabled={true}
-                                className="px-5 py-2 text-xs font-bold rounded-xl bg-slate-300 text-slate-500 cursor-not-allowed transition-all duration-300"
-                              >
-                                Accept Invitation
-                              </button>
-                              <button
-                                onClick={() => openConfirmReject(reg)}
-                                disabled={processingId === reg.id}
-                                className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
-                              >
-                                Reject Invitation
-                              </button>
-                            </div>
-                          </div>
                         ) : (
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleAcceptInvitation(reg.id)}
                               disabled={processingId === reg.id}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500 text-white border border-emerald-600 hover:bg-emerald-600 transition-all duration-300 disabled:opacity-50"
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white border border-emerald-600 transition-all duration-300 disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/20"
                             >
                               {processingId === reg.id ? 'Processing...' : 'Accept Invitation'}
                             </button>
                             <button
                               onClick={() => openConfirmReject(reg)}
                               disabled={processingId === reg.id}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50 cursor-pointer"
                             >
                               Reject Invitation
                             </button>
