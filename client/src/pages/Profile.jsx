@@ -35,8 +35,13 @@ const Profile = () => {
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
+  const hasLoadedRef = useRef(false);
+
   useEffect(() => {
     clearError();
+    if (hasLoadedRef.current) return; // Only load once
+    hasLoadedRef.current = true;
+
     const loadProfileData = async () => {
       let activeUser = user;
       try {
@@ -59,7 +64,7 @@ const Profile = () => {
       }
     };
     loadProfileData();
-  }, [user]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
@@ -122,7 +127,6 @@ const Profile = () => {
 
       const newPhotoUrl = res.data?.avatarUrl || res.data?.avatar_url || canvas.toDataURL('image/jpeg');
       setAvatarUrl(newPhotoUrl);
-      await updateProfile({ avatarUrl: newPhotoUrl });
 
       setFeedback({ type: 'success', message: 'Profile photo updated successfully!' });
       setShowCropModal(false);
@@ -178,7 +182,8 @@ const Profile = () => {
 
     setSubmitting(true);
     try {
-      const result = await updateProfile({
+      // Call the API directly to avoid setUser triggering useEffect re-render
+      const res = await axios.put('/api/users/profile/details', {
         name: fullName.trim(),
         fullName: fullName.trim(),
         rollNumber: rollNumber.trim(),
@@ -196,7 +201,7 @@ const Profile = () => {
         avatar_url: avatarUrl || undefined
       });
 
-      if (result.success) {
+      if (res.data?.user) {
         setErrors({});
         sessionStorage.removeItem('pendingEventId');
         sessionStorage.removeItem('profile_redirect_url');
@@ -207,13 +212,13 @@ const Profile = () => {
         });
         setTimeout(() => setFeedback(null), 4000);
       } else {
-        console.error('Profile save failed:', result.message);
-        setFeedback({ type: 'error', message: result.message || 'Failed to update profile details.' });
+        setFeedback({ type: 'error', message: 'Save returned no data. Please try again.' });
         setTimeout(() => setFeedback(null), 4000);
       }
     } catch (err) {
       console.error('Profile save error:', err);
-      setFeedback({ type: 'error', message: 'An unexpected error occurred while saving.' });
+      const msg = err.response?.data?.message || err.message || 'Failed to save profile.';
+      setFeedback({ type: 'error', message: msg });
       setTimeout(() => setFeedback(null), 4000);
     } finally {
       setSubmitting(false);
