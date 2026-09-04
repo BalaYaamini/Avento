@@ -60,28 +60,27 @@ const checkProfileCompleteness = (profile) => {
 
   const missingFields = [];
 
-  const name = profile.name || profile.fullName;
-  const phone = profile.phone || profile.phoneNumber;
+  const name = profile.name || profile.fullName || profile.full_name;
+  const phone = profile.phone || profile.phoneNumber || profile.phone_number;
   const gender = profile.gender;
-  const collegeName = profile.college_name || profile.collegeName;
-  const department = profile.department;
-  const degreeProgram = profile.degree_program || profile.degreeProgram;
-  const yearOfStudy = profile.year_of_study || profile.yearOfStudy;
-  const rollNumber = profile.roll_number || profile.rollNumber;
-  const avatarUrl = profile.avatar_url || profile.avatarUrl;
+  const collegeName = profile.college_name || profile.collegeName || profile.college || profile.institution;
+  const department = profile.department || profile.dept || profile.branch;
+  const degreeProgram = profile.degree_program || profile.degreeProgram || profile.program || profile.degree;
+  const yearOfStudy = profile.year_of_study !== undefined && profile.year_of_study !== null ? profile.year_of_study : (profile.yearOfStudy || profile.year);
+  const rollNumber = profile.roll_number || profile.rollNumber || profile.roll_no || profile.rollNo;
 
   if (!name || !String(name).trim()) missingFields.push('Full Name');
 
   const cleanPhone = String(phone || '').replace(/[^0-9]/g, '');
-  if (!cleanPhone || cleanPhone.length !== 10) missingFields.push('10-digit Phone Number');
+  const mobileDigits = cleanPhone.slice(-10);
+  if (!mobileDigits || mobileDigits.length < 10) missingFields.push('10-digit Phone Number');
 
   if (!gender || !String(gender).trim()) missingFields.push('Gender');
   if (!collegeName || !String(collegeName).trim()) missingFields.push('College Name');
   if (!department || !String(department).trim()) missingFields.push('Department');
   if (!degreeProgram || !String(degreeProgram).trim()) missingFields.push('Degree / Program');
-  if (!yearOfStudy || !String(yearOfStudy).trim()) missingFields.push('Year of Study');
+  if (yearOfStudy === undefined || yearOfStudy === null || !String(yearOfStudy).trim()) missingFields.push('Year of Study');
   if (!rollNumber || !String(rollNumber).trim()) missingFields.push('Roll Number');
-  if (!avatarUrl || !String(avatarUrl).trim()) missingFields.push('Profile Photo');
 
   return {
     isComplete: missingFields.length === 0,
