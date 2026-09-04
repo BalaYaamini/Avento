@@ -83,7 +83,7 @@ module.exports = async (req, res, next) => {
 
     // Enforce first_login on backend for all protected routes except profile and change-password
     if (profileData.first_login && !roles.includes('admin')) {
-      const allowedWhileFirstLogin = ['/api/auth/profile', '/api/auth/change-password'];
+      const allowedWhileFirstLogin = ['/api/auth/profile', '/api/auth/change-password', '/api/users/profile'];
       const isAllowed = allowedWhileFirstLogin.some((route) => req.originalUrl.startsWith(route));
       if (!isAllowed) {
         return res.status(403).json({

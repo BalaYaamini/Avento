@@ -627,49 +627,8 @@ exports.googleLogin = async (req, res) => {
   }
 };
 
-// ─── GET AUTHENTICATED USER PROFILE ─────────────────────────────────────────
-exports.getProfile = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (error || !profile) {
-      return res.status(404).json({ message: 'Profile not found.' });
-    }
-
-    let userRole = profile.role || req.user.role || 'student';
-    let roles = [userRole];
-    if (userRole === 'organizer') roles.push('student');
-
-    return res.json({
-      user: {
-        id: profile.id,
-        email: profile.email,
-        fullName: profile.name || req.user.fullName || profile.email.split('@')[0],
-        roles: roles,
-        employeeId: profile.employee_id || null,
-        rollNumber: profile.roll_number || null,
-        phone: profile.phone || null,
-        gender: profile.gender || null,
-        collegeName: profile.college_name || null,
-        department: profile.department || null,
-        degreeProgram: profile.degree_program || null,
-        yearOfStudy: profile.year_of_study || null,
-        avatarUrl: profile.avatar_url || null,
-        first_login: profile.first_login || false,
-        registrationMethod: profile.registration_method || 'imported',
-        hasPassword: profile.has_password || false
-      }
-    });
-  } catch (err) {
-    console.error('getProfile error:', err);
-    return res.status(500).json({ message: 'Failed to retrieve profile.', error: err.message });
-  }
-};
+// NOTE: getProfile is already defined earlier in this file (line ~351) with full dual-casing support.
+// Do NOT redefine exports.getProfile here.
 
 // ─── SYNC PASSWORD ──────────────────────────────────────────────────────────
 exports.syncPassword = async (req, res) => {

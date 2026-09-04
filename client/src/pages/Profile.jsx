@@ -177,42 +177,46 @@ const Profile = () => {
     }
 
     setSubmitting(true);
-    const result = await updateProfile({
-      name: fullName.trim(),
-      fullName: fullName.trim(),
-      rollNumber: rollNumber.trim(),
-      roll_number: rollNumber.trim(),
-      phone: phone.trim(),
-      gender: gender || undefined,
-      collegeName: collegeName.trim(),
-      college_name: collegeName.trim(),
-      department: department.trim(),
-      degreeProgram: degreeProgram.trim(),
-      degree_program: degreeProgram.trim(),
-      yearOfStudy: yearOfStudy || undefined,
-      year_of_study: yearOfStudy || undefined,
-      avatarUrl: avatarUrl || undefined,
-      avatar_url: avatarUrl || undefined
-    });
-    setSubmitting(false);
-
-    if (result.success) {
-      setErrors({});
-
-      // Clear any temporary pending redirect tokens
-      sessionStorage.removeItem('pendingEventId');
-      sessionStorage.removeItem('profile_redirect_url');
-
-      setFeedback({ 
-        type: 'success', 
-        message: 'Profile details updated successfully! Redirecting to home page...' 
+    try {
+      const result = await updateProfile({
+        name: fullName.trim(),
+        fullName: fullName.trim(),
+        rollNumber: rollNumber.trim(),
+        roll_number: rollNumber.trim(),
+        phone: phone.trim(),
+        gender: gender || undefined,
+        collegeName: collegeName.trim(),
+        college_name: collegeName.trim(),
+        department: department.trim(),
+        degreeProgram: degreeProgram.trim(),
+        degree_program: degreeProgram.trim(),
+        yearOfStudy: yearOfStudy || undefined,
+        year_of_study: yearOfStudy || undefined,
+        avatarUrl: avatarUrl || undefined,
+        avatar_url: avatarUrl || undefined
       });
-      setTimeout(() => {
-        navigate('/');
-      }, 1200);
-    } else {
-      setFeedback({ type: 'error', message: result.message || 'Failed to update profile details.' });
+
+      if (result.success) {
+        setErrors({});
+        sessionStorage.removeItem('pendingEventId');
+        sessionStorage.removeItem('profile_redirect_url');
+
+        setFeedback({ 
+          type: 'success', 
+          message: '✅ Profile saved successfully!' 
+        });
+        setTimeout(() => setFeedback(null), 4000);
+      } else {
+        console.error('Profile save failed:', result.message);
+        setFeedback({ type: 'error', message: result.message || 'Failed to update profile details.' });
+        setTimeout(() => setFeedback(null), 4000);
+      }
+    } catch (err) {
+      console.error('Profile save error:', err);
+      setFeedback({ type: 'error', message: 'An unexpected error occurred while saving.' });
       setTimeout(() => setFeedback(null), 4000);
+    } finally {
+      setSubmitting(false);
     }
   };
 
