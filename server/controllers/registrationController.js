@@ -55,6 +55,39 @@ const resolveUserProfile = async (userId) => {
   return { id: userId, name: 'Unknown', email: null };
 };
 
+const fetchCompleteProfile = async (userId, userEmail, reqUser = null) => {
+  let dbById = null;
+  let dbByEmail = null;
+
+  if (userId) {
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', String(userId)).maybeSingle();
+      if (data) dbById = data;
+    } catch (e) {}
+  }
+
+  if (userEmail) {
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('email', String(userEmail).toLowerCase()).maybeSingle();
+      if (data) dbByEmail = data;
+    } catch (e) {}
+  }
+
+  const objects = [reqUser, dbById, dbByEmail];
+  const merged = {};
+  for (const obj of objects) {
+    if (!obj) continue;
+    for (const [key, val] of Object.entries(obj)) {
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        merged[key] = val;
+      } else if (merged[key] === undefined) {
+        merged[key] = val;
+      }
+    }
+  }
+  return merged;
+};
+
 const checkProfileCompleteness = (profile) => {
   if (!profile) return { isComplete: false, missingFields: ['Profile Details'] };
 
@@ -88,6 +121,9 @@ const checkProfileCompleteness = (profile) => {
   };
 };
 
+exports.fetchCompleteProfile = fetchCompleteProfile;
+exports.checkProfileCompleteness = checkProfileCompleteness;
+
 // Register a user for an event
 exports.registerForEvent = async (req, res) => {
   try {
@@ -99,23 +135,8 @@ exports.registerForEvent = async (req, res) => {
     }
 
     // MANDATORY PROFILE CHECK: Ensure all profile fields are completed before allowing registration
-    let { data: userProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!userProfile && req.user?.email) {
-      const { data: profByEmail } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', String(req.user.email).toLowerCase())
-        .maybeSingle();
-      if (profByEmail) userProfile = profByEmail;
-    }
-
-    const mergedProfile = { ...req.user, ...(userProfile || {}) };
-    const completeness = checkProfileCompleteness(mergedProfile);
+    const completeProfile = await fetchCompleteProfile(userId, req.user?.email, req.user);
+    const completeness = checkProfileCompleteness(completeProfile);
     if (!completeness.isComplete) {
       return res.status(400).json({
         success: false,
@@ -871,22 +892,7 @@ exports.registerTeamForEvent = async (req, res) => {
     }
 
     // MANDATORY PROFILE CHECK: Ensure Team Leader profile is complete before allowing team creation
-    let { data: leaderProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', leaderId)
-      .maybeSingle();
-
-    if (!leaderProfile && req.user?.email) {
-      const { data: profByEmail } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', String(req.user.email).toLowerCase())
-        .maybeSingle();
-      if (profByEmail) leaderProfile = profByEmail;
-    }
-
-    const mergedLeaderProfile = { ...req.user, ...(leaderProfile || {}) };
+    const mergedLeaderProfile = await fetchCompleteProfile(leaderId, req.user?.email, req.user);
     const leaderCompleteness = checkProfileCompleteness(mergedLeaderProfile);
     if (!leaderCompleteness.isComplete) {
       return res.status(400).json({
@@ -1290,12 +1296,7 @@ exports.acceptTeamInvitation = async (req, res) => {
     const userId = req.user.id;
 
     // MANDATORY PROFILE CHECK: Ensure student profile is 100% complete before accepting team invitation
-    const { data: userProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
+    const userProfile = await fetchCompleteProfile(userId, req.user?.email, req.user);
     const completeness = checkProfileCompleteness(userProfile);
     if (!completeness.isComplete) {
       return res.status(400).json({
@@ -1588,7 +1589,11 @@ exports.confirmTeamRegistration = async (req, res) => {
       const { data: memberProfiles } = await supabase.from('profiles').select('*').in('id', checkUserIds);
       const incompleteMembers = [];
       for (const uId of checkUserIds) {
-        const prof = (memberProfiles || []).find(p => String(p.id) === String(uId));
+        let prof = (memberProfiles || []).find(p => String(p.id) === String(uId));
+        if (!prof || !prof.phone || !prof.gender || !prof.college_name) {
+          const compProf = await fetchCompleteProfile(uId, prof?.email, prof);
+          prof = compProf;
+        }
         const comp = checkProfileCompleteness(prof);
         if (!comp.isComplete) {
           incompleteMembers.push({
