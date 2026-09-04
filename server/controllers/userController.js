@@ -211,19 +211,24 @@ exports.updateProfileDetails = async (req, res) => {
       profileUpdate.avatar_url = req.body.avatarUrl || req.body.avatar_url || null;
     }
 
-    // 1. Update Supabase profiles table (by ID, fallback to Email)
+    // 1. Upsert into Supabase profiles table (ensures row is created if missing, or updated if existing)
+    const fullProfileRecord = {
+      id: String(userId),
+      email: String(req.user.email).toLowerCase(),
+      role: Array.isArray(req.user.roles) ? (req.user.roles.includes('organizer') ? 'organizer' : 'student') : (req.user.role || 'student'),
+      ...profileUpdate
+    };
+
     const { error: profileErr } = await supabase
       .from('profiles')
-      .update(profileUpdate)
-      .eq('id', String(userId));
+      .upsert(fullProfileRecord, { onConflict: 'id' });
 
     if (profileErr) {
-      console.warn('Supabase profile update warning by ID:', profileErr.message);
+      console.warn('Supabase profile upsert warning by ID, trying by email:', profileErr.message);
       if (req.user?.email) {
         await supabase
           .from('profiles')
-          .update(profileUpdate)
-          .eq('email', String(req.user.email).toLowerCase());
+          .upsert({ email: String(req.user.email).toLowerCase(), ...profileUpdate }, { onConflict: 'email' });
       }
     }
 

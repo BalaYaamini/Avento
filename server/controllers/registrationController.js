@@ -99,13 +99,23 @@ exports.registerForEvent = async (req, res) => {
     }
 
     // MANDATORY PROFILE CHECK: Ensure all profile fields are completed before allowing registration
-    const { data: userProfile } = await supabase
+    let { data: userProfile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .maybeSingle();
 
-    const completeness = checkProfileCompleteness(userProfile);
+    if (!userProfile && req.user?.email) {
+      const { data: profByEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', String(req.user.email).toLowerCase())
+        .maybeSingle();
+      if (profByEmail) userProfile = profByEmail;
+    }
+
+    const mergedProfile = { ...req.user, ...(userProfile || {}) };
+    const completeness = checkProfileCompleteness(mergedProfile);
     if (!completeness.isComplete) {
       return res.status(400).json({
         success: false,
@@ -861,13 +871,23 @@ exports.registerTeamForEvent = async (req, res) => {
     }
 
     // MANDATORY PROFILE CHECK: Ensure Team Leader profile is complete before allowing team creation
-    const { data: leaderProfile } = await supabase
+    let { data: leaderProfile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', leaderId)
       .maybeSingle();
 
-    const leaderCompleteness = checkProfileCompleteness(leaderProfile);
+    if (!leaderProfile && req.user?.email) {
+      const { data: profByEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', String(req.user.email).toLowerCase())
+        .maybeSingle();
+      if (profByEmail) leaderProfile = profByEmail;
+    }
+
+    const mergedLeaderProfile = { ...req.user, ...(leaderProfile || {}) };
+    const leaderCompleteness = checkProfileCompleteness(mergedLeaderProfile);
     if (!leaderCompleteness.isComplete) {
       return res.status(400).json({
         success: false,
