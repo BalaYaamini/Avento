@@ -57,9 +57,6 @@ module.exports = async (req, res, next) => {
     }
 
     let userRollNo = profileData.roll_number || null;
-    if (userRollNo && (userRollNo.startsWith('2203A') || (email && userRollNo === email.split('@')[0]))) {
-      userRollNo = null;
-    }
 
     req.user = {
       id: profileData.id || decoded.id,

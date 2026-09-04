@@ -349,8 +349,50 @@ exports.sendPasswordReset = async (req, res) => {
 // ─── GET PROFILE ────────────────────────────────────────────────────────────
 exports.getProfile = async (req, res) => {
   try {
-    return res.json({ user: req.user });
+    const userId = req.user?.id;
+    let freshProfile = null;
+
+    if (userId) {
+      const { data: dbProf } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', String(userId))
+        .maybeSingle();
+      if (dbProf) freshProfile = dbProf;
+    }
+
+    if (!freshProfile && req.user?.email) {
+      const { data: byEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', String(req.user.email).toLowerCase())
+        .maybeSingle();
+      if (byEmail) freshProfile = byEmail;
+    }
+
+    const mergedUser = {
+      ...req.user,
+      ...(freshProfile || {}),
+      name: freshProfile?.name || req.user.name || req.user.fullName,
+      fullName: freshProfile?.name || req.user.fullName || req.user.name,
+      rollNumber: freshProfile?.roll_number || req.user.rollNumber || null,
+      roll_number: freshProfile?.roll_number || req.user.roll_number || null,
+      phone: freshProfile?.phone || req.user.phone || null,
+      gender: freshProfile?.gender || req.user.gender || null,
+      collegeName: freshProfile?.college_name || req.user.collegeName || null,
+      college_name: freshProfile?.college_name || req.user.college_name || null,
+      department: freshProfile?.department || req.user.department || null,
+      degreeProgram: freshProfile?.degree_program || req.user.degreeProgram || null,
+      degree_program: freshProfile?.degree_program || req.user.degree_program || null,
+      yearOfStudy: freshProfile?.year_of_study || req.user.yearOfStudy || null,
+      year_of_study: freshProfile?.year_of_study || req.user.year_of_study || null,
+      avatarUrl: freshProfile?.avatar_url || req.user.avatarUrl || null,
+      avatar_url: freshProfile?.avatar_url || req.user.avatar_url || null,
+    };
+
+    return res.json({ user: mergedUser });
   } catch (err) {
+    console.error('getProfile error:', err.message);
     res.status(500).json({ message: 'Server error fetching profile.', error: err.message });
   }
 };
