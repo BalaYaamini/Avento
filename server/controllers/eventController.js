@@ -1,7 +1,147 @@
 // server/controllers/eventController.js
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabaseClient');
 const { notifyUser } = require('../services/notificationService');
+
+/**
+ * Helper to optionally resolve authenticated user from Authorization header
+ * without failing when unauthenticated (for public endpoints like getEvents / getEventById).
+ * Reuses the token-validation and profile resolution rules from authMiddleware.
+ * Fails safely if process.env.JWT_SECRET is unset or if the token is invalid/expired.
+ */
+const getOptionalUser = async (req) => {
+  const authHeader = req.headers?.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    // Fail safely if JWT_SECRET is not configured
+    return null;
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, jwtSecret);
+    if (!decoded?.id) return null;
+
+    let profileData = null;
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', String(decoded.id))
+      .maybeSingle();
+
+    if (data) {
+      profileData = data;
+    } else if (decoded.email) {
+      const { data: dataByEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', String(decoded.email).toLowerCase())
+        .maybeSingle();
+      if (dataByEmail) profileData = dataByEmail;
+    }
+
+    if (!profileData || profileData.status === 'inactive') return null;
+
+    const email = profileData.email || decoded.email;
+    const rawRole = profileData.role || 'student';
+    let roles = [rawRole];
+    if (rawRole === 'organizer') {
+      roles.push('student');
+    }
+
+    if (email === 'admin.avento@gmail.com' && !roles.includes('admin')) {
+      roles = ['admin'];
+    }
+
+    return {
+      id: profileData.id || decoded.id,
+      email: email,
+      name: profileData.name || email?.split('@')[0],
+      fullName: profileData.name || email?.split('@')[0],
+      roles: roles,
+      department: profileData.department || null,
+    };
+  } catch (e) {
+    return null;
+  }
+};
+
+/**
+ * Validate whether a user is authorized to publish an event:
+ * 1. Avento Admin OR the original student proposer (strictly proposed_by === user.id)
+ * 2. Event status must be 'approved'
+ * 3. Verified approval by the assigned faculty coordinator (faculty_id):
+ *    - Valid faculty signature tag in approval_remarks: `[Approved By: <faculty_id>]`
+ *    - OR genuine timeline entry recorded by that faculty: action='Faculty Approved'
+ */
+const canPublishEvent = async (event, user) => {
+  if (!event || !user) {
+    return { allowed: false, status: 401, message: 'Authentication required.' };
+  }
+
+  const isAdmin = user.roles && (user.roles.includes('admin') || user.role === 'admin');
+  const isOriginalProposer = event.proposed_by && String(event.proposed_by) === String(user.id);
+
+  if (!isAdmin && !isOriginalProposer) {
+    return {
+      allowed: false,
+      status: 403,
+      message: 'Only the original student proposer or administrator is authorized to publish this event.'
+    };
+  }
+
+  if (event.status !== 'approved') {
+    return {
+      allowed: false,
+      status: 400,
+      message: `Event cannot be published while in "${event.status}" status. It must be approved first.`
+    };
+  }
+
+  // Admin can publish an approved event
+  if (isAdmin) {
+    return { allowed: true };
+  }
+
+  // Must have an assigned faculty coordinator
+  if (!event.faculty_id) {
+    return {
+      allowed: false,
+      status: 400,
+      message: 'This event cannot be published because no Faculty Coordinator was assigned.'
+    };
+  }
+
+  // Proposer publishing: verify genuine approval by assigned faculty coordinator
+  const expectedTag = `[Approved By: ${event.faculty_id}]`;
+  const hasValidTag = event.approval_remarks && event.approval_remarks.includes(expectedTag);
+
+  if (hasValidTag) {
+    return { allowed: true };
+  }
+
+  // Verify approval in proposal timeline recorded by the assigned faculty
+  const { data: timelineEntry } = await supabase
+    .from('proposal_timeline')
+    .select('id')
+    .eq('proposal_id', event.id)
+    .eq('user_id', event.faculty_id)
+    .eq('action', 'Faculty Approved')
+    .limit(1);
+
+  if (timelineEntry && timelineEntry.length > 0) {
+    return { allowed: true };
+  }
+
+  return {
+    allowed: false,
+    status: 400,
+    message: 'This event has not been verified as approved by the assigned Faculty Coordinator.'
+  };
+};
 
 const cleanEventRemarks = (evt) => {
   if (!evt) return evt;
@@ -18,10 +158,31 @@ const cleanEventRemarks = (evt) => {
 const getEvents = async (req, res) => {
   try {
     const { search, status, category } = req.query;
+
+    // Determine if requester is an admin
+    let user = req.user;
+    if (!user) {
+      user = await getOptionalUser(req);
+    }
+    const isAdmin = user?.roles && (user.roles.includes('admin') || user.role === 'admin');
+
+    // Security check: Public and non-admin users MUST only receive published events
+    if (!isAdmin) {
+      if (status && status !== 'published') {
+        // Non-admin explicitly requested unpublished status (draft, pending_approval, etc.) -> return empty array
+        return res.json([]);
+      }
+    }
+
     let query = supabase.from('events').select('*').order('date', { ascending: true });
 
     if (search) query = query.ilike('title', `%${search}%`);
-    if (status) query = query.eq('status', status);
+    if (isAdmin) {
+      if (status) query = query.eq('status', status);
+    } else {
+      // Non-admin / public strictly gets published events
+      query = query.eq('status', 'published');
+    }
     if (category) query = query.eq('category', category);
 
     const { data: events, error } = await query;
@@ -219,12 +380,56 @@ const getEventById = async (req, res) => {
     if (error) throw error;
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
-    // Faculty Coordinators can only view proposals assigned to them
-    const isProposal = event.status !== 'published' && event.status !== 'active' && event.status !== 'completed' && event.status !== 'cancelled';
-    if (isProposal && req.user && (req.user.roles.includes('faculty') || req.user.roles.includes('faculty_organizer')) && !req.user.roles.includes('admin')) {
-      const isOrganizer = await checkCoreOrganizerAccess(id, event, req.user);
-      if (!isOrganizer) {
-        return res.status(403).json({ message: 'Access denied. This proposal is not assigned to you.' });
+    // Check visibility for non-published events:
+    // Only published events are publicly viewable.
+    // Non-published events (draft, submitted, pending_approval, under_review, needs_revision, approved, rejected, withdrawn, cancelled)
+    // can ONLY be accessed by:
+    // 1. Avento Admin
+    // 2. The original student proposer (proposed_by, created_by, student_organizer_id)
+    // 3. The faculty explicitly assigned to this event (faculty_id)
+    // 4. An explicitly assigned organizer/member of this event (in event_members or event_organizers)
+    // Unrelated students and unrelated faculty receive a 404 so existence is not leaked.
+    if (event.status !== 'published') {
+      let currentUser = req.user;
+      if (!currentUser) {
+        currentUser = await getOptionalUser(req);
+      }
+
+      if (!currentUser || !currentUser.id) {
+        return res.status(404).json({ message: 'Event not found.' });
+      }
+
+      const isAdmin = currentUser.roles && (currentUser.roles.includes('admin') || currentUser.role === 'admin');
+      const isProposer = String(currentUser.id) === String(event.proposed_by) ||
+                         String(currentUser.id) === String(event.student_organizer_id) ||
+                         String(currentUser.id) === String(event.organizer_id) ||
+                         String(currentUser.id) === String(event.created_by);
+      const isAssignedFaculty = event.faculty_id && String(currentUser.id) === String(event.faculty_id);
+
+      let isAssignedOrganizer = false;
+      if (!isAdmin && !isProposer && !isAssignedFaculty) {
+        const { data: orgRecord } = await supabase
+          .from('event_organizers')
+          .select('id')
+          .eq('event_id', id)
+          .eq('student_id', currentUser.id)
+          .maybeSingle();
+
+        if (orgRecord) {
+          isAssignedOrganizer = true;
+        } else {
+          const { data: memberRecord } = await supabase
+            .from('event_members')
+            .select('id')
+            .eq('event_id', id)
+            .eq('user_id', currentUser.id)
+            .maybeSingle();
+          if (memberRecord) isAssignedOrganizer = true;
+        }
+      }
+
+      if (!isAdmin && !isProposer && !isAssignedFaculty && !isAssignedOrganizer) {
+        return res.status(404).json({ message: 'Event not found.' });
       }
     }
 
@@ -748,21 +953,19 @@ const updateStatus = async (req, res) => {
       }
 
     } else if (status === 'published') {
-      // Must be admin only + status must be approved
-      if (!isAdmin) {
-        return res.status(403).json({ message: 'Access denied. Only administrators are authorized to publish events.' });
-      }
-      if (event.status !== 'approved') {
-        return res.status(400).json({ message: 'Event must be approved by the assigned Faculty Coordinator before publishing.' });
+      // Validate publishing authorization (Admin OR original student proposer of genuine approved proposal)
+      const pubCheck = await canPublishEvent(event, req.user);
+      if (!pubCheck.allowed) {
+        return res.status(pubCheck.status || 403).json({ message: pubCheck.message });
       }
 
-      // Verify strict approval signature
-      const expectedTag = `[Approved By: ${event.faculty_id}]`;
-      if (!event.approval_remarks || !event.approval_remarks.includes(expectedTag)) {
-        return res.status(400).json({ message: 'This event has not been approved by the assigned Faculty Coordinator.' });
-      }
+      const updates = {
+        status: 'published',
+        published_at: new Date().toISOString(),
+        published_by: req.user.id
+      };
 
-      const { error: pubErr } = await supabase.from('events').update({ status: 'published' }).eq('id', id);
+      const { error: pubErr } = await supabase.from('events').update(updates).eq('id', id);
       if (pubErr) throw pubErr;
 
     } else if (status === 'completed') {
@@ -950,17 +1153,9 @@ const publishEvent = async (req, res) => {
       .from('events').select('*').eq('id', id).single();
     if (fetchErr || !event) return res.status(404).json({ message: 'Event not found.' });
 
-    const isAdmin = req.user.roles.includes('admin');
-    if (!isAdmin) {
-      if (event.status !== 'approved') {
-        return res.status(400).json({ message: 'Only approved events can be published.' });
-      }
-
-      // Only proposal owner can publish
-      const isOwner = event.proposed_by === req.user.id;
-      if (!isOwner) {
-        return res.status(403).json({ message: 'Only the event proposal owner is authorized to publish this event.' });
-      }
+    const pubCheck = await canPublishEvent(event, req.user);
+    if (!pubCheck.allowed) {
+      return res.status(pubCheck.status || 403).json({ message: pubCheck.message });
     }
 
     const updates = {
@@ -1724,13 +1919,13 @@ const withdrawOrganizerRequest = async (req, res) => {
 const checkCoreOrganizerAccess = async (eventId, event, user) => {
   if (!user || !user.id || !user.roles) return false;
   const isAdmin = user.roles.includes('admin') || user.role === 'admin';
-  const isFaculty = String(user.id) === String(event?.faculty_id) || user.roles.includes('faculty') || user.roles.includes('faculty_organizer');
+  const isAssignedFaculty = event?.faculty_id && String(user.id) === String(event.faculty_id);
   const isCreator = String(user.id) === String(event?.proposed_by) || 
                     String(user.id) === String(event?.student_organizer_id) || 
                     String(user.id) === String(event?.organizer_id) ||
                     String(user.id) === String(event?.created_by);
 
-  if (isAdmin || isFaculty || isCreator) return true;
+  if (isAdmin || isAssignedFaculty || isCreator) return true;
 
   // Check if they are a core organizer in event_organizers
   const { data: org } = await supabase
@@ -2013,7 +2208,16 @@ const updateProposalStatus = async (req, res) => {
     }
 
     let updates = { status };
-    if (remarks) updates.approval_remarks = remarks;
+    if (status === 'approved') {
+      const signature = `[Approved By: ${req.user.id}]`;
+      const finalRemarks = remarks ? `${remarks}\n${signature}` : signature;
+      updates.approval_remarks = finalRemarks;
+      updates.approved_at = new Date().toISOString();
+      updates.organizer_id = event.proposed_by || null;
+      updates.student_organizer_id = event.proposed_by || null;
+    } else if (remarks) {
+      updates.approval_remarks = remarks;
+    }
 
     const { data: updatedEvent, error } = await supabase
       .from('events')
