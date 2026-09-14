@@ -540,7 +540,7 @@ const AdminEvents = () => {
     if (s === 'active' || s === 'published') return 'bg-emerald-500/8 text-emerald-400 border-emerald-500/15';
     if (s === 'completed') return 'bg-blue-500/8 text-blue-400 border-blue-500/15';
     if (s === 'draft') return 'bg-amber-500/8 text-amber-400 border-amber-500/15';
-    return 'bg-red-500/8 text-red-400 border-red-500/15';
+    return 'bg-cyan-500/8 text-cyan-400 border-cyan-500/15';
   };
 
   return (
@@ -555,7 +555,7 @@ const AdminEvents = () => {
           </div>
           <button
             onClick={openCreateModal}
-            className="btn-primary px-6 py-3 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15 self-start"
+            className="btn-primary px-6 py-3 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 self-start"
           >
             + Create New Event
           </button>
@@ -572,7 +572,7 @@ const AdminEvents = () => {
           </div>
         ) : error ? (
           <div className="text-center py-20 animate-fade-in-up">
-            <p className="text-red-400 font-bold mb-3">{error}</p>
+            <p className="text-cyan-400 font-bold mb-3">{error}</p>
             <button onClick={fetchEvents} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white">Retry</button>
           </div>
         ) : events.length === 0 ? (
@@ -588,9 +588,9 @@ const AdminEvents = () => {
           </div>
         ) : (
           /* Event Table */
-          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
+          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl shadow-2xl shadow-cyan-500/3">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                 <thead>
                   <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
                     <th className="px-6 py-4">Event Details</th>
@@ -601,12 +601,12 @@ const AdminEvents = () => {
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/30 text-sm font-body">
+                <tbody className="text-sm font-body" style={{ overflow: 'visible' }}>
                   {events.map((evt, i) => (
                     <tr 
                       key={evt._id || evt.id} 
-                      className="hover:bg-white/20 transition-all duration-300 animate-fade-in-up"
-                      style={{ animationDelay: `${i * 40 + 150}ms` }}
+                      className={`hover:bg-white/20 transition-all duration-300 animate-fade-in-up border-b border-slate-800/30 ${openDropdownId === (evt._id || evt.id) ? 'relative z-50' : ''}`}
+                      style={{ animationDelay: `${i * 40 + 150}ms`, overflow: 'visible' }}
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -626,7 +626,7 @@ const AdminEvents = () => {
                         {evt.registration_type === 'team' ? (
                           <span className="text-slate-600">Team Event</span>
                         ) : (
-                          <span className={evt.registeredCount >= evt.capacity ? 'text-red-400 font-bold' : 'text-slate-600'}>
+                          <span className={evt.registeredCount >= evt.capacity ? 'text-cyan-400 font-bold' : 'text-slate-600'}>
                             {evt.registeredCount ?? 0} / {evt.capacity}
                           </span>
                         )}
@@ -639,13 +639,13 @@ const AdminEvents = () => {
                           {(evt.status || 'draft').replace(/_/g, ' ')}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-6 py-4 text-right whitespace-nowrap relative">
+                        <div className="flex items-center justify-end gap-2 relative">
                           {/* Organizers button stays visible inline */}
                           {(evt.status === 'draft' || evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && (
                             <button
                               onClick={() => openOrgModal(evt)}
-                              className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                              className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all duration-300"
                             >
                               Organizers ({evt.organizersCount || 0})
                             </button>
@@ -665,14 +665,14 @@ const AdminEvents = () => {
                             </button>
 
                             {openDropdownId === (evt._id || evt.id) && (
-                              <div className="origin-top-right absolute right-0 mt-1.5 w-52 rounded-xl shadow-xl bg-white border border-slate-200 z-50 p-1.5 space-y-1 animate-fade-in-scale text-left">
+                              <div className="origin-top-right absolute right-0 mt-1.5 w-52 rounded-xl shadow-xl bg-white border border-slate-200 z-[100] p-1.5 space-y-1 animate-fade-in-scale text-left">
                                 {/* Workspace & ID Cards Access */}
                                 <Link
                                   to={`/workspace/${evt._id || evt.id}?tab=id_cards`}
                                   onClick={() => setOpenDropdownId(null)}
-                                  className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg flex items-center gap-2 transition-colors block"
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-cyan-50 hover:text-cyan-600 rounded-lg flex items-center gap-2 transition-colors block"
                                 >
-                                  <svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                                   </svg>
                                   <span>Workspace (ID Cards)</span>
@@ -771,9 +771,9 @@ const AdminEvents = () => {
                                     setOpenDropdownId(null);
                                     setDeleteConfirmEvent({ id: evt._id || evt.id, title: evt.title });
                                   }}
-                                  className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg flex items-center gap-2 transition-colors border-t border-slate-100 mt-1 cursor-pointer"
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-cyan-500 hover:bg-cyan-50 rounded-lg flex items-center gap-2 transition-colors border-t border-slate-100 mt-1 cursor-pointer"
                                 >
-                                  <svg className="h-4 w-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
                                   <span>Delete</span>
@@ -799,7 +799,7 @@ const AdminEvents = () => {
         >
           {feedback && (
             <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${
-              feedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-red-500/8 border-red-500/15 text-red-400'
+              feedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-cyan-500/8 border-cyan-500/15 text-cyan-400'
             }`}>
               <span>{feedback.type === 'success' ? '✓' : '⚠'}</span>
               <span>{feedback.message}</span>
@@ -815,7 +815,7 @@ const AdminEvents = () => {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Annual Hackathon 2026"
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
               />
             </div>
 
@@ -825,7 +825,7 @@ const AdminEvents = () => {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 cursor-pointer"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer"
                 >
                   {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -839,7 +839,7 @@ const AdminEvents = () => {
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
-                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 cursor-pointer"
+                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer"
                   >
                     <option value="draft">Draft</option>
                     <option value="active">Active (Open)</option>
@@ -859,7 +859,7 @@ const AdminEvents = () => {
                   value={venue}
                   onChange={(e) => setVenue(e.target.value)}
                   placeholder="e.g. Seminar Hall A"
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                 />
               </div>
 
@@ -882,7 +882,7 @@ const AdminEvents = () => {
                       }
                     }
                   }}
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                 />
               </div>
             </div>
@@ -897,9 +897,9 @@ const AdminEvents = () => {
                   max={getMaxDeadlineISO()}
                   value={registrationDeadline}
                   onChange={(e) => setRegistrationDeadline(e.target.value)}
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
-                {!date && <p className="text-[10px] text-violet-500 mt-1 font-semibold">Please select the event date first.</p>}
+                {!date && <p className="text-[10px] text-cyan-500 mt-1 font-semibold">Please select the event date first.</p>}
               </div>
 
               <div className="col-span-1 sm:col-span-2">
@@ -908,14 +908,14 @@ const AdminEvents = () => {
                   <button
                     type="button"
                     onClick={() => setPosterOption('upload')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'upload' ? 'bg-violet-100 text-violet-700 border border-violet-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'upload' ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
                   >
                     Upload Poster
                   </button>
                   <button
                     type="button"
                     onClick={() => setPosterOption('url')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'url' ? 'bg-violet-100 text-violet-700 border border-violet-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'url' ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
                   >
                     Poster URL
                   </button>
@@ -933,7 +933,7 @@ const AdminEvents = () => {
                           setPosterPreview(URL.createObjectURL(file));
                         }
                       }}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100"
                     />
                     {(posterPreview || imageUrl) && (
                       <div className="mt-2 h-20 w-32 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
@@ -949,7 +949,7 @@ const AdminEvents = () => {
                       value={imageUrl}
                       onChange={(e) => setImageUrl(e.target.value)}
                       placeholder="https://example.com/poster.jpg"
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                     {imageUrl && (
                       <div className="mt-2 h-20 w-32 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
@@ -970,7 +970,7 @@ const AdminEvents = () => {
                   <select
                     value={registrationType}
                     onChange={(e) => setRegistrationType(e.target.value)}
-                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 cursor-pointer"
+                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer"
                   >
                     <option value="individual">Individual Registration</option>
                     <option value="team">Team Registration</option>
@@ -988,7 +988,7 @@ const AdminEvents = () => {
                       min="1"
                       value={capacity}
                       onChange={(e) => setCapacity(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
                 </div>
@@ -1004,7 +1004,7 @@ const AdminEvents = () => {
                       min="1"
                       value={maxTeams}
                       onChange={(e) => setMaxTeams(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
                   <div>
@@ -1015,7 +1015,7 @@ const AdminEvents = () => {
                       min="1"
                       value={minTeamSize}
                       onChange={(e) => setMinTeamSize(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
                   <div>
@@ -1026,7 +1026,7 @@ const AdminEvents = () => {
                       min="1"
                       value={maxTeamSize}
                       onChange={(e) => setMaxTeamSize(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
 
@@ -1039,7 +1039,7 @@ const AdminEvents = () => {
                         onChange={(e) => setAllowCrossDepartment(e.target.checked)}
                         className="sr-only peer" 
                       />
-                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
                     </label>
                   </div>
                 </div>
@@ -1048,7 +1048,7 @@ const AdminEvents = () => {
                 <div className="flex items-center justify-between"><div><h4 className="text-xs font-bold text-slate-800">Enable Payment</h4><p className="text-[10px] text-slate-600">Require UTR verification at team confirmation.</p></div><input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} /></div>
                 {paymentEnabled && <><input type="number" min="1" step="0.01" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount (Rs.)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input value={paymentUpiId} onChange={(e) => setPaymentUpiId(e.target.value)} placeholder="UPI ID (optional)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input type="file" accept="image/*" required={!paymentQrUrl} onChange={(e) => setPaymentQrFile(e.target.files[0] || null)} className="w-full text-sm" /><textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Payment instructions (optional)" rows={2} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />{paymentQrUrl && <img src={paymentQrUrl} alt="Payment QR preview" className="h-24 w-24 rounded-lg object-contain" />}</>}
               </div>
-              <label className="mt-4 flex items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4 text-xs font-bold text-slate-700"><input type="checkbox" checked={scoringEnabled} onChange={e => setScoringEnabled(e.target.checked)} /> Enable scoring module for this event</label>
+              <label className="mt-4 flex items-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 text-xs font-bold text-slate-700"><input type="checkbox" checked={scoringEnabled} onChange={e => setScoringEnabled(e.target.checked)} /> Enable scoring module for this event</label>
             </div>
 
             <div>
@@ -1059,7 +1059,7 @@ const AdminEvents = () => {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Details about participation criteria, speaker profiles, event details..."
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 resize-none"
+                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 resize-none"
               />
             </div>
 
@@ -1081,7 +1081,7 @@ const AdminEvents = () => {
               <button
                 type="submit"
                 disabled={submitting}
-                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15 disabled:opacity-50"
+                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
               >
                 {submitting ? (
                   <span className="flex items-center gap-2">
@@ -1105,7 +1105,7 @@ const AdminEvents = () => {
         >
           {orgFeedback && (
             <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${
-              orgFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-red-500/8 border-red-500/15 text-red-400'
+              orgFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-cyan-500/8 border-cyan-500/15 text-cyan-400'
             }`}>
               <span>{orgFeedback.type === 'success' ? '✓' : '⚠'}</span>
               <span>{orgFeedback.message}</span>
@@ -1113,7 +1113,7 @@ const AdminEvents = () => {
           )}
 
           {/* Join Organizing Team Toggle */}
-          <div className="flex items-center justify-between p-3.5 bg-violet-500/5 border border-violet-500/10 rounded-xl mb-6">
+          <div className="flex items-center justify-between p-3.5 bg-cyan-500/5 border border-cyan-500/10 rounded-xl mb-6">
             <div>
               <h4 className="text-xs font-bold text-slate-800 font-display">Allow Students to Join Team</h4>
               <p className="text-[10px] text-slate-600 font-medium mt-0.5">Let students submit requests to join this event's organizing team</p>
@@ -1125,7 +1125,7 @@ const AdminEvents = () => {
                 onChange={(e) => handleToggleJoinTeam(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+              <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
             </label>
           </div>
 
@@ -1135,7 +1135,7 @@ const AdminEvents = () => {
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 font-display">Pending Join Requests</h4>
               <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
                 {orgRequests.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-3 bg-violet-500/5 rounded-xl border border-violet-500/15 animate-fade-in-up">
+                  <div key={req.id} className="flex items-center justify-between p-3 bg-cyan-500/5 rounded-xl border border-cyan-500/15 animate-fade-in-up">
                     <div>
                       <div className="text-sm font-bold text-slate-800">{req.studentName}</div>
                       <div className="text-[10px] text-slate-600 font-medium">{req.studentEmail} &bull; {req.category}</div>
@@ -1152,7 +1152,7 @@ const AdminEvents = () => {
                       <button
                         type="button"
                         onClick={() => handleProcessRequest(req.id, 'rejected')}
-                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
+                        className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-cyan-500/8 text-cyan-400 border border-cyan-500/15 hover:bg-cyan-500/15 transition-all duration-300"
                       >
                         Reject
                       </button>
@@ -1181,7 +1181,7 @@ const AdminEvents = () => {
                       setIsDropdownOpen(true);
                       setSelectedOrgStudent('');
                     }}
-                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                   />
                   {selectedOrgStudent && (
                     <button
@@ -1224,7 +1224,7 @@ const AdminEvents = () => {
                               setIsDropdownOpen(false);
                             }}
                             className={`p-2.5 rounded-lg text-xs cursor-pointer flex justify-between items-start transition-colors ${
-                              isSelected ? 'bg-violet-500/15 border border-violet-500/30' : isAlreadyOrg ? 'bg-gray-100 opacity-50 cursor-not-allowed' : 'hover:bg-slate-100'
+                              isSelected ? 'bg-cyan-500/15 border border-cyan-500/30' : isAlreadyOrg ? 'bg-gray-100 opacity-50 cursor-not-allowed' : 'hover:bg-slate-100'
                             }`}
                           >
                             <div>
@@ -1237,7 +1237,7 @@ const AdminEvents = () => {
                               </div>
                             </div>
                             <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
-                              c.type === 'Student' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/20' : 'bg-purple-500/10 text-purple-600 border border-purple-500/20'
+                              c.type === 'Student' ? 'bg-blue-500/10 text-blue-600 border border-blue-500/20' : 'bg-cyan-500/10 text-cyan-600 border border-cyan-500/20'
                             }`}>
                               {c.type}
                             </span>
@@ -1255,7 +1255,7 @@ const AdminEvents = () => {
                   required
                   value={selectedOrgCategory}
                   onChange={(e) => setSelectedOrgCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 cursor-pointer"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer"
                 >
                   {['Event Head', 'Technical Team', 'Design Team', 'Media Team', 'Hospitality Team', 'Logistics Team', 'Volunteer', 'Other'].map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -1266,7 +1266,7 @@ const AdminEvents = () => {
             <button
               type="submit"
               disabled={!selectedOrgStudent}
-              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-violet-500/15 disabled:opacity-50"
+              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
             >
               + Add Organizer
             </button>
@@ -1286,14 +1286,14 @@ const AdminEvents = () => {
                     <div>
                       <div className="text-sm font-bold text-slate-800">{member.name}</div>
                       <div className="text-[10px] text-slate-600 font-medium">{member.email} &bull; {member.department}</div>
-                      <div className="text-[9px] font-bold text-violet-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-violet-500/10 border border-violet-500/15">
+                      <div className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/15">
                         {member.category}
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveOrganizer(member.userId)}
-                      className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300"
+                      className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-cyan-500/8 text-cyan-400 border border-cyan-500/15 hover:bg-cyan-500/15 transition-all duration-300"
                     >
                       Remove
                     </button>
@@ -1316,7 +1316,7 @@ const AdminEvents = () => {
               
               {scanFeedback && (
                 <div className={`w-full p-3 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
-                  scanFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-500' : 'bg-red-500/8 border-red-500/15 text-red-500'
+                  scanFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-500' : 'bg-cyan-500/8 border-cyan-500/15 text-cyan-500'
                 }`}>
                   <span>{scanFeedback.type === 'success' ? '✓' : '⚠'}</span>
                   <span>{scanFeedback.message}</span>
@@ -1352,10 +1352,10 @@ const AdminEvents = () => {
             title="Are you sure you want to delete this event?"
           >
             <div className="space-y-5">
-              <div className="flex items-start gap-3.5 p-4 bg-red-500/10 dark:bg-red-950/40 border border-red-500/20 rounded-2xl">
+              <div className="flex items-start gap-3.5 p-4 bg-cyan-500/10 dark:bg-red-950/40 border border-red-500/20 rounded-2xl">
                 <span className="text-xl shrink-0">⚠️</span>
                 <div className="space-y-1">
-                  <h4 className="font-heading font-extrabold text-sm text-red-600 dark:text-red-400">
+                  <h4 className="font-heading font-extrabold text-sm text-red-600 dark:text-cyan-400">
                     Delete "{deleteConfirmEvent.title}"?
                   </h4>
                   <p className="text-xs text-text-secondary leading-relaxed font-medium">

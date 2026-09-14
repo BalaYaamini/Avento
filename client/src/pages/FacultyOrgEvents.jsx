@@ -108,7 +108,7 @@ const FacultyOrgEvents = () => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10 animate-fade-in-up">
           <div>
             <h1 className="font-display text-3xl font-black text-text-primary">Assigned <span className="heading-gradient">Proposals</span></h1>
-            <p className="font-body text-text-secondary text-sm mt-1.5">Review and coordinate event proposals for the <span className="text-violet-400 font-bold">{user?.department}</span> department</p>
+            <p className="font-body text-text-secondary text-sm mt-1.5">Review and coordinate event proposals for the <span className="text-cyan-400 font-bold">{user?.department}</span> department</p>
           </div>
         </div>
 
@@ -138,7 +138,7 @@ const FacultyOrgEvents = () => {
           </div>
         ) : (
           /* Event Table */
-          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
+          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-cyan-500/3">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -259,7 +259,7 @@ const FacultyOrgEvents = () => {
                   value={approvalRemarks}
                   onChange={(e) => setApprovalRemarks(e.target.value)}
                   placeholder="Feedback for the student organizer..."
-                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 resize-none"
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 resize-none"
                 />
               </div>
 
@@ -283,7 +283,7 @@ const FacultyOrgEvents = () => {
                   type="button"
                   onClick={() => handleReviewAction('approve')}
                   disabled={submitting}
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15 disabled:opacity-50"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
                   {submitting ? 'Processing...' : 'Approve Proposal'}
                 </button>

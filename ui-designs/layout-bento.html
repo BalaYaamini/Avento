@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bento Grid — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--red:#dc2626;--red-light:#ef4444;--text:#e5e5e5;--text-dim:#737373;--text-muted:#525252;--radius:16px;--gap:14px}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+/* HEADER */
+.header{height:64px;display:flex;align-items:center;padding:0 32px;gap:24px;flex-shrink:0}
+.header .logo{font-size:20px;font-weight:800;color:var(--red);letter-spacing:-.5px}
+.header .search{flex:1;max-width:400px;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 14px}
+.header .search svg{width:16px;height:16px;stroke:var(--text-muted);fill:none;stroke-width:2;flex-shrink:0}
+.header .search input{background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;width:100%}
+.header .search input::placeholder{color:var(--text-muted)}
+.header .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.header .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:pointer}
+
+/* BENTO GRID */
+.bento{flex:1;overflow-y:auto;padding:0 32px 32px;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:200px 180px 180px;gap:var(--gap)}
+.bento::-webkit-scrollbar{width:6px}
+.bento::-webkit-scrollbar-track{background:transparent}
+.bento::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+.card{background:var(--surface);border-radius:var(--radius);padding:24px;border:1px solid rgba(255,255,255,.04);transition:all .25s ease;overflow:hidden;position:relative}
+.card:hover{border-color:rgba(255,255,255,.08);transform:rotate(-.3deg) scale(1.01);box-shadow:0 8px 32px rgba(0,0,0,.3)}
+
+/* HERO CARD */
+.hero{grid-column:1/3;grid-row:1/3;background:linear-gradient(135deg,#1a0505 0%,#0a0a0a 50%,#0f0a1a 100%);padding:32px;display:flex;flex-direction:column;justify-content:space-between}
+.hero::before{content:'';position:absolute;top:-50px;right:-50px;width:200px;height:200px;background:radial-gradient(circle,rgba(220,38,38,.2),transparent);border-radius:50%}
+.hero .tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--red-light);margin-bottom:8px}
+.hero h2{font-size:36px;font-weight:800;letter-spacing:-1.5px;line-height:1.1;margin-bottom:4px}
+.hero .sub{font-size:14px;color:var(--text-dim);margin-bottom:auto;line-height:1.5}
+.hero .stats-row{display:flex;gap:32px;margin-top:24px}
+.hero .stat-item .num{font-size:28px;font-weight:800;letter-spacing:-1px}
+.hero .stat-item .lbl{font-size:12px;color:var(--text-dim);margin-top:2px}
+
+/* LEADERBOARD */
+.leaderboard{grid-column:3/4;grid-row:1/3;display:flex;flex-direction:column}
+.leaderboard h3{font-size:15px;font-weight:600;margin-bottom:16px;letter-spacing:-.2px}
+.lb-list{flex:1;display:flex;flex-direction:column;gap:8px}
+.lb-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:10px;transition:background .2s}
+.lb-item:hover{background:rgba(255,255,255,.06)}
+.lb-item .rank{font-size:13px;font-weight:700;color:var(--text-muted);width:20px;text-align:center;flex-shrink:0}
+.lb-item .rank.gold{color:#f59e0b}
+.lb-item .rank.silver{color:#94a3b8}
+.lb-item .rank.bronze{color:#d97706}
+.lb-item .avatar-sm{width:28px;height:28px;border-radius:50%;background:var(--surface3,#222);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+.lb-item .name{font-size:13px;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-item .score{font-size:13px;font-weight:700;color:var(--red-light)}
+
+/* MINI STATS */
+.mini-stats{grid-column:1/5;display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap)}
+.mini-stat{background:var(--surface);border-radius:var(--radius);padding:20px;border:1px solid rgba(255,255,255,.04);display:flex;flex-direction:column;gap:8px;transition:all .25s}
+.mini-stat:hover{border-color:rgba(255,255,255,.08);transform:rotate(-.3deg) scale(1.01)}
+.mini-stat .icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.mini-stat .value{font-size:24px;font-weight:800;letter-spacing:-1px}
+.mini-stat .label{font-size:12px;color:var(--text-dim)}
+
+/* REGISTRATIONS TABLE */
+.table-card{grid-column:1/3;display:flex;flex-direction:column}
+.table-card h3{font-size:15px;font-weight:600;margin-bottom:14px;letter-spacing:-.2px}
+.table-wrap{flex:1;overflow:hidden}
+.table-wrap table{width:100%;border-collapse:collapse}
+.table-wrap th{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;text-align:left;padding:0 12px 10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.table-wrap td{font-size:13px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.03)}
+.table-wrap tr:last-child td{border-bottom:none}
+.table-wrap .name-cell{display:flex;align-items:center;gap:8px}
+.table-wrap .name-cell .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* TASKS CHECKLIST */
+.tasks-card{grid-column:3/5;display:flex;flex-direction:column}
+.tasks-card h3{font-size:15px;font-weight:600;margin-bottom:14px;letter-spacing:-.2px}
+.task-list{display:flex;flex-direction:column;gap:8px;flex:1}
+.task-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-radius:8px;cursor:pointer;transition:background .2s}
+.task-item:hover{background:rgba(255,255,255,.06)}
+.task-item .check{width:18px;height:18px;border:2px solid var(--text-muted);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
+.task-item.done .check{background:var(--red);border-color:var(--red)}
+.task-item.done .check::after{content:'✓';font-size:11px;color:#fff;font-weight:700}
+.task-item.done .task-text{text-decoration:line-through;color:var(--text-muted)}
+.task-item .task-text{font-size:13px;flex:1}
+
+/* QUICK ACTIONS */
+.actions-card{grid-column:1/3;display:flex;flex-direction:column}
+.actions-card h3{font-size:15px;font-weight:600;margin-bottom:14px;letter-spacing:-.2px}
+.actions-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;flex:1}
+.action-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:var(--surface2);border-radius:12px;border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .2s;padding:16px}
+.action-btn:hover{background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.2)}
+.action-btn .icon{font-size:20px}
+.action-btn .label{font-size:12px;font-weight:500;color:var(--text-dim);text-align:center}
+
+/* SMALL SQUARES */
+.square-cards{grid-column:3/5;display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap)}
+.square-card{background:var(--surface);border-radius:var(--radius);padding:20px;border:1px solid rgba(255,255,255,.04);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;transition:all .25s}
+.square-card:hover{border-color:rgba(255,255,255,.08);transform:rotate(-.3deg) scale(1.01)}
+.square-card .num{font-size:28px;font-weight:800}
+.square-card .lbl{font-size:12px;color:var(--text-dim)}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">Avento</div>
+  <div class="search">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" placeholder="Search anything...">
+  </div>
+  <div class="right">
+    <div class="avatar">R</div>
+  </div>
+</div>
+
+<!-- BENTO GRID -->
+<div class="bento">
+
+  <!-- HERO -->
+  <div class="card hero">
+    <div>
+      <div class="tag">Featured Event</div>
+      <h2>HackFusion 2.0</h2>
+      <div class="sub">The flagship 48-hour hackathon returns with 2x the prizes, 3 tracks, and 50+ mentors from top tech companies.</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-item"><div class="num">342</div><div class="lbl">Registered</div></div>
+      <div class="stat-item"><div class="num">56</div><div class="lbl">Teams</div></div>
+      <div class="stat-item"><div class="num">$12K</div><div class="lbl">Prize Pool</div></div>
+      <div class="stat-item"><div class="num">48h</div><div class="lbl">Duration</div></div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div class="card leaderboard">
+    <h3>Leaderboard</h3>
+    <div class="lb-list">
+      <div class="lb-item"><span class="rank gold">1</span><div class="avatar-sm">A</div><span class="name">Arjun Mehta</span><span class="score">2,840</span></div>
+      <div class="lb-item"><span class="rank silver">2</span><div class="avatar-sm">S</div><span class="name">Sneha Reddy</span><span class="score">2,650</span></div>
+      <div class="lb-item"><span class="rank bronze">3</span><div class="avatar-sm">V</div><span class="name">Vikram Joshi</span><span class="score">2,410</span></div>
+      <div class="lb-item"><span class="rank">4</span><div class="avatar-sm">P</div><span class="name">Priya Nair</span><span class="score">2,280</span></div>
+      <div class="lb-item"><span class="rank">5</span><div class="avatar-sm">R</div><span class="name">Rohan Das</span><span class="score">2,150</span></div>
+      <div class="lb-item"><span class="rank">6</span><div class="avatar-sm">M</div><span class="name">Meera Iyer</span><span class="score">1,980</span></div>
+      <div class="lb-item"><span class="rank">7</span><div class="avatar-sm">K</div><span class="name">Karthik Rao</span><span class="score">1,840</span></div>
+      <div class="lb-item"><span class="rank">8</span><div class="avatar-sm">D</div><span class="name">Divya Sharma</span><span class="score">1,720</span></div>
+    </div>
+  </div>
+
+  <!-- MINI STATS -->
+  <div class="mini-stats">
+    <div class="card mini-stat">
+      <div class="icon" style="background:rgba(220,38,38,.12);color:#ef4444">📊</div>
+      <div class="value">1,247</div>
+      <div class="label">Total Events</div>
+    </div>
+    <div class="card mini-stat">
+      <div class="icon" style="background:rgba(59,130,246,.12);color:#3b82f6">👥</div>
+      <div class="value">8,432</div>
+      <div class="label">Active Users</div>
+    </div>
+    <div class="card mini-stat">
+      <div class="icon" style="background:rgba(34,197,94,.12);color:#22c55e">💰</div>
+      <div class="value">$284K</div>
+      <div class="label">Revenue</div>
+    </div>
+    <div class="card mini-stat">
+      <div class="icon" style="background:rgba(245,158,11,.12);color:#f59e0b">🎯</div>
+      <div class="value">34.2%</div>
+      <div class="label">Conversion</div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="card table-card">
+    <h3>Recent Registrations</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Event</th><th>Date</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><div class="name-cell"><span class="dot" style="background:#22c55e"></span>Arjun Mehta</div></td><td>HackFusion 2.0</td><td>Sep 10</td><td style="color:#22c55e">Confirmed</td></tr>
+          <tr><td><div class="name-cell"><span class="dot" style="background:#3b82f6"></span>Sneha Reddy</div></td><td>AI Workshop</td><td>Sep 9</td><td style="color:#3b82f6">Attended</td></tr>
+          <tr><td><div class="name-cell"><span class="dot" style="background:#f59e0b"></span>Vikram Joshi</div></td><td>Cultural Fest</td><td>Sep 8</td><td style="color:#f59e0b">Pending</td></tr>
+          <tr><td><div class="name-cell"><span class="dot" style="background:#22c55e"></span>Priya Nair</div></td><td>Startup Pitch</td><td>Sep 7</td><td style="color:#22c55e">Confirmed</td></tr>
+          <tr><td><div class="name-cell"><span class="dot" style="background:#ef4444"></span>Rohan Das</div></td><td>Blockchain Hack</td><td>Sep 6</td><td style="color:#ef4444">Waitlisted</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TASKS -->
+  <div class="card tasks-card">
+    <h3>Open Tasks</h3>
+    <div class="task-list">
+      <div class="task-item done"><div class="check"></div><span class="task-text">Finalize HackFusion judging panel</span></div>
+      <div class="task-item"><div class="check"></div><span class="task-text">Send venue confirmation for Cultural Fest</span></div>
+      <div class="task-item"><div class="check"></div><span class="task-text">Review sponsorship proposals (3 pending)</span></div>
+      <div class="task-item"><div class="check"></div><span class="task-text">Update AI Workshop curriculum</span></div>
+      <div class="task-item"><div class="check"></div><span class="task-text">Prepare Q3 analytics report</span></div>
+      <div class="task-item done"><div class="check"></div><span class="task-text">Book catering for HackFusion</span></div>
+      <div class="task-item"><div class="check"></div><span class="task-text">Design social media creatives</span></div>
+    </div>
+  </div>
+
+  <!-- QUICK ACTIONS -->
+  <div class="card actions-card">
+    <h3>Quick Actions</h3>
+    <div class="actions-grid">
+      <div class="action-btn"><span class="icon">➕</span><span class="label">Create Event</span></div>
+      <div class="action-btn"><span class="icon">👤</span><span class="label">Add User</span></div>
+      <div class="action-btn"><span class="icon">📋</span><span class="label">New Report</span></div>
+      <div class="action-btn"><span class="icon">📢</span><span class="label">Send Announcement</span></div>
+    </div>
+  </div>
+
+  <!-- SMALL SQUARES -->
+  <div class="square-cards">
+    <div class="card square-card"><div class="num" style="color:#ef4444">23</div><div class="lbl">Notifications</div></div>
+    <div class="card square-card"><div class="num" style="color:#3b82f6">8</div><div class="lbl">Unread Messages</div></div>
+    <div class="card square-card"><div class="num" style="color:#f59e0b">5</div><div class="lbl">Pending Approvals</div></div>
+  </div>
+
+</div>
+
+</body>
+</html>

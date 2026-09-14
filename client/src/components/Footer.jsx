@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { StarDoodle, LeafDoodle, FlowerDoodle } from './Doodles';
+import { useTheme } from '../context/ThemeContext';
 
 const Footer = () => {
+  const { theme } = useTheme();
   const currentYear = new Date().getFullYear();
 
   return (
@@ -20,9 +22,9 @@ const Footer = () => {
             <StarDoodle className="absolute -top-6 -left-4 w-6 h-6 text-pastel-yellow opacity-40 animate-pulse" />
             <div className="flex items-center gap-2.5">
               <div className="h-9 w-9 flex items-center justify-center p-1 transition-all duration-300">
-                <img src="/logo.png?v=3" alt="Avento Logo" className="h-[52px] w-auto object-contain drop-shadow-sm" />
+                <img src="/logo.png?v=3" alt="Avento Logo" className="h-[52px] w-auto object-contain drop-shadow-sm logo-cyan-tint" />
               </div>
-              <span className="font-display font-extrabold text-xl tracking-wider text-white">AVENTO</span>
+              <span className="font-display font-extrabold text-xl tracking-wider footer-logo-text">AVENTO</span>
             </div>
             <p className="text-sm font-body text-slate-400 max-w-sm leading-relaxed">
               AVENTO is the centralized campus activity engine, simplifying event exploration, seat booking, and attendance tracking for students, and dashboard controls for organizers.

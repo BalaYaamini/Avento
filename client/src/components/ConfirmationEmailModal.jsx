@@ -269,7 +269,7 @@ const ConfirmationEmailModal = ({ isOpen, onClose, eventId, event, onUpdate }) =
               <button
                 type="submit"
                 disabled={isSaving}
-                className="px-6 py-2.5 bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white font-bold text-xs rounded-xl hover:shadow-lg hover:shadow-fuchsia-500/25 transition-all cursor-pointer disabled:opacity-50"
+                className="px-6 py-2.5 bg-gradient-to-r from-fuchsia-600 via-cyan-600 to-indigo-600 text-white font-bold text-xs rounded-xl hover:shadow-lg hover:shadow-fuchsia-500/25 transition-all cursor-pointer disabled:opacity-50"
               >
                 {isSaving ? 'Saving...' : 'Save Configuration'}
               </button>

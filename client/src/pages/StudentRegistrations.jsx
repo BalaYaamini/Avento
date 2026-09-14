@@ -526,7 +526,7 @@ const StudentRegistrations = () => {
             <h1 className="font-display text-3xl font-black text-text-primary">My Registered <span className="heading-gradient">Events</span></h1>
             <p className="font-body text-slate-600 text-sm mt-1.5">Track and manage your campus event bookings</p>
           </div>
-          <Link to="/" className="btn-primary text-center px-5 py-2.5 text-xs font-display font-bold rounded-xl text-white self-start shadow-lg shadow-violet-500/15">
+          <Link to="/" className="btn-primary text-center px-5 py-2.5 text-xs font-display font-bold rounded-xl text-white self-start shadow-lg shadow-cyan-500/15">
             Browse More Events
           </Link>
         </div>
@@ -560,7 +560,7 @@ const StudentRegistrations = () => {
             onClick={() => setActiveSubTab('registrations')}
             className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
               activeSubTab === 'registrations'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25'
                 : 'bg-white/10 text-slate-400 hover:bg-white/20 hover:text-white'
             }`}
           >
@@ -570,7 +570,7 @@ const StudentRegistrations = () => {
             onClick={() => setActiveSubTab('invitations')}
             className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
               activeSubTab === 'invitations'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25'
                 : 'bg-white/10 text-slate-400 hover:bg-white/20 hover:text-white'
             }`}
           >
@@ -587,9 +587,9 @@ const StudentRegistrations = () => {
         {activeSubTab === 'registrations' && (
           <>
             {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length > 0 && (
-              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-violet-600/15 via-purple-600/15 to-indigo-600/15 border border-violet-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-violet-500/5 animate-fade-in-up">
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-cyan-600/15 via-cyan-600/15 to-indigo-600/15 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-cyan-500/5 animate-fade-in-up">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center text-lg font-bold shrink-0 shadow-md">
+                  <div className="h-10 w-10 rounded-xl bg-cyan-600 text-white flex items-center justify-center text-lg font-bold shrink-0 shadow-md">
                     📩
                   </div>
                   <div>
@@ -601,7 +601,7 @@ const StudentRegistrations = () => {
                 </div>
                 <button
                   onClick={() => setActiveSubTab('invitations')}
-                  className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
+                  className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
                 >
                   View Team Invitations →
                 </button>
@@ -756,7 +756,7 @@ const StudentRegistrations = () => {
                                 setFeedbackEvent(evt);
                                 setIsFeedbackModalOpen(true);
                               }}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all duration-300"
                             >
                               Submit Feedback
                             </button>
@@ -817,7 +817,7 @@ const StudentRegistrations = () => {
                                       <>
                                         <button
                                           onClick={() => handleEditTeamOpen(reg)}
-                                          className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                                          className="px-5 py-2 text-xs font-bold rounded-xl bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all duration-300"
                                         >
                                           Edit Team
                                         </button>
@@ -926,7 +926,7 @@ const StudentRegistrations = () => {
 
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 flex items-center justify-between">
                                   <span className="text-text-secondary font-semibold text-xs">📍 Allocated Venue / Room</span>
-                                  <span className="font-extrabold text-violet-600 dark:text-violet-400 text-xs">{allocVenue}</span>
+                                  <span className="font-extrabold text-cyan-600 dark:text-cyan-400 text-xs">{allocVenue}</span>
                                 </div>
 
                                 <div className="pt-1 flex justify-end">
@@ -949,7 +949,7 @@ const StudentRegistrations = () => {
                                         alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
                                       }
                                     }}
-                                    className="px-3.5 py-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-xl text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1.5"
+                                    className="px-3.5 py-1.5 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-all flex items-center gap-1.5"
                                   >
                                     📄 Download Problem Statement PDF
                                   </button>
@@ -979,7 +979,7 @@ const StudentRegistrations = () => {
 
                               {displayVenue !== 'Yet to assign' && (
                                 <div className="text-xs font-semibold text-text-primary pt-1">
-                                  📍 Assigned Venue / Room: <span className="font-extrabold text-violet-600">{displayVenue}</span>
+                                  📍 Assigned Venue / Room: <span className="font-extrabold text-cyan-600">{displayVenue}</span>
                                 </div>
                               )}
                             </div>
@@ -1014,7 +1014,7 @@ const StudentRegistrations = () => {
                                       alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
                                     }
                                   }}
-                                  className="px-3 py-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-lg text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1"
+                                  className="px-3 py-1 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 rounded-lg text-xs font-bold hover:bg-cyan-500/20 transition-all flex items-center gap-1"
                                 >
                                   📄 View PDF Document
                                 </button>
@@ -1024,7 +1024,7 @@ const StudentRegistrations = () => {
                               </p>
                               {displayVenue !== 'Yet to assign' && (
                                 <div className="text-xs font-semibold text-text-primary pt-1">
-                                  📍 Assigned Venue / Room: <span className="font-extrabold text-violet-600">{displayVenue}</span>
+                                  📍 Assigned Venue / Room: <span className="font-extrabold text-cyan-600">{displayVenue}</span>
                                 </div>
                               )}
                             </div>
@@ -1033,11 +1033,11 @@ const StudentRegistrations = () => {
 
                         // 4. PROBLEM STATEMENT SELECTION INTERFACE (Leader or Individual - Checked In!)
                         return (
-                          <div className="mt-4 p-5 bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-slate-900/10 dark:from-violet-950/40 dark:via-purple-950/20 dark:to-slate-900/40 border border-violet-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-violet-500/15 pb-3.5">
+                          <div className="mt-4 p-5 bg-gradient-to-br from-cyan-500/10 via-cyan-500/5 to-slate-900/10 dark:from-cyan-950/40 dark:via-cyan-950/20 dark:to-slate-900/40 border border-cyan-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyan-500/15 pb-3.5">
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <span className="w-8 h-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/30 flex items-center justify-center text-sm font-bold">
+                                  <span className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-sm font-bold">
                                     🎯
                                   </span>
                                   <h4 className="font-heading font-extrabold text-base text-text-primary tracking-tight">
@@ -1050,7 +1050,7 @@ const StudentRegistrations = () => {
                                     : 'Select one problem statement for your entire team. Your selection will be final after confirmation.'}
                                 </p>
                                 {displayVenue !== 'Yet to assign' && (
-                                  <div className="text-xs font-bold text-violet-600 dark:text-violet-400 pt-1 flex items-center gap-1">
+                                  <div className="text-xs font-bold text-cyan-600 dark:text-cyan-400 pt-1 flex items-center gap-1">
                                     <span>📍 Assigned Venue / Room:</span>
                                     <span>{displayVenue}</span>
                                   </div>
@@ -1077,7 +1077,7 @@ const StudentRegistrations = () => {
                                       alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
                                     }
                                   }}
-                                  className="px-3.5 py-1.5 bg-violet-600 text-white rounded-xl text-xs font-bold hover:bg-violet-700 transition-all flex items-center gap-1.5 shadow-sm"
+                                  className="px-3.5 py-1.5 bg-cyan-600 text-white rounded-xl text-xs font-bold hover:bg-cyan-700 transition-all flex items-center gap-1.5 shadow-sm"
                                 >
                                   📄 Download Problem Statements PDF
                                 </button>
@@ -1116,14 +1116,14 @@ const StudentRegistrations = () => {
                                         isFull
                                           ? 'bg-gray-100/50 dark:bg-slate-900/40 border-gray-300/40 dark:border-slate-800 opacity-85'
                                           : isSelected
-                                            ? 'bg-violet-500/10 dark:bg-violet-950/40 border-violet-500 shadow-md ring-2 ring-violet-500/20'
-                                            : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-violet-500/40 hover:shadow-soft'
+                                            ? 'bg-cyan-500/10 dark:bg-cyan-950/40 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
+                                            : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-cyan-500/40 hover:shadow-soft'
                                       }`}
                                     >
                                       {/* Card Top Info */}
                                       <div className="space-y-3">
                                         <div className="flex justify-between items-center pb-2.5 border-b border-pastel-lavender/10">
-                                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
                                             {psCode}
                                           </span>
                                           <div className="flex items-center gap-1.5">
@@ -1137,7 +1137,7 @@ const StudentRegistrations = () => {
                                               </span>
                                             )}
                                             {isSelected && (
-                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20">
+                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
                                                 ✓ Selected
                                               </span>
                                             )}
@@ -1145,7 +1145,7 @@ const StudentRegistrations = () => {
                                         </div>
 
                                         <div className="space-y-1.5">
-                                          <h5 className="font-heading font-extrabold text-sm text-text-primary group-hover:text-violet-600 transition-colors leading-snug">
+                                          <h5 className="font-heading font-extrabold text-sm text-text-primary group-hover:text-cyan-600 transition-colors leading-snug">
                                             [{psCode}] {ps.title}
                                           </h5>
                                           {ps.description && (
@@ -1169,7 +1169,7 @@ const StudentRegistrations = () => {
                                               isFull
                                                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-300/30'
                                                 : isSelected
-                                                  ? 'bg-violet-600 text-white ring-2 ring-violet-500/40'
+                                                  ? 'bg-cyan-600 text-white ring-2 ring-cyan-500/40'
                                                   : 'btn-primary text-white hover:shadow-md'
                                             }`}
                                           >
@@ -1856,7 +1856,7 @@ const StudentRegistrations = () => {
                       className={`w-full bg-white border text-slate-800 text-sm rounded-xl focus:outline-none block p-2.5 transition-all duration-300 ${
                         nameUnavailable
                           ? 'border-red-500/80 focus:border-red-500/80'
-                          : 'border-slate-200 focus:border-violet-500'
+                          : 'border-slate-200 focus:border-cyan-500'
                       }`}
                       placeholder="Enter team name"
                       disabled={!!processingId}
@@ -1873,7 +1873,7 @@ const StudentRegistrations = () => {
                   <button
                     onClick={handleUpdateTeamName}
                     disabled={!!processingId || editTeamName.trim() === editTeamData.teamId.name || isCheckingName || nameUnavailable}
-                    className="px-4 py-2.5 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 transition-colors"
+                    className="px-4 py-2.5 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-50 transition-colors"
                   >
                     {processingId === `name-${editTeamData.teamId.id}` ? 'Saving...' : 'Save Name'}
                   </button>
@@ -1954,7 +1954,7 @@ const StudentRegistrations = () => {
                           value={editInviteName}
                           onChange={(e) => setEditInviteName(e.target.value)}
                           disabled={!!processingId}
-                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500 transition-all duration-300"
+                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500 transition-all duration-300"
                         />
                         <input
                           type="email"
@@ -1962,12 +1962,12 @@ const StudentRegistrations = () => {
                           value={editInviteEmail}
                           onChange={(e) => setEditInviteEmail(e.target.value)}
                           disabled={!!processingId}
-                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500 transition-all duration-300"
+                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500 transition-all duration-300"
                         />
                         <button
                           onClick={handleInviteExternalEdit}
                           disabled={!!processingId || !editInviteName.trim() || !editInviteEmail.trim()}
-                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
                         >
                           {editInvitingExternal ? 'Sending...' : 'Invite'}
                         </button>
@@ -1975,11 +1975,11 @@ const StudentRegistrations = () => {
                       {editExternalInvites.length > 0 && (
                         <div className="space-y-1.5">
                           {editExternalInvites.map((inv, i) => (
-                            <div key={i} className="flex items-center justify-between p-2 bg-violet-50/50 rounded-lg border border-violet-200/50">
+                            <div key={i} className="flex items-center justify-between p-2 bg-cyan-50/50 rounded-lg border border-cyan-200/50">
                               <div className="text-xs">
                                 <span className="font-bold text-slate-700">{inv.name}</span>
                                 <span className="text-slate-500 ml-1">({inv.email})</span>
-                                <span className="ml-1 text-violet-600 font-bold">— invite sent</span>
+                                <span className="ml-1 text-cyan-600 font-bold">— invite sent</span>
                               </div>
                               <button
                                 onClick={() => setEditExternalInvites(editExternalInvites.filter((_, idx) => idx !== i))}
@@ -2091,8 +2091,8 @@ const StudentRegistrations = () => {
 
               <div className="space-y-2 text-xs text-text-secondary">
                 <p>You are about to select the following problem statement for your entire team:</p>
-                <div className="p-3.5 bg-violet-500/10 border border-violet-500/20 rounded-xl space-y-1.5">
-                  <p className="font-bold text-sm text-violet-600 dark:text-violet-400">
+                <div className="p-3.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl space-y-1.5">
+                  <p className="font-bold text-sm text-cyan-600 dark:text-cyan-400">
                     {selectedPsToConfirm.ps.title}
                   </p>
                 </div>

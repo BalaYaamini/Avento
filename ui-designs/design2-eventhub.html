@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avento - Event Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #111111;
+    --bg-card: #161616;
+    --bg-card-hover: #1c1c1c;
+    --bg-sidebar: #0d0d0d;
+    --border: #1f1f1f;
+    --border-light: #2a2a2a;
+    --red-primary: #dc2626;
+    --red-dark: #991b1b;
+    --red-glow: rgba(220, 38, 38, 0.12);
+    --accent: #ef4444;
+    --text-primary: #fafafa;
+    --text-secondary: #a3a3a3;
+    --text-muted: #525252;
+    --success: #22c55e;
+    --warning: #f59e0b;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    display: flex;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 260px;
+    min-height: 100vh;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+  }
+
+  .sidebar-logo {
+    padding: 24px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-mark {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    color: white;
+  }
+
+  .logo-text { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+  .logo-text span { color: var(--accent); }
+
+  .sidebar-nav { flex: 1; padding: 16px 12px; overflow-y: auto; }
+
+  .nav-section { margin-bottom: 24px; }
+
+  .nav-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    padding: 0 12px;
+    margin-bottom: 8px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    position: relative;
+  }
+
+  .nav-item:hover { background: var(--bg-card); color: var(--text-primary); }
+
+  .nav-item.active {
+    background: var(--red-glow);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    background: var(--accent);
+    border-radius: 0 3px 3px 0;
+  }
+
+  .nav-icon { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+  .nav-item.active .nav-icon { opacity: 1; }
+
+  .sidebar-footer {
+    padding: 16px 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .user-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .user-card:hover { background: var(--bg-card); }
+
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #dc2626, #7f1d1d);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .user-name { font-size: 13px; font-weight: 600; }
+  .user-role { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+
+  /* ── MAIN ── */
+  .main {
+    flex: 1;
+    margin-left: 260px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .topbar {
+    height: 64px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    background: var(--bg-primary);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 16px; }
+
+  .topbar-title { font-size: 15px; font-weight: 600; }
+
+  .topbar-breadcrumb {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .topbar-breadcrumb span { color: var(--text-secondary); }
+
+  .topbar-right { display: flex; align-items: center; gap: 8px; }
+
+  .topbar-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .topbar-btn:hover {
+    border-color: var(--border-light);
+    color: var(--text-primary);
+    background: var(--bg-card);
+  }
+
+  .notification-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    border: 2px solid var(--bg-primary);
+  }
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    width: 240px;
+    transition: border-color 0.2s;
+  }
+
+  .search-box:focus-within { border-color: var(--accent); }
+
+  .search-box input {
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    width: 100%;
+  }
+
+  .search-box input::placeholder { color: var(--text-muted); }
+
+  /* ── HERO SECTION ── */
+  .hero {
+    padding: 48px 32px 40px;
+    background: linear-gradient(180deg, rgba(220,38,38,0.08) 0%, transparent 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(220,38,38,0.06) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(220,38,38,0.1);
+    border: 1px solid rgba(220,38,38,0.2);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 16px;
+    letter-spacing: 0.3px;
+  }
+
+  .hero-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .hero h1 {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1.15;
+    margin-bottom: 8px;
+  }
+
+  .hero h1 span { color: var(--accent); }
+
+  .hero p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    max-width: 500px;
+    line-height: 1.6;
+    font-weight: 400;
+  }
+
+  /* ── FILTER BAR ── */
+  .filter-bar {
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: -8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .filter-chip {
+    padding: 7px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .filter-chip:hover {
+    border-color: var(--border-light);
+    color: var(--text-primary);
+  }
+
+  .filter-chip.active {
+    background: rgba(220,38,38,0.1);
+    border-color: rgba(220,38,38,0.3);
+    color: var(--accent);
+  }
+
+  /* ── EVENTS GRID ── */
+  .events-section {
+    padding: 0 32px 40px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .events-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .event-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .event-card:hover {
+    border-color: var(--border-light);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+
+  .event-image {
+    width: 100%;
+    height: 160px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .event-image-bg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s;
+  }
+
+  .event-card:hover .event-image-bg { transform: scale(1.05); }
+
+  .event-image-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60%;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  }
+
+  .event-category-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: white;
+  }
+
+  .event-date-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    text-align: center;
+    line-height: 1;
+    box-shadow: 0 4px 12px rgba(220,38,38,0.3);
+  }
+
+  .event-date-badge .day {
+    display: block;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .event-date-badge .month {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.9;
+  }
+
+  .event-body {
+    padding: 16px;
+  }
+
+  .event-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+
+  .event-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .event-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .event-meta-item svg { width: 12px; height: 12px; }
+
+  .event-description {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 14px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .event-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .event-capacity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .capacity-dots {
+    display: flex;
+    gap: 2px;
+  }
+
+  .capacity-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--border-light);
+  }
+
+  .capacity-dot.filled { background: var(--accent); }
+
+  .capacity-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .event-register-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .event-register-btn.primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .event-register-btn.primary:hover {
+    background: var(--red-dark);
+    box-shadow: 0 4px 12px rgba(220,38,38,0.3);
+  }
+
+  .event-register-btn.registered {
+    background: rgba(34,197,94,0.1);
+    color: var(--success);
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">A</div>
+    <div class="logo-text">A<span>vento</span></div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-section-title">Discover</div>
+      <a class="nav-item active" href="#">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Home
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        All Events
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        Announcements
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">My Workspace</div>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        Registrations
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Certificates
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        Profile
+      </a>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="user-card">
+      <div class="user-avatar">PS</div>
+      <div style="flex:1;min-width:0;">
+        <div class="user-name">Priya Sharma</div>
+        <div class="user-role">Student</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <header class="topbar">
+    <div class="topbar-left">
+      <div>
+        <div class="topbar-title">Discover Events</div>
+        <div class="topbar-breadcrumb">Avento <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg> <span>Home</span></div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="search-box">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--text-muted);flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" placeholder="Search events...">
+      </div>
+      <button class="topbar-btn">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <span class="notification-dot"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      Find Your Vibe
+    </div>
+    <h1>Your semester deserves<br>better <span>stories.</span></h1>
+    <p>Discover hackathons, cultural fests, workshops, and seminars — all in a single click. Avento it.</p>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-bar">
+    <button class="filter-chip active">All</button>
+    <button class="filter-chip">Technical</button>
+    <button class="filter-chip">Cultural</button>
+    <button class="filter-chip">Sports</button>
+    <button class="filter-chip">Workshop</button>
+    <button class="filter-chip">Seminar</button>
+  </div>
+
+  <!-- Events -->
+  <div class="events-section">
+    <div class="events-grid">
+      <!-- Event Card 1 -->
+      <div class="event-card">
+        <div class="event-image">
+          <div class="event-image-bg" style="background:linear-gradient(135deg,#1a0505,#3b0a0a,#dc2626);width:100%;height:100%;"></div>
+          <div class="event-image-overlay"></div>
+          <div class="event-category-badge">Technical</div>
+          <div class="event-date-badge">
+            <span class="day">15</span>
+            <span class="month">Sep</span>
+          </div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">HackFusion 2.0 — 24hr Hackathon</div>
+          <div class="event-meta">
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Main Auditorium
+            </div>
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              10:00 AM
+            </div>
+          </div>
+          <div class="event-description">Build innovative solutions in 24 hours. Teams of 2-4. Prizes worth $5,000. Industry mentors will guide you.</div>
+          <div class="event-footer">
+            <div class="event-capacity">
+              <div class="capacity-dots">
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot"></div>
+              </div>
+              <span class="capacity-label">180/200</span>
+            </div>
+            <button class="event-register-btn primary">Register</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Card 2 -->
+      <div class="event-card">
+        <div class="event-image">
+          <div class="event-image-bg" style="background:linear-gradient(135deg,#0a1a05,#1a3b0a,#22c55e);width:100%;height:100%;"></div>
+          <div class="event-image-overlay"></div>
+          <div class="event-category-badge">Workshop</div>
+          <div class="event-date-badge">
+            <span class="day">18</span>
+            <span class="month">Sep</span>
+          </div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">AI & Machine Learning Bootcamp</div>
+          <div class="event-meta">
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              CS Lab 301
+            </div>
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              2:00 PM
+            </div>
+          </div>
+          <div class="event-description">Hands-on workshop covering neural networks, NLP, and computer vision. Bring your laptop!</div>
+          <div class="event-footer">
+            <div class="event-capacity">
+              <div class="capacity-dots">
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+              </div>
+              <span class="capacity-label">42/50</span>
+            </div>
+            <button class="event-register-btn primary">Register</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Card 3 -->
+      <div class="event-card">
+        <div class="event-image">
+          <div class="event-image-bg" style="background:linear-gradient(135deg,#1a0a05,#3b200a,#f59e0b);width:100%;height:100%;"></div>
+          <div class="event-image-overlay"></div>
+          <div class="event-category-badge">Cultural</div>
+          <div class="event-date-badge">
+            <span class="day">22</span>
+            <span class="month">Sep</span>
+          </div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">Cultural Fest '26 — Rangmanch</div>
+          <div class="event-meta">
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Open Air Theatre
+            </div>
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              5:00 PM
+            </div>
+          </div>
+          <div class="event-description">A night of music, dance, and drama. Performances by 15+ college teams. Free entry for all students.</div>
+          <div class="event-footer">
+            <div class="event-capacity">
+              <div class="capacity-dots">
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+              </div>
+              <span class="capacity-label">95/300</span>
+            </div>
+            <button class="event-register-btn primary">Register</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Card 4 -->
+      <div class="event-card">
+        <div class="event-image">
+          <div class="event-image-bg" style="background:linear-gradient(135deg,#050a1a,#0a1a3b,#3b82f6);width:100%;height:100%;"></div>
+          <div class="event-image-overlay"></div>
+          <div class="event-category-badge">Seminar</div>
+          <div class="event-date-badge">
+            <span class="day">25</span>
+            <span class="month">Sep</span>
+          </div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">Cloud Computing & DevOps Talk</div>
+          <div class="event-meta">
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Seminar Hall B
+            </div>
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              11:00 AM
+            </div>
+          </div>
+          <div class="event-description">Industry experts from AWS and Google Cloud discuss modern infrastructure and deployment strategies.</div>
+          <div class="event-footer">
+            <div class="event-capacity">
+              <div class="capacity-dots">
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+              </div>
+              <span class="capacity-label">68/120</span>
+            </div>
+            <button class="event-register-btn primary">Register</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Card 5 -->
+      <div class="event-card">
+        <div class="event-image">
+          <div class="event-image-bg" style="background:linear-gradient(135deg,#1a0515,#3b0a2a,#ec4899);width:100%;height:100%;"></div>
+          <div class="event-image-overlay"></div>
+          <div class="event-category-badge">Sports</div>
+          <div class="event-date-badge">
+            <span class="day">28</span>
+            <span class="month">Sep</span>
+          </div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">Inter-Dept Cricket Tournament</div>
+          <div class="event-meta">
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              University Ground
+            </div>
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              8:00 AM
+            </div>
+          </div>
+          <div class="event-description">8 department teams compete in T20 format. Group stage + knockout rounds. Trophy + medals for winners.</div>
+          <div class="event-footer">
+            <div class="event-capacity">
+              <div class="capacity-dots">
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot filled"></div>
+              </div>
+              <span class="capacity-label">Full</span>
+            </div>
+            <button class="event-register-btn registered" disabled>Registered</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Event Card 6 -->
+      <div class="event-card">
+        <div class="event-image">
+          <div class="event-image-bg" style="background:linear-gradient(135deg,#0a0a1a,#1a1a3b,#8b5cf6);width:100%;height:100%;"></div>
+          <div class="event-image-overlay"></div>
+          <div class="event-category-badge">Technical</div>
+          <div class="event-date-badge">
+            <span class="day">02</span>
+            <span class="month">Oct</span>
+          </div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">Web3 & Blockchain Workshop</div>
+          <div class="event-meta">
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Innovation Hub
+            </div>
+            <div class="event-meta-item">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              3:00 PM
+            </div>
+          </div>
+          <div class="event-description">Learn smart contracts, DApp development, and NFT minting. Build your first dApp by end of session.</div>
+          <div class="event-footer">
+            <div class="event-capacity">
+              <div class="capacity-dots">
+                <div class="capacity-dot filled"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+                <div class="capacity-dot"></div>
+              </div>
+              <span class="capacity-label">12/60</span>
+            </div>
+            <button class="event-register-btn primary">Register</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>
