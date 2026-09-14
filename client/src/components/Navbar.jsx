@@ -56,8 +56,8 @@ const Navbar = () => {
       }
     };
     fetchNotifs();
-    // Poll every 30 seconds
-    const interval = setInterval(fetchNotifs, 30000);
+    // Poll every 10 seconds
+    const interval = setInterval(fetchNotifs, 10000);
     return () => clearInterval(interval);
   }, [user]);
 
@@ -75,7 +75,7 @@ const Navbar = () => {
       } catch {}
     };
     fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
+    const interval = setInterval(fetchUnread, 15000);
     return () => clearInterval(interval);
   }, [user]);
 
@@ -113,16 +113,44 @@ const Navbar = () => {
       message.includes('certificate') || 
       type.includes('cert');
 
+    const targetEventId = notif.eventId || notif.event_id;
+
     if (isCertificateNotif) {
       navigate('/my-certificates');
+    } else if (targetEventId) {
+      if (title.includes('proposal') || message.includes('proposal') || title.includes('revision') || message.includes('revision')) {
+        navigate(`/proposals/${targetEventId}`);
+      } else {
+        navigate(`/events/${targetEventId}`);
+      }
+    } else if (title.includes('proposal') || message.includes('proposal')) {
+      if (user?.roles?.includes('faculty') || user?.roles?.includes('faculty_organizer')) {
+        navigate('/faculty-organizer/events');
+      } else {
+        navigate('/student-organizer/events');
+      }
     } else {
       navigate('/my-registrations');
     }
   };
 
-  /* ── Scroll listener for backdrop effect ── */
+  /* ── Scroll listener for backdrop effect with hysteresis & rAF throttling to prevent flickering ── */
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20);
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrollY = window.scrollY;
+          setScrolled(prev => {
+            if (!prev && scrollY > 25) return true;
+            if (prev && scrollY < 10) return false;
+            return prev;
+          });
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -163,7 +191,11 @@ const Navbar = () => {
     }`;
 
   return (
-    <nav className={`sticky top-0 z-50 transition-all duration-500 ${scrolled ? 'bg-white/80 backdrop-blur-lg shadow-soft border-b border-pastel-lavender/30 py-1' : 'bg-transparent py-3'}`}>
+    <nav className={`sticky top-0 z-50 transition-[background-color,border-color,box-shadow] duration-200 py-2.5 ${
+      scrolled 
+        ? 'bg-white/90 dark:bg-[#0F172A]/90 backdrop-blur-md shadow-sm border-b border-pastel-lavender/30 dark:border-slate-800' 
+        : 'bg-transparent border-b border-transparent'
+    }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo Section */}
@@ -223,6 +255,13 @@ const Navbar = () => {
                     }`}
                   >
                     <div className="bg-white rounded-xl shadow-lg border border-pastel-lavender/20 overflow-hidden flex flex-col py-2 relative z-[60]">
+                      <NavLink 
+                        to="/student-organizer/events" 
+                        onClick={() => setIsWorkspaceOpen(false)}
+                        className={({ isActive }) => `px-4 py-2 text-sm font-semibold transition-colors font-quicksand ${isActive ? 'bg-pastel-lavender/20 text-pastel-lavender border-l-4 border-pastel-lavender' : 'text-text-secondary hover:bg-pastel-lavender/10'}`}
+                      >
+                        Proposals / Events
+                      </NavLink>
                       <NavLink 
                         to="/my-registrations" 
                         onClick={() => setIsWorkspaceOpen(false)}
@@ -440,6 +479,7 @@ const Navbar = () => {
                <div className="py-2 space-y-1">
                  <div className="px-4 py-2 text-sm font-bold text-text-primary uppercase tracking-wider">My Workspace</div>
                  <div className="pl-4 border-l-2 border-pastel-lavender/30 ml-4 space-y-1">
+                   <NavLink to="/student-organizer/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Proposals / Events</NavLink>
                    <NavLink to="/my-registrations" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Registrations</NavLink>
                     <NavLink to="/my-certificates" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Certificates</NavLink>
                     <NavLink to="/scoring-events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Scoring</NavLink>

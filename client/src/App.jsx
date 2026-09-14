@@ -221,9 +221,15 @@ const AnimatedRoutes = () => {
           }
         />
 
-        {/* Student Organizer Paths — DISABLED for students */}
-        {/* <Route path="/student-organizer" element={<ProtectedRoute allowedRoles={['student']}><StudentOrgDashboard /></ProtectedRoute>} /> */}
-        {/* <Route path="/student-organizer/events" element={<ProtectedRoute allowedRoles={['student']}><StudentOrgEvents /></ProtectedRoute>} /> */}
+        {/* Student Organizer & Proposal Paths */}
+        <Route
+          path="/student-organizer/events"
+          element={
+            <ProtectedRoute allowedRoles={['student', 'student_organizer']}>
+              <StudentOrgEvents />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Workspace Path - Protected for roles that can be organizers or faculty */}
         <Route

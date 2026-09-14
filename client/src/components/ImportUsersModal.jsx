@@ -4,6 +4,8 @@ import axios from 'axios';
 
 const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
   const [file, setFile] = useState(null);
+  const [targetRole, setTargetRole] = useState('faculty'); // 'faculty', 'official', 'student', 'from_file'
+  const [rawRows, setRawRows] = useState([]);
   const [previewData, setPreviewData] = useState([]);
   const [failedRecords, setFailedRecords] = useState([]);
   const [totalRecords, setTotalRecords] = useState(0);
@@ -14,22 +16,59 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
 
   if (!isOpen) return null;
 
-  const inferRoleHelper = (emailLower) => {
-    const e = emailLower || '';
-    if (e.endsWith('@cse.suh.edu.in') || e.endsWith('@aiml.suh.edu.in') || e.endsWith('@sap.suh.edu.in') || e.endsWith('@ds.suh.edu.in') || e.endsWith('@cs.suh.edu.in')) return 'student';
-    if (e.endsWith('@suh.edu.in')) return 'faculty';
-    if (e === 'admin.avento@gmail.com') return 'admin';
-    return '';
+  const getRoleBadge = (role) => {
+    const r = (role || '').toLowerCase();
+    if (r === 'admin') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+          🏛️ University Official
+        </span>
+      );
+    }
+    if (r === 'faculty' || r === 'faculty_organizer') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+          👨‍🏫 Faculty
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+        🎓 Student
+      </span>
+    );
   };
 
   const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      { fullName: 'John Doe', email: 'john.doe@cse.suh.edu.in', department: 'CSE', rollNumber: '21001' },
-      { fullName: 'Jane Smith', email: 'jane.smith@suh.edu.in', department: 'CSE', employeeId: 'F100' }
-    ]);
+    let sampleData = [];
+    if (targetRole === 'official') {
+      sampleData = [
+        { fullName: 'Dr. Robert King', email: 'robert.king@example.com', department: 'Dean Academics', employeeId: 'OFF001' },
+        { fullName: 'Dr. Sarah Connor', email: 'sarah.connor@example.com', department: 'Registrar Office', employeeId: 'OFF002' }
+      ];
+    } else if (targetRole === 'faculty') {
+      sampleData = [
+        { fullName: 'Dr. Jane Smith', email: 'jane.smith@example.com', department: 'CSE', employeeId: 'FAC100' },
+        { fullName: 'Prof. Alan Turing', email: 'alan.turing@example.com', department: 'AIML', employeeId: 'FAC101' }
+      ];
+    } else if (targetRole === 'student') {
+      sampleData = [
+        { fullName: 'John Doe', email: 'john.doe@example.com', department: 'CSE', rollNumber: '21001' },
+        { fullName: 'Alice Johnson', email: 'alice.j@example.com', department: 'CSE', rollNumber: '21002' }
+      ];
+    } else {
+      sampleData = [
+        { fullName: 'Dr. Robert King', email: 'robert.king@example.com', role: 'admin', department: 'Administration', employeeId: 'OFF001', rollNumber: '' },
+        { fullName: 'Dr. Jane Smith', email: 'jane.smith@example.com', role: 'faculty', department: 'CSE', employeeId: 'FAC100', rollNumber: '' },
+        { fullName: 'John Doe', email: 'john.doe@example.com', role: 'student', department: 'CSE', employeeId: '', rollNumber: '21001' }
+      ];
+    }
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Users');
-    XLSX.writeFile(wb, 'Avento_User_Import_Template.xlsx');
+    const label = targetRole === 'official' ? 'Official' : (targetRole === 'faculty' ? 'Faculty' : (targetRole === 'student' ? 'Student' : 'Users'));
+    XLSX.writeFile(wb, `Avento_${label}_Import_Template.xlsx`);
   };
 
   const downloadFailedRecords = () => {
@@ -38,6 +77,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
       'Name': r.fullName || '-',
       'Email': r.email || '-',
       'Roll Number': r.rollNumber || '-',
+      'Employee ID': r.employeeId || '-',
       'Department': r.department || '-',
       'Role': r.role || '-',
       'Import Status': r.importStatus || 'Failed',
@@ -46,6 +86,13 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Failed Records');
     XLSX.writeFile(wb, 'Avento_Failed_Imports.xlsx');
+  };
+
+  const handleRoleChange = (newRole) => {
+    setTargetRole(newRole);
+    if (rawRows.length > 0) {
+      validateData(rawRows, newRole);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -71,7 +118,8 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
         const worksheet = workbook.Sheets[firstSheetName];
         const json = XLSX.utils.sheet_to_json(worksheet);
         
-        validateData(json);
+        setRawRows(json);
+        validateData(json, targetRole);
       } catch (err) {
         setStatus('error');
         setMessage('Failed to parse file. Please ensure it is a valid Excel or CSV file.');
@@ -80,7 +128,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
     reader.readAsArrayBuffer(file);
   };
 
-  const validateData = (data) => {
+  const validateData = (data, currentTargetRole = targetRole) => {
     setStatus('validating');
     const invalidData = [];
     const validData = [];
@@ -97,22 +145,25 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
       const rowNum = index + 2; // +1 for 0-index, +1 for header
       const email = String(row.email || '').trim().toLowerCase();
       const fullName = String(row.fullName || '').trim();
-      let department = row.department ? String(row.department).trim().toUpperCase() : '';
-      let rollNumber = row.rollNumber ? String(row.rollNumber).trim() : '';
-      const role = row.role ? String(row.role).trim() : inferRoleHelper(email);
-      
-      let derivedDept = '';
-      let derivedRoll = '';
-      if (email.includes('@')) {
-        const [username, domain] = email.split('@');
-        if (domain === 'cse.suh.edu.in') derivedDept = 'CSE';
-        else if (domain === 'aiml.suh.edu.in') derivedDept = 'AIML';
-        else if (domain === 'sap.suh.edu.in') derivedDept = 'SAP';
-        else if (domain === 'cs.suh.edu.in') derivedDept = 'CS';
-        else if (domain === 'ds.suh.edu.in') derivedDept = 'DS';
-        
-        if (derivedDept) {
-          derivedRoll = username;
+      let department = row.department ? String(row.department).trim() : '';
+      let rollNumber = row.rollNumber ? String(row.rollNumber).trim() : (row.roll_number ? String(row.roll_number).trim() : '');
+      let employeeId = row.employeeId ? String(row.employeeId).trim() : (row.employee_id ? String(row.employee_id).trim() : '');
+
+      let resolvedRole = 'student';
+      if (currentTargetRole === 'official') {
+        resolvedRole = 'admin';
+      } else if (currentTargetRole === 'faculty') {
+        resolvedRole = 'faculty';
+      } else if (currentTargetRole === 'student') {
+        resolvedRole = 'student';
+      } else {
+        const fileRole = row.role ? String(row.role).trim().toLowerCase() : '';
+        if (fileRole === 'official' || fileRole === 'university official' || fileRole === 'admin') {
+          resolvedRole = 'admin';
+        } else if (fileRole === 'faculty') {
+          resolvedRole = 'faculty';
+        } else {
+          resolvedRole = 'student';
         }
       }
       
@@ -120,21 +171,8 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
       if (!fullName) reason = 'Missing required field: fullName';
       else if (!email) reason = 'Missing required field: email';
       else if (!email.includes('@')) reason = 'Invalid email format';
-      else if (derivedDept) {
-        if (department && department !== derivedDept) {
-          reason = `Department mismatch: Excel specifies ${department}, but email domain implies ${derivedDept}`;
-        } else if (!department) {
-          department = derivedDept;
-        }
-        
-        if (rollNumber && rollNumber !== derivedRoll) {
-          reason = `Roll Number mismatch: Excel specifies ${rollNumber}, but email implies ${derivedRoll}`;
-        } else if (!rollNumber) {
-          rollNumber = derivedRoll;
-        }
-      }
       
-      const record = { rowNum, fullName, email, department, rollNumber, role };
+      const record = { rowNum, fullName, email, department, rollNumber, employeeId, role: resolvedRole };
       
       if (reason) {
         invalidData.push({ ...record, reason, importStatus: 'Failed' });
@@ -161,7 +199,11 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
     setMessage('');
 
     try {
-      const res = await axios.post('/api/users/import', { users: previewData });
+      const defaultRolePayload = targetRole === 'official' ? 'admin' : (targetRole === 'faculty' ? 'faculty' : (targetRole === 'student' ? 'student' : undefined));
+      const res = await axios.post('/api/users/import', { 
+        users: previewData,
+        defaultRole: defaultRolePayload
+      });
       
       setStatus('success');
       setMessage('Import Completed');
@@ -176,6 +218,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
             rowNum: matched.rowNum || '-',
             fullName: matched.fullName || '-',
             rollNumber: matched.rollNumber || '-',
+            employeeId: matched.employeeId || '-',
             email: err.email,
             department: matched.department || '-',
             role: matched.role || '-',
@@ -203,6 +246,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
 
   const resetState = () => {
     setFile(null);
+    setRawRows([]);
     setPreviewData([]);
     setFailedRecords([]);
     setStatus('idle');
@@ -225,7 +269,12 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
         
         {/* Header */}
         <div className="px-6 py-5 border-b border-pastel-lavender/20 flex justify-between items-center bg-pastel-lavender/5">
-          <h2 className="font-heading text-xl font-bold text-text-primary">Import Users</h2>
+          <div>
+            <h2 className="font-heading text-xl font-bold text-text-primary">Import Users</h2>
+            <p className="text-xs text-text-secondary font-quicksand mt-0.5">
+              Choose user specification to import university officials, faculty coordinators, or students from any email domain.
+            </p>
+          </div>
           <button 
             onClick={handleClose}
             className="text-gray-400 hover:text-red-500 transition-colors p-1"
@@ -239,14 +288,80 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-grow flex flex-col gap-6">
           
+          {/* Target Role / Specification Selector */}
+          {status !== 'success' && (
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center text-[10px] font-black">1</span>
+                  Select User Specification to Import:
+                </label>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  Choose before or after upload
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => handleRoleChange('faculty')}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                    targetRole === 'faculty'
+                      ? 'border-blue-500 bg-blue-50 text-blue-800 shadow-sm ring-2 ring-blue-500/20'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="text-base mb-0.5">👨‍🏫</span>
+                  <span className="text-xs font-bold">Faculty Member</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRoleChange('official')}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                    targetRole === 'official'
+                      ? 'border-purple-500 bg-purple-50 text-purple-800 shadow-sm ring-2 ring-purple-500/20'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="text-base mb-0.5">🏛️</span>
+                  <span className="text-xs font-bold">University Official</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRoleChange('student')}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                    targetRole === 'student'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-sm ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="text-base mb-0.5">🎓</span>
+                  <span className="text-xs font-bold">Student</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRoleChange('from_file')}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                    targetRole === 'from_file'
+                      ? 'border-amber-500 bg-amber-50 text-amber-800 shadow-sm ring-2 ring-amber-500/20'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="text-base mb-0.5">📄</span>
+                  <span className="text-xs font-bold">From File Column</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Instructions & Template */}
           {status !== 'success' && (
             <div className="bg-pastel-mint/10 border border-pastel-mint/30 rounded-2xl p-4 flex flex-col sm:flex-row gap-4 justify-between items-center">
               <div>
-                <h3 className="font-bold text-sm text-text-primary mb-1">Download Template</h3>
+                <h3 className="font-bold text-sm text-text-primary mb-1">
+                  Download {targetRole === 'official' ? 'University Official' : (targetRole === 'faculty' ? 'Faculty' : (targetRole === 'student' ? 'Student' : 'Users'))} Template
+                </h3>
                 <p className="text-xs text-text-secondary font-quicksand">
-                  Use the standard Excel template to format your user data correctly. 
-                  Requires <strong>fullName</strong> and <strong>email</strong> columns.
+                  Formatted for <strong>{targetRole === 'official' ? 'University Officials' : (targetRole === 'faculty' ? 'Faculty Members' : (targetRole === 'student' ? 'Students' : 'Multi-role import'))}</strong> with any email domain.
                 </p>
               </div>
               <button 
@@ -261,7 +376,10 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
           {/* Upload Section */}
           {status !== 'success' && (
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">Upload File</label>
+              <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-violet-600 text-white flex items-center justify-center text-[10px] font-black">2</span>
+                Upload Excel / CSV File
+              </label>
               <input 
                 type="file" 
                 accept=".xlsx, .xls, .csv" 
@@ -350,7 +468,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                       <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Excel Row Number</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Name</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Email</th>
-                      <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Roll Number</th>
+                      <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">ID</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Department</th>
                       <th className="px-4 py-3 font-bold text-slate-600">Role</th>
                       <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Import Status</th>
@@ -363,9 +481,9 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                         <td className="px-4 py-3 text-slate-600 font-mono text-center">{row.rowNum}</td>
                         <td className="px-4 py-3 text-slate-700 font-medium">{row.fullName}</td>
                         <td className="px-4 py-3 text-slate-600">{row.email}</td>
-                        <td className="px-4 py-3 text-slate-500">{row.rollNumber}</td>
+                        <td className="px-4 py-3 text-slate-500">{row.employeeId || row.rollNumber || '-'}</td>
                         <td className="px-4 py-3 text-slate-500">{row.department}</td>
-                        <td className="px-4 py-3 text-slate-500 uppercase text-[10px] tracking-wider">{row.role}</td>
+                        <td className="px-4 py-3 text-slate-500">{getRoleBadge(row.role)}</td>
                         <td className={`px-4 py-3 font-bold ${row.importStatus === 'Skipped' ? 'text-yellow-600' : 'text-red-500'}`}>{row.importStatus}</td>
                         <td className="px-4 py-3 text-red-500 font-medium">{row.reason}</td>
                       </tr>
@@ -380,32 +498,46 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
           {previewData.length > 0 && status !== 'success' && (
             <div className="flex flex-col gap-2">
               <div className="flex justify-between items-end">
-                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">Valid Rows Preview ({previewData.length})</label>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                    Valid Rows Preview ({previewData.length})
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Review imported users and their assigned specification before submitting.
+                  </p>
+                </div>
                 {status !== 'importing' && (
                   <button onClick={resetState} className="text-xs text-pastel-coral hover:underline font-bold">Clear All</button>
                 )}
               </div>
-              <div className="border border-pastel-lavender/20 rounded-2xl overflow-hidden max-h-48 overflow-y-auto">
+              <div className="border border-pastel-lavender/20 rounded-2xl overflow-hidden max-h-60 overflow-y-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr className="border-b border-pastel-lavender/20">
                       <th className="px-4 py-2 font-bold text-slate-600">Row #</th>
                       <th className="px-4 py-2 font-bold text-slate-600">Full Name</th>
                       <th className="px-4 py-2 font-bold text-slate-600">Email</th>
+                      <th className="px-4 py-2 font-bold text-slate-600">Specification / Role</th>
+                      <th className="px-4 py-2 font-bold text-slate-600">Department / ID</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {previewData.slice(0, 10).map((row, i) => (
+                    {previewData.slice(0, 15).map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50">
                         <td className="px-4 py-2 text-slate-500 font-mono">{row.rowNum}</td>
-                        <td className="px-4 py-2 text-slate-700">{row.fullName}</td>
+                        <td className="px-4 py-2 text-slate-800 font-medium">{row.fullName}</td>
                         <td className="px-4 py-2 text-slate-600">{row.email}</td>
+                        <td className="px-4 py-2">{getRoleBadge(row.role)}</td>
+                        <td className="px-4 py-2 text-slate-500">
+                          {row.department ? `${row.department}` : ''}
+                          {(row.employeeId || row.rollNumber) ? ` (${row.employeeId || row.rollNumber})` : ''}
+                        </td>
                       </tr>
                     ))}
-                    {previewData.length > 10 && (
+                    {previewData.length > 15 && (
                       <tr>
-                        <td colSpan="3" className="px-4 py-2 text-center text-slate-400 italic bg-slate-50/50">
-                          ...and {previewData.length - 10} more valid rows
+                        <td colSpan="5" className="px-4 py-2 text-center text-slate-400 italic bg-slate-50/50">
+                          ...and {previewData.length - 15} more valid rows
                         </td>
                       </tr>
                     )}
@@ -429,41 +561,40 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
               </button>
               <button 
                 onClick={handleClose}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold btn-primary text-white shadow-pastel-glow transition-colors"
+                className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15"
               >
-                Close
+                Done
               </button>
             </>
           ) : (
             <>
               <button 
                 onClick={handleClose}
-                disabled={status === 'importing'}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200/50 transition-colors"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleImport}
-                disabled={status === 'importing' || status === 'error' || previewData.length === 0}
-                className="btn-primary px-6 py-2.5 rounded-xl text-sm font-bold shadow-pastel-glow disabled:opacity-50 flex items-center gap-2"
+                disabled={previewData.length === 0 || status === 'importing'}
+                className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {status === 'importing' ? (
                   <>
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Importing...
+                    <span>Importing...</span>
                   </>
                 ) : (
-                  `Import ${previewData.length} Users`
+                  <span>Import {previewData.length > 0 ? `${previewData.length} Users` : 'Users'}</span>
                 )}
               </button>
             </>
           )}
         </div>
-        
+
       </div>
     </div>
   );

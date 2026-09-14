@@ -87,7 +87,6 @@ const StudentOrgEvents = () => {
   const [orgMembers, setOrgMembers] = useState([]);
   const [selectedOrgStudent, setSelectedOrgStudent] = useState('');
   const [selectedOrgCategory, setSelectedOrgCategory] = useState('Event Head');
-  const [selectedOrganizerRole, setSelectedOrganizerRole] = useState('normal');
   const [confirmedTeamMembers, setConfirmedTeamMembers] = useState([]);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
@@ -102,12 +101,13 @@ const StudentOrgEvents = () => {
   
   const [activeTab, setActiveTab] = useState('all');
   const [withdrawEvent, setWithdrawEvent] = useState(null);
+  const [resubmittingId, setResubmittingId] = useState(null);
 
   const fetchEvents = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       setError(null);
-      const res = await axios.get('/api/events/organizer/my-events');
+      const res = await axios.get(`/api/events/organizer/my-events?_t=${Date.now()}`);
       setEvents(res.data);
     } catch (err) {
       console.error(err);
@@ -118,11 +118,43 @@ const StudentOrgEvents = () => {
   };
 
   const fetchFaculty = async () => {
+    // Primary: query Supabase directly from the client (most reliable)
+    try {
+      const { data: byRole, error: roleErr } = await supabase
+        .from('profiles')
+        .select('id, name, email, role, department, employee_id, status')
+        .in('role', ['faculty', 'faculty_organizer', 'admin'])
+        .neq('status', 'inactive');
+
+      if (!roleErr && byRole && byRole.length > 0) {
+        const result = byRole.map(f => ({
+          id: f.id,
+          fullName: f.name,
+          name: f.name,
+          email: f.email,
+          role: f.role,
+          employeeId: f.employee_id || '',
+          department: f.department || '',
+          displayLabel: f.employee_id
+            ? `${f.name} (${f.employee_id}${f.department ? ' - ' + f.department : ''})`
+            : (f.department ? `${f.name} (${f.department})` : f.name)
+        }));
+        setFacultyList(result);
+        return;
+      }
+      if (roleErr) console.warn('Supabase direct faculty query error:', roleErr.message);
+    } catch (directErr) {
+      console.warn('Supabase direct faculty query exception:', directErr.message);
+    }
+
+    // Fallback: try the backend API
     try {
       const res = await axios.get('/api/users/faculty-coordinators');
-      setFacultyList(res.data);
-    } catch (err) {
-      console.error('Error fetching faculty coordinators:', err);
+      const data = Array.isArray(res.data) ? res.data : [];
+      setFacultyList(data);
+    } catch (apiErr) {
+      console.error('Backend faculty API also failed:', apiErr?.response?.status, apiErr?.response?.data?.message || apiErr.message);
+      setFacultyList([]);
     }
   };
 
@@ -161,6 +193,7 @@ const StudentOrgEvents = () => {
   };
 
   const openCreateModal = () => {
+    fetchFaculty();
     setModalMode('create');
     setSelectedEventId(null);
     setPosterOption('upload');
@@ -192,6 +225,7 @@ const StudentOrgEvents = () => {
   };
 
   const openEditModal = (event) => {
+    fetchFaculty();
     setModalMode('edit');
     setSelectedEventId(event._id || event.id);
     setTitle(event.title || '');
@@ -220,16 +254,9 @@ const StudentOrgEvents = () => {
     setPaymentInstructions(event.payment_instructions || '');
     setPaymentQrFile(null);
     
-    const facId = event.faculty_id || event.assignedFacultyId?._id || event.assignedFacultyId || '';
+    const facId = event.faculty_id || event.assignedFacultyId?._id || event.assignedFacultyId?.id || (typeof event.assignedFacultyId === 'string' ? event.assignedFacultyId : '') || '';
     setAssignedFaculty(facId);
-    
-    // Set faculty search term based on assigned faculty
-    if (facId && facultyList.length > 0) {
-      const fac = facultyList.find(f => f.id === facId);
-      setFacultySearchTerm(fac ? (fac.displayLabel || fac.fullName || fac.name) : '');
-    } else {
-      setFacultySearchTerm('');
-    }
+    setFacultySearchTerm('');
     setIsFacultyDropdownOpen(false);
     
     setFeedbackQuestions(event.feedback_questions || event.feedbackQuestions || []);
@@ -317,7 +344,7 @@ const StudentOrgEvents = () => {
         category,
         venue,
         date: date ? (date.includes('Z') || date.includes('+') ? date : new Date(date).toISOString()) : undefined,
-        registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : undefined,
+        registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : null,
         capacity: registrationType === 'team' ? undefined : Number(capacity),
         imageUrl: finalImageUrl || undefined,
         assignedFacultyId: assignedFaculty,
@@ -338,7 +365,11 @@ const StudentOrgEvents = () => {
         setFeedback({ type: 'success', message: 'Proposal drafted successfully!' });
       } else {
         await axios.put(`/api/events/${selectedEventId}`, eventData);
-        setFeedback({ type: 'success', message: 'Proposal updated successfully!' });
+        const updatedEvt = events.find(e => (e._id || e.id) === selectedEventId);
+        const msg = updatedEvt?.status === 'needs_revision'
+          ? 'Proposal details updated! Click "Resubmit for Review" when you are ready to send to faculty.'
+          : 'Proposal updated successfully!';
+        setFeedback({ type: 'success', message: msg });
       }
 
       setTimeout(() => {
@@ -371,7 +402,33 @@ const StudentOrgEvents = () => {
       fetchEvents();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Failed to publish event.');
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to publish event.');
+    }
+  };
+
+  const handleResubmitProposal = async (eventId) => {
+    if (!window.confirm('Are you sure you want to resubmit this revised proposal to the Faculty Coordinator for review?')) return;
+    try {
+      setResubmittingId(eventId);
+      const res = await axios.put(`/api/events/${eventId}/proposal-resubmit`);
+      setEvents(prev => prev.map(ev => {
+        if ((ev._id || ev.id) === eventId) {
+          return { 
+            ...ev, 
+            status: 'pending_approval', 
+            approval_remarks: null,
+            revision_number: res.data?.revision_number || (ev.revision_number || 1) + 1 
+          };
+        }
+        return ev;
+      }));
+      alert('Proposal resubmitted for review successfully! The faculty coordinator has been notified.');
+      fetchEvents(true);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to resubmit proposal.');
+    } finally {
+      setResubmittingId(null);
     }
   };
 
@@ -458,7 +515,6 @@ const StudentOrgEvents = () => {
     setJoinTeamEnabled(!!event.join_team_enabled);
     setSelectedOrgStudent('');
     setSelectedOrgCategory('Event Head');
-    setSelectedOrganizerRole('normal');
     setStudentSearchQuery('');
     setIsStudentDropdownOpen(false);
     setOrgFeedback(null);
@@ -554,7 +610,7 @@ const StudentOrgEvents = () => {
       await axios.post(`/api/events/${orgModalEvent._id || orgModalEvent.id}/organizers`, {
         studentId: studentObj.id,
         category: selectedOrgCategory,
-        organizerRole: selectedOrganizerRole
+        organizerRole: 'organizer'
       });
       
       setOrgFeedback({ type: 'success', message: 'Organizer recruited successfully!' });
@@ -607,271 +663,473 @@ const StudentOrgEvents = () => {
     return new Date(dateString).toLocaleDateString('en-US', options);
   };
 
-  const myProposals = events.filter(e => String(e.proposed_by) === String(user.id));
-  const myOrganizingEvents = events.filter(e => String(e.proposed_by) !== String(user.id));
+  const isMyProposal = (e) => {
+    const myId = String(user?.id || '');
+    if (!myId) return false;
+    return (
+      String(e.proposed_by || '') === myId ||
+      String(e.created_by || '') === myId ||
+      String(e.student_organizer_id || '') === myId ||
+      String(e.organizer_id || '') === myId
+    );
+  };
+
+  const myProposals = events.filter(isMyProposal);
+  const myOrganizingEvents = events.filter(e => !isMyProposal(e));
+
+  const countNeedsRevision = myProposals.filter(e => e.status === 'needs_revision').length;
+  const countInReview = myProposals.filter(e => ['pending_approval', 'under_review'].includes(e.status)).length;
+  const countApproved = myProposals.filter(e => e.status === 'approved').length;
+  const countPublished = myProposals.filter(e => ['published', 'active'].includes(e.status)).length;
+  const countRejected = myProposals.filter(e => e.status === 'rejected').length;
+  const countWithdrawn = myProposals.filter(e => e.status === 'withdrawn').length;
+  const countAll = myProposals.filter(e => e.status !== 'withdrawn').length;
+
+  const filteredProposals = myProposals.filter(e => {
+    if (activeTab === 'all') return e.status !== 'withdrawn';
+    if (activeTab === 'needs_revision') return e.status === 'needs_revision';
+    if (activeTab === 'pending_approval') return ['pending_approval', 'under_review'].includes(e.status);
+    if (activeTab === 'approved') return e.status === 'approved';
+    if (activeTab === 'published') return ['published', 'active'].includes(e.status);
+    if (activeTab === 'rejected') return e.status === 'rejected';
+    if (activeTab === 'withdrawn') return e.status === 'withdrawn';
+    return true;
+  });
+
+  const filterTabs = [
+    { id: 'all', label: 'All Proposals', count: countAll },
+    ...(countNeedsRevision > 0 ? [{ id: 'needs_revision', label: 'Needs Revision', count: countNeedsRevision, isAlert: true }] : []),
+    { id: 'pending_approval', label: 'In Review', count: countInReview },
+    { id: 'approved', label: 'Approved', count: countApproved },
+    { id: 'published', label: 'Published', count: countPublished },
+    ...(countRejected > 0 ? [{ id: 'rejected', label: 'Rejected', count: countRejected }] : []),
+    ...(countWithdrawn > 0 ? [{ id: 'withdrawn', label: 'Withdrawn', count: countWithdrawn }] : [])
+  ];
 
   return (
-    <div className="flex-grow py-20 text-slate-700 relative overflow-hidden">
+    <div className="flex-grow py-12 text-slate-700 relative overflow-hidden">
       <GeometricBlobDoodle className="absolute top-10 right-10 w-96 h-96 text-pastel-lavender -z-10 opacity-30 animate-spin-slow" />
       <GeometricBlobDoodle className="absolute bottom-20 left-10 w-80 h-80 text-pastel-mint -z-10 opacity-30 animate-float" />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10 animate-fade-in-up">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-fade-in-up">
           <div className="relative">
             <StickyNoteDoodle className="absolute -top-6 -left-10 w-10 h-10 text-pastel-yellow opacity-80 animate-wobble hidden md:block" />
-            <h1 className="font-display text-3xl font-black text-text-primary">My <span className="heading-gradient text-fuchsia-400">Proposals</span></h1>
-            <p className="font-body text-slate-600 text-sm mt-1.5">View your assigned events and proposals</p>
+            <h1 className="font-display text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+              My <span className="heading-gradient text-fuchsia-500">Proposals</span>
+            </h1>
+            <p className="font-body text-slate-500 text-sm mt-1">
+              Track event proposals, collaborate with faculty coordinators, and launch approved events
+            </p>
           </div>
+          <button
+            onClick={openCreateModal}
+            className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md shadow-fuchsia-500/20 flex items-center justify-center gap-2 self-start sm:self-auto text-white cursor-pointer hover:opacity-95 transition-transform active:scale-95"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+            </svg>
+            <span>Propose New Event</span>
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-2 mb-8 border-b border-slate-200/10 pb-5">
-          {[
-            { id: 'all', label: 'All Proposals', count: myProposals.filter(e => e.status !== 'withdrawn').length },
-            { id: 'pending_approval', label: 'Pending Review', count: myProposals.filter(e => ['pending_approval', 'under_review', 'needs_revision'].includes(e.status)).length },
-            { id: 'approved', label: 'Approved', count: myProposals.filter(e => e.status === 'approved').length },
-            { id: 'published', label: 'Published Events', count: myProposals.filter(e => e.status === 'published').length },
-            { id: 'rejected', label: 'Rejected', count: myProposals.filter(e => e.status === 'rejected').length },
-            { id: 'withdrawn', label: 'My Withdrawn Proposals', count: myProposals.filter(e => e.status === 'withdrawn').length }
-          ].map(tab => (
+        {/* Action Required Banner if proposals need revision */}
+        {countNeedsRevision > 0 && (
+          <div className="mb-8 p-5 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-amber-950/40 border-2 border-amber-300 dark:border-amber-700/70 rounded-3xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 font-display font-bold text-amber-950 dark:text-amber-100 text-base">
+                  <span>Proposal Revision Requested</span>
+                  <span className="px-2.5 py-0.5 text-xs font-black rounded-full bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                    {countNeedsRevision} {countNeedsRevision === 1 ? 'Action Needed' : 'Actions Needed'}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                  The faculty coordinator requested revisions on your event proposal. Review coordinator instructions, edit details, and resubmit for review.
+                </p>
+              </div>
+            </div>
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
-                activeTab === tab.id
-                  ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/25'
-                  : 'bg-white/10 text-slate-400 hover:bg-white/20 hover:text-white'
-              }`}
+              onClick={() => setActiveTab('needs_revision')}
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-all shrink-0 cursor-pointer self-start sm:self-auto"
             >
-              <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
-                activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-white/10 text-slate-500'
-              }`}>{tab.count}</span>
+              View Revision Requests
             </button>
-          ))}
+          </div>
+        )}
+
+        {/* Streamlined Filter Navigation */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-8 scrollbar-none">
+          <div className="p-1.5 bg-slate-100/90 dark:bg-slate-800/60 backdrop-blur-md rounded-2xl border border-slate-200/70 dark:border-slate-700/60 flex items-center gap-1.5 shrink-0 shadow-xs">
+            {filterTabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                  activeTab === tab.id
+                    ? tab.isAlert 
+                      ? 'bg-amber-500 text-white shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-fuchsia-700 dark:text-fuchsia-400 shadow-sm border border-slate-200/50 dark:border-slate-700'
+                    : tab.isAlert
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 border border-amber-300/60'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                {tab.isAlert && <span className={`w-2 h-2 rounded-full ${activeTab === tab.id ? 'bg-white animate-pulse' : 'bg-amber-500 animate-pulse'}`}></span>}
+                <span>{tab.label}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  activeTab === tab.id
+                    ? tab.isAlert ? 'bg-white/20 text-white' : 'bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-400'
+                    : tab.isAlert ? 'bg-amber-200 text-amber-900' : 'bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Loading / Empty States */}
         {loading ? (
-          <div className="glass-panel rounded-2xl overflow-hidden">
-            <div className="p-6 space-y-4">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-16 bg-white/20 rounded-xl animate-pulse" />
-              ))}
-            </div>
+          <div className="space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-36 bg-white/70 rounded-3xl animate-pulse border border-slate-200/60" />
+            ))}
           </div>
         ) : error ? (
-          <div className="text-center py-20 animate-fade-in-up">
-            <p className="text-red-400 font-bold mb-3">{error}</p>
-            <button onClick={fetchEvents} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white">Retry</button>
+          <div className="text-center py-20 bg-white/60 rounded-3xl border border-slate-200/70 p-8 animate-fade-in-up">
+            <p className="text-rose-500 font-bold mb-3">{error}</p>
+            <button onClick={fetchEvents} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white cursor-pointer">
+              Retry
+            </button>
           </div>
         ) : (
           <>
             {myProposals.length === 0 ? (
-              <div className="text-center py-24 glass-panel rounded-2xl animate-fade-in-scale">
-                <div className="h-20 w-20 bg-white/50 rounded-2xl flex items-center justify-center mx-auto text-slate-600 mb-5">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              <div className="text-center py-20 bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/70 shadow-xs p-8 animate-fade-in-scale">
+                <div className="h-16 w-16 bg-fuchsia-50 text-fuchsia-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-display font-bold text-slate-800 mb-2">No Proposals Found</h3>
-                <p className="text-sm font-body text-slate-600">You do not have any active event proposals assigned.</p>
+                <h3 className="text-xl font-display font-bold text-slate-800 mb-1.5">No Proposals Yet</h3>
+                <p className="text-sm font-body text-slate-500 max-w-md mx-auto mb-6">
+                  You haven't submitted any event proposals. Create one and assign it to a faculty coordinator for approval.
+                </p>
+                <button
+                  onClick={openCreateModal}
+                  className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md shadow-fuchsia-500/20 inline-flex items-center gap-2 text-white cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Create Your First Proposal</span>
+                </button>
               </div>
-            ) : myProposals.filter(e => activeTab === 'all' || e.status === activeTab).length === 0 ? (
-              <div className="text-center py-24 glass-panel rounded-2xl animate-fade-in-scale">
-                <div className="h-16 w-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto text-slate-400 mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2" />
+            ) : filteredProposals.length === 0 ? (
+              <div className="text-center py-16 bg-white/70 backdrop-blur-sm rounded-3xl border border-slate-200/60 p-8 animate-fade-in-scale">
+                <div className="h-12 w-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-display font-bold text-slate-800 mb-2">No Proposals</h3>
-                <p className="text-sm font-body text-slate-600">There are no proposals with the status "{activeTab.replace(/_/g, ' ')}".</p>
+                <h3 className="text-base font-display font-bold text-slate-800 mb-1">No matching proposals</h3>
+                <p className="text-xs font-body text-slate-500">
+                  There are no proposals under the "{activeTab.replace(/_/g, ' ')}" filter.
+                </p>
               </div>
             ) : (
               /* Event Cards Container */
-              <div className="animate-fade-in-up delay-100 flex flex-col gap-5 mb-10">
-                {myProposals
-                  .filter(e => {
-                    if (activeTab === 'all') return e.status !== 'withdrawn';
-                    return e.status === activeTab;
-                  })
-                  .map((evt, i) => (
+              <div className="flex flex-col gap-4 mb-10">
+                {filteredProposals.map((evt, i) => {
+                  const assignedFac = facultyList.find(f => f.id === evt.faculty_id);
+                  const facName = assignedFac 
+                    ? (assignedFac.fullName || assignedFac.name) 
+                    : (evt.faculty?.name || evt.faculty?.full_name || evt.faculty_name || null);
+                  const teamCount = evt.teamMembers?.length || evt.organizersCount || 1;
+
+                  return (
                     <div 
                       key={evt._id || evt.id} 
-                      className="glass-panel p-6 rounded-[2rem] shadow-sm border border-slate-200/60 hover:shadow-md transition-all duration-300 animate-fade-in-up flex flex-col"
-                      style={{ animationDelay: `${i * 40 + 150}ms` }}
+                      className="bg-white/95 backdrop-blur-md p-5 sm:p-6 rounded-3xl shadow-xs hover:shadow-md border border-slate-200/80 transition-all duration-300 flex flex-col"
                     >
-                      {/* Top Section: Image, Details, and Status */}
-                      <div className="flex flex-col sm:flex-row gap-6 items-start">
-                        {/* Event Image */}
-                        <img 
-                          src={evt.image_url || evt.imageUrl} 
-                          alt="" 
-                          className="h-24 w-36 sm:h-28 sm:w-44 rounded-2xl object-cover bg-white/50 shrink-0 shadow-sm" 
-                        />
+                      {/* Card Content Row */}
+                      <div className="flex flex-col md:flex-row gap-5 items-start">
+                        {/* Event Thumbnail */}
+                        <div className="relative shrink-0 w-full md:w-48 h-32 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/60 shadow-xs">
+                          <img 
+                            src={evt.image_url || evt.imageUrl} 
+                            alt={evt.title} 
+                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" 
+                          />
+                          {evt.category && (
+                            <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-black/60 text-white backdrop-blur-xs">
+                              {evt.category}
+                            </span>
+                          )}
+                        </div>
                         
-                        {/* Event Details */}
-                        <div className="flex-1 min-w-0 w-full">
-                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                            <div>
-                              <h3 className="font-display font-bold text-xl text-slate-800 line-clamp-1">{evt.title}</h3>
+                        {/* Event Core Info */}
+                        <div className="flex-1 min-w-0 w-full flex flex-col justify-between self-stretch">
+                          <div>
+                            {/* Title & Status Badge Row */}
+                            <div className="flex flex-wrap items-start justify-between gap-3 mb-2.5">
+                              <h3 className="font-display font-bold text-xl text-slate-900 leading-snug">
+                                {evt.title}
+                              </h3>
                               
-                              {/* Venue and Date */}
-                              <div className="mt-3 space-y-2">
-                                <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                  </svg>
-                                  {evt.venue}
-                                </div>
-                                <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                                  </svg>
-                                  {formatDate(evt.date)}
-                                </div>
+                              {/* Status Badge */}
+                              <div>
+                                {['pending_approval', 'under_review'].includes(evt.status) && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200/70">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                    Under Review
+                                  </span>
+                                )}
+                                {evt.status === 'needs_revision' && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200/70">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                                    Needs Revision
+                                  </span>
+                                )}
+                                {evt.status === 'approved' && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    Approved
+                                  </span>
+                                )}
+                                {['published', 'active'].includes(evt.status) && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-200/70">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                                    Published
+                                  </span>
+                                )}
+                                {evt.status === 'rejected' && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200/70">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                    Rejected
+                                  </span>
+                                )}
+                                {evt.status === 'withdrawn' && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                    Withdrawn
+                                  </span>
+                                )}
+                                {evt.status === 'draft' && (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200/70">
+                                    Draft
+                                  </span>
+                                )}
                               </div>
                             </div>
                             
-                            {/* Status Badge */}
-                            <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
-                              <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border ${
-                                evt.status === 'active' || evt.status === 'published'
-                                  ? 'bg-emerald-500/8 text-emerald-500 border-emerald-500/15' 
-                                  : ['pending_approval', 'under_review', 'needs_revision'].includes(evt.status)
-                                    ? 'bg-amber-500/8 text-amber-500 border-amber-500/15'
-                                    : evt.status === 'approved'
-                                      ? 'bg-sky-500/8 text-sky-500 border-sky-500/15'
-                                      : evt.status === 'rejected'
-                                        ? 'bg-red-500/8 text-red-500 border-red-500/15'
-                                        : evt.status === 'completed'
-                                          ? 'bg-slate-100 text-slate-500 border-slate-200'
-                                          : evt.status === 'withdrawn'
-                                            ? 'bg-slate-100 text-slate-500 border-slate-200 italic'
-                                            : 'bg-blue-500/8 text-blue-500 border-blue-500/15' // draft
-                              }`}>
-                                {(evt.status || 'draft').replace(/_/g, ' ')}
-                              </span>
+                            {/* Metadata Pills */}
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              {/* Venue */}
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 text-slate-700 text-xs font-medium">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                </svg>
+                                <span>{evt.venue || 'Venue TBD'}</span>
+                              </div>
+
+                              {/* Date & Time */}
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 text-slate-700 text-xs font-medium">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                                </svg>
+                                <span>{formatDate(evt.date)}</span>
+                              </div>
+
+                              {/* Faculty Coordinator */}
+                              {facName && (
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50/80 text-indigo-700 text-xs font-medium border border-indigo-100/80">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+                                  </svg>
+                                  <span>Coordinator: {facName}</span>
+                                </div>
+                              )}
+
+                              {/* Team count */}
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 text-slate-600 text-xs font-medium">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                                  <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                                </svg>
+                                <span>{teamCount} {teamCount === 1 ? 'Organizer' : 'Organizers'}</span>
+                              </div>
                             </div>
+
+                            {/* Needs Revision Notice */}
+                            {evt.status === 'needs_revision' && (
+                              <div className="mt-3 text-xs bg-amber-500/10 border-2 border-amber-500/30 text-amber-950 dark:text-amber-200 p-4 rounded-2xl flex items-start gap-3 shadow-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                                <div className="flex-1 space-y-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 font-bold text-amber-900 dark:text-amber-100 text-xs">
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                      Faculty Coordinator Revision Instructions:
+                                    </span>
+                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
+                                      Revision {evt.revision_number || 1}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-amber-900/90 dark:text-amber-200/90 font-medium whitespace-pre-line leading-relaxed">
+                                    {evt.approval_remarks || 'The faculty coordinator requested revisions for this proposal. Please review your details/documents with "Edit" and click "Resubmit for Review" below.'}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Rejection Notice */}
+                            {evt.status === 'rejected' && evt.approval_remarks && (
+                              <div className="mt-3 text-xs bg-rose-50 text-rose-800 p-3 rounded-2xl border border-rose-200/70 flex items-start gap-2.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                                <div>
+                                  <span className="font-bold">Faculty Remarks:</span> {evt.approval_remarks}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          
-                          {/* Remarks for rejected */}
-                          {evt.approval_remarks && (evt.status === 'rejected') && (
-                            <div className="mt-4 text-xs text-red-500 bg-red-50/50 p-3 rounded-xl border border-red-100">
-                              <span className="font-bold">Remarks:</span> {evt.approval_remarks}
-                            </div>
-                          )}
                         </div>
                       </div>
 
-                      {/* Divider */}
-                      <div className="h-px bg-slate-200/60 my-5 w-full" />
+                      {/* Card Action Footer */}
+                      <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                        {/* Contextual Status Hint on left */}
+                        <div className="text-xs text-slate-400 font-medium">
+                          {['pending_approval', 'under_review'].includes(evt.status) && 'Awaiting faculty coordinator review & decision'}
+                          {evt.status === 'needs_revision' && 'Action needed: Update details or upload revised documents'}
+                          {evt.status === 'approved' && 'Approved! Ready to publish for student registrations'}
+                          {['published', 'active'].includes(evt.status) && 'Registration active & workspace ready'}
+                          {evt.status === 'draft' && 'Draft proposal saved locally'}
+                          {evt.status === 'rejected' && 'Proposal rejected by faculty coordinator'}
+                          {evt.status === 'withdrawn' && 'This proposal was withdrawn'}
+                        </div>
 
-                      {/* Bottom Section: Actions */}
-                      <div className="flex flex-wrap items-center justify-end gap-3">
-                        {evt.status !== 'draft' && (() => {
-                          const userId = user?.id;
-                          const isCoreOrProposer =
-                            String(evt.proposed_by || '') === String(userId) ||
-                            String(evt.student_organizer_id || '') === String(userId) ||
-                            String(evt.faculty_id || '') === String(userId) ||
-                            evt.userOrganizerType === 'core';
-                          return isCoreOrProposer ? (
-                            <Link
-                              to={`/workspace/${evt._id || evt.id}`}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-purple-500/10 text-purple-600 border border-purple-500/20 hover:bg-purple-500/20 transition-all duration-300"
-                            >
-                              Workspace
-                            </Link>
-                          ) : null;
-                        })()}
-
-                        {evt.status === 'draft' && (
-                          <>
+                        {/* Action Buttons on right */}
+                        <div className="flex items-center gap-2">
+                          {/* Secondary: Edit if draft or needs_revision (only for proposal creator) */}
+                          {['draft', 'needs_revision', 'rejected'].includes(evt.status) && isMyProposal(evt) && (
                             <button
                               onClick={() => openEditModal(evt)}
-                              className="px-5 py-2 text-xs font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
+                              className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-all cursor-pointer"
                             >
                               Edit
                             </button>
-                            <button
-                              onClick={() => handleUpdateStatus(evt._id || evt.id, 'pending_approval')}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-fuchsia-500/10 text-fuchsia-600 border border-fuchsia-500/20 hover:bg-fuchsia-500/20 transition-all duration-300"
-                            >
-                              Submit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(evt._id || evt.id, evt.title)}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
-                            >
-                              Del
-                            </button>
+                          )}
+
+                          {/* Secondary: Withdraw (only for proposal creator) */}
+                          {['pending_approval', 'under_review', 'needs_revision', 'draft'].includes(evt.status) && isMyProposal(evt) && (
                             <button
                               onClick={() => setWithdrawEvent(evt)}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
+                              className="px-3 py-2 text-xs font-semibold text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
                             >
                               Withdraw
                             </button>
-                          </>
-                        )}
+                          )}
 
-                        <Link
-                          to={`/workspace/${evt._id || evt.id}`}
-                          className="px-5 py-2 text-xs font-bold rounded-xl bg-sky-500/10 text-sky-600 border border-sky-500/20 hover:bg-sky-500/20 transition-all duration-300"
-                        >
-                          Organizer Workspace
-                        </Link>
-                        
-                        {['approved', 'published', 'active', 'completed'].includes(evt.status) && new Date(evt.date) >= new Date() && (
-                          <button
-                            onClick={() => {
-                              setScanFeedback(null);
-                              setScannerModalEvent(evt);
-                            }}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-teal-500/10 text-teal-600 border border-teal-500/20 hover:bg-teal-500/20 transition-all duration-300"
-                          >
-                            Scan QR
-                          </button>
-                        )}
+                          {/* Secondary: Organizers management if published/approved */}
+                          {['approved', 'published', 'active'].includes(evt.status) && (
+                            <button
+                              onClick={() => openOrgModal(evt)}
+                              className="px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-all cursor-pointer"
+                            >
+                              Organizers ({evt.organizersCount || 0})
+                            </button>
+                          )}
 
-                        {['approved', 'published', 'active'].includes(evt.status) && (
-                          <button
-                            onClick={() => openOrgModal(evt)}
-                            className="px-5 py-2 text-xs font-bold rounded-xl border border-slate-300/60 text-slate-500 hover:bg-slate-50/50 hover:text-slate-700 transition-all duration-300"
-                          >
-                            Organizers ({evt.organizersCount || 0})
-                          </button>
-                        )}
+                          {/* Secondary: Scan QR if published */}
+                          {['approved', 'published', 'active', 'completed'].includes(evt.status) && new Date(evt.date) >= new Date() && (
+                            <button
+                              onClick={() => {
+                                setScanFeedback(null);
+                                setScannerModalEvent(evt);
+                              }}
+                              className="px-3 py-2 text-xs font-bold rounded-xl bg-teal-50 text-teal-700 border border-teal-200/70 hover:bg-teal-100 transition-all cursor-pointer"
+                            >
+                              Scan QR
+                            </button>
+                          )}
 
-                        {evt.status === 'rejected' && (
-                          <button
-                            onClick={() => openEditModal(evt)}
-                            className="px-5 py-2 text-xs font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all duration-300"
-                          >
-                            Edit
-                          </button>
-                        )}
-                        {evt.status === 'approved' && (
-                          <button
-                            onClick={() => handlePublishEvent(evt._id || evt.id)}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all duration-300"
-                          >
-                            Publish
-                          </button>
-                        )}
-                        {['pending_approval', 'under_review', 'needs_revision'].includes(evt.status) && (
-                          <button
-                            onClick={() => setWithdrawEvent(evt)}
-                            className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300"
-                          >
-                            Withdraw
-                          </button>
-                        )}
+                          {/* Primary CTA: Submit for Draft (only for proposal creator) */}
+                          {evt.status === 'draft' && isMyProposal(evt) && (
+                            <button
+                              onClick={() => handleUpdateStatus(evt._id || evt.id, 'pending_approval')}
+                              className="btn-primary px-4 py-2 text-xs font-bold rounded-xl text-white shadow-xs cursor-pointer"
+                            >
+                              Submit for Review
+                            </button>
+                          )}
+
+                          {/* Primary CTA: Resubmit for Review if needs_revision (only for proposal creator) */}
+                          {evt.status === 'needs_revision' && isMyProposal(evt) && (
+                            <button
+                              onClick={() => handleResubmitProposal(evt._id || evt.id)}
+                              disabled={resubmittingId === (evt._id || evt.id)}
+                              className="px-4 py-2 text-xs font-bold rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:opacity-50 text-white shadow-sm shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              <span>{resubmittingId === (evt._id || evt.id) ? 'Resubmitting...' : 'Resubmit for Review'}</span>
+                            </button>
+                          )}
+
+                          {/* Primary CTA: Publish for Approved */}
+                          {evt.status === 'approved' && (
+                            <button
+                              onClick={() => handlePublishEvent(evt._id || evt.id)}
+                              className="px-4 py-2 text-xs font-bold rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm shadow-emerald-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                              <span>Publish Event</span>
+                            </button>
+                          )}
+
+                          {/* Primary CTA: Review & Discussion Workspace for pre-publish proposals */}
+                          {evt.status !== 'draft' && !['published', 'active', 'completed'].includes(evt.status) && (
+                            <Link
+                              to={`/proposals/${evt._id || evt.id}`}
+                              className="px-4 py-2 text-xs font-bold rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white shadow-sm shadow-violet-500/20 transition-all flex items-center gap-1.5"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                              </svg>
+                              <span>Review & Discussion</span>
+                            </Link>
+                          )}
+
+                          {/* Primary CTA: Workspace if published */}
+                          {['published', 'active', 'completed'].includes(evt.status) && (
+                            <Link
+                              to={`/workspace/${evt._id || evt.id}`}
+                              className="px-4 py-2 text-xs font-bold rounded-xl bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-700 hover:to-indigo-700 text-white shadow-sm shadow-fuchsia-500/20 transition-all flex items-center gap-1.5"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                              </svg>
+                              <span>Workspace</span>
+                            </Link>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
               </div>
             )}
 
@@ -964,10 +1222,18 @@ const StudentOrgEvents = () => {
           subtitle={modalMode === 'create' ? 'Create and submit your proposal for faculty review.' : 'Update your proposal details.'}
         >
           {feedback && (
-            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${
-              feedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-red-500/8 border-red-500/15 text-red-400'
+            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex items-center gap-2.5 animate-fade-in-up ${
+              feedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-600' : 'bg-red-500/8 border-red-500/15 text-red-600'
             }`}>
-              <span>{feedback.type === 'success' ? '✓' : '⚠'}</span>
+              {feedback.type === 'success' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              )}
               <span>{feedback.message}</span>
             </div>
           )}
@@ -1199,63 +1465,117 @@ const StudentOrgEvents = () => {
               <label className="mt-4 flex items-center gap-3 rounded-xl border border-violet-200 bg-violet-50/60 p-4 text-xs font-bold text-slate-700"><input type="checkbox" checked={scoringEnabled} onChange={e => setScoringEnabled(e.target.checked)} /> Enable scoring module for this event</label>
             </div>
 
-            <div className="relative">
-              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Faculty Coordinator Reviewer *</label>
-              <input
-                type="text"
-                placeholder="-- Search Faculty Coordinator --"
-                value={facultySearchTerm}
-                onChange={(e) => {
-                  setFacultySearchTerm(e.target.value);
-                  setAssignedFaculty('');
-                  setIsFacultyDropdownOpen(true);
-                }}
-                onFocus={() => setIsFacultyDropdownOpen(true)}
-                onBlur={() => setTimeout(() => setIsFacultyDropdownOpen(false), 200)}
-                className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
-              />
-              
-              {isFacultyDropdownOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                  {facultyList
-                    .filter(fac => {
-                      const search = facultySearchTerm.toLowerCase();
-                      const name = (fac.displayLabel || fac.fullName || fac.name || '').toLowerCase();
-                      const email = (fac.email || '').toLowerCase();
-                      const dept = (fac.department || '').toLowerCase();
-                      return name.includes(search) || email.includes(search) || dept.includes(search);
-                    })
-                    .map(fac => (
-                      <div
-                        key={fac.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault(); // Prevents input onBlur from firing before click registers
-                          setAssignedFaculty(fac.id);
-                          setFacultySearchTerm(fac.displayLabel || fac.fullName || fac.name);
-                          setIsFacultyDropdownOpen(false);
-                        }}
-                        className={`px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 ${assignedFaculty === fac.id ? 'bg-fuchsia-50/50' : ''}`}
-                      >
-                        <div className="font-bold text-slate-700 text-sm">{fac.displayLabel || fac.fullName || fac.name}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          {fac.department ? `${fac.department} • ` : ''}{fac.email}
-                        </div>
-                      </div>
-                    ))}
-                  
-                  {facultyList.filter(fac => {
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                  Faculty Coordinator Reviewer *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => fetchFaculty()}
+                  className="text-[10px] font-semibold text-fuchsia-600 hover:text-fuchsia-700 flex items-center gap-1 transition-colors"
+                  title="Reload faculty coordinators"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh List
+                </button>
+              </div>
+
+              {facultyList.length > 5 && (
+                <div className="mb-2">
+                  <input
+                    type="text"
+                    placeholder="Filter faculty list by name, department, or ID..."
+                    value={facultySearchTerm}
+                    onChange={(e) => setFacultySearchTerm(e.target.value)}
+                    className="w-full bg-white/60 text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-fuchsia-500 transition-all"
+                  />
+                </div>
+              )}
+
+              <select
+                required
+                value={assignedFaculty}
+                onChange={(e) => setAssignedFaculty(e.target.value)}
+                className="w-full bg-white/80 text-slate-800 border border-slate-300/60 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 transition-all duration-200 cursor-pointer shadow-sm"
+              >
+                <option value="" disabled>-- Select Faculty Coordinator Reviewer --</option>
+                {(() => {
+                  const filteredFaculty = facultyList.filter(fac => {
+                    if (!facultySearchTerm.trim()) return true;
                     const search = facultySearchTerm.toLowerCase();
                     const name = (fac.displayLabel || fac.fullName || fac.name || '').toLowerCase();
                     const email = (fac.email || '').toLowerCase();
                     const dept = (fac.department || '').toLowerCase();
-                    return name.includes(search) || email.includes(search) || dept.includes(search);
-                  }).length === 0 && (
-                    <div className="px-4 py-3 text-sm text-slate-500 text-center">
-                      No matching faculty found
-                    </div>
-                  )}
+                    const empId = (fac.employeeId || '').toLowerCase();
+                    return name.includes(search) || email.includes(search) || dept.includes(search) || empId.includes(search);
+                  });
+                  const optionsToRender = assignedFaculty && !filteredFaculty.some(f => f.id === assignedFaculty)
+                    ? [...filteredFaculty, facultyList.find(f => f.id === assignedFaculty)].filter(Boolean)
+                    : filteredFaculty;
+
+                  return optionsToRender.map(fac => (
+                    <option key={fac.id} value={fac.id}>
+                      {fac.displayLabel || fac.fullName || fac.name} {fac.email ? `(${fac.email})` : ''}
+                    </option>
+                  ));
+                })()}
+              </select>
+
+              {facultyList.length === 0 && (
+                <div className="mt-2 p-2.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between">
+                  <span>No faculty coordinators loaded yet.</span>
+                  <button
+                    type="button"
+                    onClick={() => fetchFaculty()}
+                    className="px-2 py-0.5 text-xs font-semibold bg-amber-200/70 hover:bg-amber-200 text-amber-900 rounded-md transition-colors"
+                  >
+                    Reload
+                  </button>
                 </div>
               )}
+
+              {/* Selected Faculty Card preview */}
+              {(() => {
+                const selectedFac = facultyList.find(f => f.id === assignedFaculty);
+                if (!selectedFac) return null;
+                return (
+                  <div className="mt-2.5 p-3 bg-gradient-to-r from-fuchsia-50/80 via-purple-50/50 to-indigo-50/50 border border-fuchsia-200/80 rounded-xl flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-fuchsia-600 to-purple-600 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs uppercase shadow-sm">
+                        {(selectedFac.fullName || selectedFac.name || 'F').charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-800 truncate">
+                          {selectedFac.fullName || selectedFac.name}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
+                          {selectedFac.department && <span>{selectedFac.department}</span>}
+                          {selectedFac.employeeId && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-[10px] bg-white/80 px-1 py-0.2 rounded border border-slate-200 text-slate-600">
+                                {selectedFac.employeeId}
+                              </span>
+                            </>
+                          )}
+                          {selectedFac.email && (
+                            <>
+                              <span>•</span>
+                              <span className="text-slate-500 truncate">{selectedFac.email}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-lg bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200 flex-shrink-0">
+                      Selected
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
 
             <div>
@@ -1296,10 +1616,18 @@ const StudentOrgEvents = () => {
           title={`Manage Team - ${teamModalEvent?.title || ''}`}
         >
           {teamFeedback && (
-            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${
-              teamFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-red-500/8 border-red-500/15 text-red-400'
+            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex items-center gap-2.5 animate-fade-in-up ${
+              teamFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-600' : 'bg-red-500/8 border-red-500/15 text-red-600'
             }`}>
-              <span>{teamFeedback.type === 'success' ? '✓' : '⚠'}</span>
+              {teamFeedback.type === 'success' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              )}
               <span>{teamFeedback.message}</span>
             </div>
           )}
@@ -1386,10 +1714,18 @@ const StudentOrgEvents = () => {
           title={`Manage Organizers - ${orgModalEvent?.title || ''}`}
         >
           {orgFeedback && (
-            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex gap-2.5 animate-fade-in-up ${
-              orgFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-400' : 'bg-red-500/8 border-red-500/15 text-red-400'
+            <div className={`mb-6 p-4 rounded-xl border text-sm font-semibold flex items-center gap-2.5 animate-fade-in-up ${
+              orgFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-600' : 'bg-red-500/8 border-red-500/15 text-red-600'
             }`}>
-              <span>{orgFeedback.type === 'success' ? '✓' : '⚠'}</span>
+              {orgFeedback.type === 'success' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              )}
               <span>{orgFeedback.message}</span>
             </div>
           )}
@@ -1411,104 +1747,7 @@ const StudentOrgEvents = () => {
             </label>
           </div>
 
-          {/* Add Organizer Form */}
-          <form onSubmit={handleAddOrganizer} className="space-y-4 mb-6 pb-6 border-b border-slate-200/30">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider font-display">Recruit Organizer</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="relative">
-                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Select Student *</label>
-                <div 
-                  className="relative"
-                  onMouseDown={(e) => {
-                    // Prevent blur on input when clicking inside the dropdown
-                    if (e.target.closest('.student-dropdown-menu')) {
-                      e.preventDefault();
-                    }
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={studentSearchQuery}
-                    onChange={(e) => {
-                      setStudentSearchQuery(e.target.value);
-                      setIsStudentDropdownOpen(true);
-                      if (selectedOrgStudent) setSelectedOrgStudent('');
-                    }}
-                    onFocus={() => setIsStudentDropdownOpen(true)}
-                    onBlur={() => setIsStudentDropdownOpen(false)}
-                    placeholder="Search by full name..."
-                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
-                    required={!selectedOrgStudent}
-                  />
-                  {isStudentDropdownOpen && (
-                    <div className="student-dropdown-menu absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1">
-                      {(() => {
-                        const eligible = studentsList.filter(std => !confirmedTeamMembers.includes(std.id));
-                        const filtered = eligible.filter(std => {
-                          const query = studentSearchQuery.trim().toLowerCase();
-                          if (!query) return true;
-                          const name = (std.displayLabel || std.fullName || '').toLowerCase();
-                          return name.includes(query);
-                        });
-                        
-                        if (filtered.length === 0) {
-                          return <div className="px-3 py-3 text-xs text-slate-500 text-center font-medium">No eligible students found.</div>;
-                        }
-                        
-                        return filtered.map(std => (
-                          <div
-                            key={std.id}
-                            className={`px-3 py-2 text-sm cursor-pointer transition-colors ${selectedOrgStudent === std.id ? 'bg-fuchsia-50 text-fuchsia-700 font-bold' : 'text-slate-700 hover:bg-slate-50'}`}
-                            onClick={() => {
-                                setSelectedOrgStudent(std.id);
-                                setStudentSearchQuery(std.displayLabel || std.fullName);
-                                setIsStudentDropdownOpen(false);
-                            }}
-                          >
-                            {std.displayLabel || std.fullName}
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Category *</label>
-                <select
-                  required
-                  value={selectedOrgCategory}
-                  onChange={(e) => setSelectedOrgCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
-                >
-                  {['Event Head', 'Technical Team', 'Design Team', 'Media Team', 'Hospitality Team', 'Logistics Team', 'Volunteer', 'Other'].map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Role Type *</label>
-                <select
-                  required
-                  value={selectedOrganizerRole}
-                  onChange={(e) => setSelectedOrganizerRole(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
-                >
-                  <option value="normal">Normal Organizer</option>
-                  <option value="core">Core Organizer</option>
-                </select>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-fuchsia-500/15"
-            >
-              + Recruit Organizer
-            </button>
-          </form>
 
           {/* Current Organizers list */}
           <div>
@@ -1528,20 +1767,13 @@ const StudentOrgEvents = () => {
                       <div className="text-[10px] text-slate-600 font-medium">
                         {member.email} &bull; {member.department}
                       </div>
-                      <div>
-                        <div className="text-[9px] font-bold text-fuchsia-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-fuchsia-500/10 border border-fuchsia-500/15 mr-2">
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <div className="text-[9px] font-bold text-fuchsia-600 uppercase tracking-wider px-2 py-0.5 rounded bg-fuchsia-500/10 border border-fuchsia-500/15">
                           {member.category}
                         </div>
-                        {member.organizerRole === 'core' && (
-                          <div className="text-[9px] font-bold text-rose-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/15">
-                            Core
-                          </div>
-                        )}
-                        {member.organizerRole !== 'core' && (
-                          <div className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider mt-1.5 inline-block px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/15">
-                            Normal
-                          </div>
-                        )}
+                        <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200">
+                          Student Organizer
+                        </div>
                       </div>
                     </div>
                     {String(member.userId) !== String(orgModalEvent?.student_organizer_id) && String(member.userId) !== String(orgModalEvent?.proposed_by) && (
@@ -1648,9 +1880,17 @@ const StudentOrgEvents = () => {
               
               {scanFeedback && (
                 <div className={`w-full p-3 rounded-xl border text-sm font-semibold flex items-center gap-2 ${
-                  scanFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-500' : 'bg-red-500/8 border-red-500/15 text-red-500'
+                  scanFeedback.type === 'success' ? 'bg-emerald-500/8 border-emerald-500/15 text-emerald-600' : 'bg-red-500/8 border-red-500/15 text-red-600'
                 }`}>
-                  <span>{scanFeedback.type === 'success' ? '✓' : '⚠'}</span>
+                  {scanFeedback.type === 'success' ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  )}
                   <span>{scanFeedback.message}</span>
                 </div>
               )}

@@ -861,10 +861,9 @@ exports.updatePaymentStatus = async (req, res) => {
         .eq('event_id', registration.event_id).eq('student_id', req.user.id).maybeSingle();
       const { data: member } = await supabase.from('event_members').select('id, organizer_type, role')
         .eq('event_id', registration.event_id).eq('user_id', req.user.id).maybeSingle();
-      allowed = (organizer && (organizer.organizer_role === 'core' || organizer.category === 'Event Head' || organizer.category === 'Faculty Organizer')) ||
-                (member && (member.organizer_type === 'core' || member.role === 'Event Head' || member.role === 'Core Organizer'));
+      allowed = Boolean(organizer || member);
     }
-    if (!allowed) return res.status(403).json({ message: 'Only an admin or core event organizer can verify payments.' });
+    if (!allowed) return res.status(403).json({ message: 'Only an admin or event organizer can verify payments.' });
 
     const updatePayload = {
       payment_status: paymentStatus,

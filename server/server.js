@@ -1,13 +1,26 @@
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
+// Load env variables from server/.env (resolves correctly even when started from project root)
+dotenv.config({ path: path.join(__dirname, '.env') });
 
-// Load env variables
-dotenv.config();
+// Startup verification: confirm critical env vars are loaded
+if (!process.env.SUPABASE_URL) {
+  console.error('⚠️  CRITICAL: SUPABASE_URL is NOT loaded from .env.');
+} else {
+  console.log('✅ SUPABASE_URL loaded:', process.env.SUPABASE_URL);
+}
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('⚠️  CRITICAL: SUPABASE_SERVICE_ROLE_KEY is NOT loaded from .env. Supabase writes will fail due to RLS.');
+} else {
+  const keyPreview = process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 12) + '...';
+  console.log('✅ SUPABASE_SERVICE_ROLE_KEY loaded. Key prefix:', keyPreview);
+}
 
 // Initialize Background Jobs
 const startEventCompletionJob = require('./jobs/eventCompletionJob');
@@ -24,6 +37,14 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// Prevent browser and proxy caching on API routes
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // Initialize Supabase integration check (Optional: log initialization)
 console.log('⚡ Supabase Client Initialized.');
@@ -42,7 +63,6 @@ app.use('/api/feedbacks', require('./routes/feedbackRoutes'));
 app.use('/api/allocations', require('./routes/allocationRoutes'));
 
 // Serve client static files in production
-const path = require('path');
 const clientBuildPath = path.join(__dirname, '../client/dist');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(clientBuildPath));
@@ -74,6 +94,19 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 AVENTO Server is running on port ${PORT}`);
+
+  // Post-startup Supabase connectivity test
+  try {
+    const supabase = require('./config/supabaseClient');
+    const { data, error } = await supabase.from('events').select('id').limit(1);
+    if (error) {
+      console.error('⚠️  Supabase READ test FAILED:', error.message);
+    } else {
+      console.log('✅ Supabase READ test passed. Events table accessible.');
+    }
+  } catch (e) {
+    console.error('⚠️  Supabase connectivity test error:', e.message);
+  }
 });

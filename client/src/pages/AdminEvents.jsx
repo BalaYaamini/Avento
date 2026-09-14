@@ -336,7 +336,7 @@ const AdminEvents = () => {
         minTeamSize: registrationType === 'team' ? Number(minTeamSize) : undefined,
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : undefined,
         allowCrossDepartment: registrationType === 'team' ? allowCrossDepartment : undefined,
-        registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : undefined,
+        registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : null,
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
         scoringEnabled,
@@ -372,7 +372,7 @@ const AdminEvents = () => {
       fetchEvents();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Failed to publish event.');
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to publish event.');
     }
   };
 
@@ -482,7 +482,7 @@ const AdminEvents = () => {
       const res = await axios.post(`/api/events/${orgModalEvent._id || orgModalEvent.id}/organizers`, {
         studentId: selectedOrgStudent,
         category: selectedOrgCategory,
-        organizerRole: selectedOrganizerRole
+        organizerRole: 'organizer'
       });
 
       setOrgFeedback({ type: 'success', message: res.data.message || 'Organizer added successfully!' });

@@ -46,7 +46,7 @@ router.get(
 router.post(
   '/',
   authMiddleware,
-  roleMiddleware(['admin', 'student']),
+  roleMiddleware(['admin', 'student', 'student_organizer']),
   eventController.createEvent
 );
 
@@ -76,7 +76,7 @@ router.put(
 router.put(
   '/:id/publish',
   authMiddleware,
-  roleMiddleware(['admin', 'student']),
+  roleMiddleware(['admin', 'student', 'organizer', 'student_organizer', 'student_head']),
   eventController.publishEvent
 );
 
@@ -205,7 +205,7 @@ router.post(
 router.post(
   '/:id/documents',
   authMiddleware,
-  roleMiddleware(['student', 'faculty', 'faculty_organizer']),
+  roleMiddleware(['admin', 'student', 'faculty', 'faculty_organizer']),
   upload.single('document'),
   eventController.uploadProposalDocument
 );
@@ -214,7 +214,7 @@ router.post(
 router.delete(
   '/:id/documents/:docId',
   authMiddleware,
-  roleMiddleware(['student', 'faculty', 'faculty_organizer']),
+  roleMiddleware(['admin', 'student', 'faculty', 'faculty_organizer']),
   eventController.removeProposalDocument
 );
 
@@ -226,11 +226,11 @@ router.put(
   eventController.updateProposalStatus
 );
 
-// Resubmit Proposal (Student)
+// Resubmit Proposal (Student / Organizer / Creator)
 router.put(
   '/:id/proposal-resubmit',
   authMiddleware,
-  roleMiddleware(['student']),
+  roleMiddleware(['student', 'student_organizer', 'organizer', 'student_head', 'faculty', 'faculty_organizer', 'admin']),
   eventController.resubmitProposal
 );
 

@@ -346,10 +346,10 @@ footer[class*="bg-slate-"] a:hover, footer[class*="bg-gray-"] a:hover, footer[cl
   border-color: #334155 !important;
 }
 
-/* Nav & Scrolled Nav */
-[data-theme="dark"] nav,
-[data-theme="dark"] nav.bg-white\/80 {
-  background-color: rgba(18, 24, 38, 0.85) !important;
+/* Scrolled Nav */
+[data-theme="dark"] nav.shadow-sm,
+[data-theme="dark"] nav.shadow-soft {
+  background-color: rgba(15, 23, 42, 0.9) !important;
   border-color: #334155 !important;
   backdrop-filter: blur(12px);
 }

@@ -6,20 +6,22 @@ const supabase = require('../config/supabaseClient');
 const profileCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
 
-function getCachedProfile(userId) {
-  const entry = profileCache.get(userId);
+function getCachedProfile(key) {
+  if (!key) return null;
+  const entry = profileCache.get(String(key).toLowerCase());
   if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
-  profileCache.delete(userId);
+  profileCache.delete(String(key).toLowerCase());
   return null;
 }
 
-function setCachedProfile(userId, data) {
+function setCachedProfile(key, data) {
+  if (!key || !data) return;
   // Limit cache size to prevent memory leaks
   if (profileCache.size > 500) {
     const oldestKey = profileCache.keys().next().value;
     profileCache.delete(oldestKey);
   }
-  profileCache.set(userId, { data, ts: Date.now() });
+  profileCache.set(String(key).toLowerCase(), { data, ts: Date.now() });
 }
 
 module.exports = async (req, res, next) => {
@@ -31,29 +33,129 @@ module.exports = async (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'avento_super_secret_key_12345');
+    let decoded = null;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'avento_super_secret_key_12345');
+    } catch (jwtErr) {
+      // If verification with custom secret fails, try resolving with Supabase Auth (e.g. Supabase access token)
+      try {
+        const { data: supaUser } = await supabase.auth.getUser(token);
+        if (supaUser?.user) {
+          decoded = {
+            id: supaUser.user.id,
+            email: supaUser.user.email,
+            role: supaUser.user.user_metadata?.role || 'student'
+          };
+        }
+      } catch (sErr) {
+        // Ignore fallback error
+      }
+      if (!decoded) {
+        if (jwtErr.name === 'TokenExpiredError') {
+          return res.status(401).json({ message: 'Token expired. Please login again.' });
+        }
+        return res.status(401).json({ message: 'Invalid or expired token.' });
+      }
+    }
 
-    // Fetch user profile from Supabase (with cache)
-    let profileData = getCachedProfile(decoded.id);
+    const userId = decoded.id || decoded._id || decoded.sub;
+    const userEmail = decoded.email ? String(decoded.email).toLowerCase().trim() : null;
+
+    // Fetch user profile from Supabase (check cache first)
+    let profileData = getCachedProfile(userId) || getCachedProfile(userEmail);
+
     if (!profileData) {
       try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', String(decoded.id))
-          .maybeSingle();
-
-        if (data) {
-          profileData = data;
-        } else if (decoded.email) {
-          const { data: dataByEmail } = await supabase
+        // 1. Try lookup by profile ID
+        if (userId) {
+          const { data, error: idErr } = await supabase
             .from('profiles')
             .select('*')
-            .eq('email', String(decoded.email).toLowerCase())
+            .eq('id', String(userId))
             .maybeSingle();
-          if (dataByEmail) profileData = dataByEmail;
+          if (!idErr && data) {
+            profileData = data;
+          }
         }
-        if (profileData) setCachedProfile(decoded.id, profileData);
+
+        // 2. Fallback: lookup by email
+        if (!profileData && userEmail) {
+          const { data: dataByEmail, error: emailErr } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', userEmail)
+            .maybeSingle();
+          if (!emailErr && dataByEmail) {
+            profileData = dataByEmail;
+          }
+        }
+
+        // 3. Fallback: Check Supabase Auth users to resolve or auto-heal missing profile
+        if (!profileData && (userId || userEmail)) {
+          let authUser = null;
+          if (userId) {
+            try {
+              const { data: aData } = await supabase.auth.admin.getUserById(String(userId));
+              if (aData?.user) authUser = aData.user;
+            } catch (e) {}
+          }
+          if (!authUser && userEmail) {
+            try {
+              const { data: listData } = await supabase.auth.admin.listUsers();
+              authUser = listData?.users?.find(u => u.email?.toLowerCase() === userEmail);
+            } catch (e) {}
+          }
+
+          if (authUser) {
+            const authEmail = (authUser.email || userEmail || '').toLowerCase().trim();
+            // Check if profile exists by auth user's email
+            const { data: pByAuthEmail } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('email', authEmail)
+              .maybeSingle();
+
+            if (pByAuthEmail) {
+              profileData = pByAuthEmail;
+              // If profile ID differed, sync to authUser ID
+              if (pByAuthEmail.id !== authUser.id) {
+                await supabase.from('profiles').update({ id: authUser.id }).eq('id', pByAuthEmail.id).catch(() => {});
+                profileData.id = authUser.id;
+              }
+            } else {
+              // Auto-create missing active student profile for authenticated user
+              const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authEmail.split('@')[0];
+              const role = authEmail === 'admin.avento@gmail.com' ? 'admin' : (authUser.user_metadata?.role || 'student');
+              const newProfile = {
+                id: authUser.id,
+                email: authEmail,
+                name: fullName,
+                role: role,
+                status: 'active',
+                first_login: false,
+                registration_method: authUser.app_metadata?.provider === 'google' ? 'google' : 'otp',
+                created_at: new Date().toISOString()
+              };
+              const { data: createdProf, error: insErr } = await supabase
+                .from('profiles')
+                .upsert(newProfile, { onConflict: 'id' })
+                .select()
+                .single();
+              if (!insErr && createdProf) {
+                profileData = createdProf;
+              } else {
+                profileData = newProfile;
+              }
+            }
+          }
+        }
+
+        // Cache the profile under both ID and Email
+        if (profileData) {
+          if (profileData.id) setCachedProfile(profileData.id, profileData);
+          if (profileData.email) setCachedProfile(profileData.email, profileData);
+          if (userId) setCachedProfile(userId, profileData);
+        }
       } catch (supErr) {
         console.warn('Supabase authMiddleware profile fetch warning:', supErr.message);
       }
@@ -67,11 +169,14 @@ module.exports = async (req, res, next) => {
       return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
     }
 
-    const email = profileData.email || decoded.email;
+    const email = (profileData.email || userEmail || '').toLowerCase();
     const rawRole = profileData.role || 'student';
     let roles = [rawRole];
-    if (rawRole === 'organizer') {
-      roles.push('student');
+    if (rawRole === 'organizer' || rawRole === 'student_organizer') {
+      if (!roles.includes('student')) roles.push('student');
+    }
+    if (rawRole === 'faculty_organizer') {
+      if (!roles.includes('faculty')) roles.push('faculty');
     }
 
     // Ensure admin role for specific email
@@ -82,7 +187,7 @@ module.exports = async (req, res, next) => {
     let userRollNo = profileData.roll_number || null;
 
     req.user = {
-      id: profileData.id || decoded.id,
+      id: profileData.id || userId,
       email: email,
       name: profileData.name || email.split('@')[0],
       fullName: profileData.name || email.split('@')[0],

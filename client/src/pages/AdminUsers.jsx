@@ -303,10 +303,10 @@ const AdminUsers = () => {
                 onChange={(e) => setSelectedRole(e.target.value)}
                 className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-violet-500/60 transition-all duration-300 w-full sm:w-32 cursor-pointer"
               >
-                <option value="">All</option>
+                <option value="">All Roles</option>
                 <option value="student">Student</option>
                 <option value="faculty">Faculty</option>
-                <option value="admin">Admin</option>
+                <option value="admin">University Official</option>
               </select>
             </div>
 
@@ -450,14 +450,14 @@ const AdminUsers = () => {
                       </td>
                       <td className="px-6 py-4">
                         {user.roles?.some(r => r.includes('admin')) ? (
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-500/20">
-                            Admin
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-purple-100 text-purple-700 border-purple-200">
+                            University Official
                           </span>
                         ) : (
                           <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
                             user.roles?.some(r => r.includes('faculty'))
-                              ? 'bg-sky-500/8 text-sky-400 border-sky-500/15'
-                              : 'bg-white/40 text-slate-600 border-slate-300/30'
+                              ? 'bg-blue-100 text-blue-700 border-blue-200'
+                              : 'bg-emerald-100 text-emerald-700 border-emerald-200'
                           }`}>
                             {user.roles?.some(r => r.includes('faculty')) ? 'Faculty' : 'Student'}
                           </span>

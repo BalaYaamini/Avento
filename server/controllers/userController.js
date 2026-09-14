@@ -56,27 +56,48 @@ exports.getUsers = async (req, res) => {
 
 exports.getFacultyCoordinators = async (req, res) => {
   try {
-    let faculty = [];
-    let page = 0;
-    const PAGE_SIZE = 1000;
-    while (true) {
-      const { data, error } = await supabase.from('profiles').select('*').eq('role', 'faculty').range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-      if (error) throw error;
-      faculty.push(...(data || []));
-      if (!data || data.length < PAGE_SIZE) break;
-      page++;
-    }
+    // Query only profiles with eligible roles directly (much faster than fetching all)
+    const { data: byRole, error: roleErr } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, department, employee_id, status')
+      .in('role', ['faculty', 'faculty_organizer', 'admin'])
+      .neq('status', 'inactive');
 
-    const result = faculty.map(f => ({
+    if (roleErr) throw roleErr;
+
+    // Also check for non-student profiles with employee_id (university officials)
+    const { data: byEmpId, error: empErr } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, department, employee_id, status')
+      .not('employee_id', 'is', null)
+      .neq('status', 'inactive');
+
+    if (empErr) throw empErr;
+
+    // Merge and deduplicate
+    const merged = new Map();
+    [...(byRole || []), ...(byEmpId || [])].forEach(f => {
+      const r = (f.role || '').toLowerCase();
+      if (!r.includes('student')) {
+        merged.set(f.id, f);
+      }
+    });
+
+    const result = Array.from(merged.values()).map(f => ({
       id: f.id,
       fullName: f.name || f.fullName,
+      name: f.name || f.fullName,
       email: f.email,
+      role: f.role,
       employeeId: f.employee_id || '',
       department: f.department || '',
-      displayLabel: f.employee_id ? `${f.name || f.fullName} (${f.employee_id})` : (f.name || f.fullName)
+      displayLabel: f.employee_id 
+        ? `${f.name || f.fullName} (${f.employee_id}${f.department ? ' - ' + f.department : ''})` 
+        : (f.department ? `${f.name || f.fullName} (${f.department})` : (f.name || f.fullName))
     }));
     res.json(result);
   } catch (err) {
+    console.error('getFacultyCoordinators error:', err.message);
     res.status(500).json({ message: 'Server error fetching faculty coordinators.', error: err.message });
   }
 };
@@ -84,13 +105,16 @@ exports.getFacultyCoordinators = async (req, res) => {
 exports.searchUsers = async (req, res) => {
   try {
     const { query } = req.query;
-    if (!query) return res.json([]);
+    if (!query || !query.trim()) return res.json([]);
+
+    const cleanQuery = query.trim().replace(/[%_]/g, '');
+    if (!cleanQuery) return res.json([]);
 
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, name, email, department, role, roll_number, employee_id, status')
-      .or(`name.ilike.%${query}%,email.ilike.%${query}%,department.ilike.%${query}%`)
-      .limit(20);
+      .or(`name.ilike.%${cleanQuery}%,email.ilike.%${cleanQuery}%,department.ilike.%${cleanQuery}%,roll_number.ilike.%${cleanQuery}%`)
+      .limit(25);
 
     if (error) throw error;
     const activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
@@ -493,7 +517,7 @@ exports.submitContactForm = async (req, res) => {
 
 exports.importUsers = async (req, res) => {
   try {
-    const { users } = req.body;
+    const { users, defaultRole } = req.body;
     if (!users || !Array.isArray(users)) {
       return res.status(400).json({ message: 'Invalid users array provided.' });
     }
@@ -508,25 +532,28 @@ exports.importUsers = async (req, res) => {
 
     for (const user of users) {
       try {
-        const emailLower = user.email.toLowerCase().trim();
+        const emailLower = user.email ? user.email.toLowerCase().trim() : '';
+        if (!emailLower || !emailLower.includes('@')) {
+          failed++;
+          errors.push({ email: emailLower || 'Unknown', reason: 'Invalid or missing email address' });
+          continue;
+        }
 
-        let role = user.role;
+        let role = user.role ? String(user.role).trim().toLowerCase() : (defaultRole ? String(defaultRole).trim().toLowerCase() : null);
         if (!role) {
           if (studentDomains.some(domain => emailLower.endsWith(domain))) {
             role = 'student';
           } else if (emailLower.endsWith(facultyDomain)) {
             role = 'faculty';
+          } else {
+            role = 'student';
           }
         }
 
-        if (!role) {
-          failed++;
-          errors.push({ email: emailLower, reason: 'Unsupported domain' });
-          continue;
-        }
-
         let defaultPassword = 'Student@123';
-        if (role === 'faculty' || role === 'faculty_organizer') {
+        if (role === 'admin') {
+          defaultPassword = 'Admin@123';
+        } else if (role === 'faculty' || role === 'faculty_organizer') {
           defaultPassword = 'Faculty@123';
         } else if (role === 'student' || role === 'student_organizer') {
           defaultPassword = 'Student@123';
@@ -581,7 +608,7 @@ exports.importUsers = async (req, res) => {
           registration_method: 'imported',
         };
 
-        if (role === 'faculty') profile.employee_id = user.employeeId || null;
+        if (role === 'faculty' || role === 'admin') profile.employee_id = user.employeeId || null;
         if (role === 'student' || role === 'student_organizer') profile.roll_number = derivedRollNumber;
 
         await supabase.from('profiles').upsert(profile);

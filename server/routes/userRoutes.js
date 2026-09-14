@@ -13,9 +13,10 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5 MB
 });
 
-// Restricted lookup routes (admin + organizers only, blocks regular students)
-const organizerRoles = ['admin', 'faculty', 'faculty_organizer', 'student_organizer'];
-router.get('/faculty-coordinators', authMiddleware, roleMiddleware(organizerRoles), userController.getFacultyCoordinators);
+// Restricted lookup routes
+const organizerRoles = ['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student', 'organizer'];
+const facultyLookupRoles = ['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student', 'organizer'];
+router.get('/faculty-coordinators', authMiddleware, roleMiddleware(facultyLookupRoles), userController.getFacultyCoordinators);
 router.get('/students', authMiddleware, roleMiddleware(organizerRoles), userController.getStudents);
 router.get('/search', authMiddleware, roleMiddleware(organizerRoles), userController.searchUsers);
 

@@ -18,6 +18,8 @@ import ScoringBoard from '../components/ScoringBoard';
 import ConfirmationEmailModal from '../components/ConfirmationEmailModal';
 import IDCardManager from '../components/IDCardManager';
 import OrganizerPeriodicAttendance from '../components/OrganizerPeriodicAttendance';
+import ReviewDiscussionTab from '../components/ReviewDiscussionTab';
+import OrganizingTeamTab from '../components/OrganizingTeamTab';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -38,6 +40,33 @@ const Workspace = () => {
       return 'tasks';
     }
   });
+
+  const [registrationSubTab, setRegistrationSubTab] = useState(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tab = searchParams.get('tab');
+      if (tab === 'confirmed_teams') return 'confirmed_teams';
+      return 'registrations';
+    } catch (e) {
+      return 'registrations';
+    }
+  });
+
+  const handleTabChange = (newTab, subTab) => {
+    setActiveTab(newTab);
+    if (subTab) {
+      setRegistrationSubTab(subTab);
+    } else if (newTab === 'confirmed_teams') {
+      setRegistrationSubTab('confirmed_teams');
+    } else if (newTab === 'registrations') {
+      setRegistrationSubTab('registrations');
+    }
+    try {
+      const url = new URL(window.location);
+      url.searchParams.set('tab', newTab);
+      window.history.replaceState({}, '', url);
+    } catch (e) {}
+  };
   
   // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -170,7 +199,7 @@ const Workspace = () => {
       const payload = {
         ...editFormData,
         date: editFormData.date ? (editFormData.date.includes('Z') || editFormData.date.includes('+') ? editFormData.date : new Date(editFormData.date).toISOString()) : undefined,
-        registrationDeadline: editFormData.registrationDeadline ? (editFormData.registrationDeadline.includes('Z') || editFormData.registrationDeadline.includes('+') ? editFormData.registrationDeadline : new Date(editFormData.registrationDeadline).toISOString()) : undefined,
+        registrationDeadline: editFormData.registrationDeadline ? (editFormData.registrationDeadline.includes('Z') || editFormData.registrationDeadline.includes('+') ? editFormData.registrationDeadline : new Date(editFormData.registrationDeadline).toISOString()) : null,
       };
       const res = await axios.put(`/api/events/${eventId}`, payload);
       setEditFeedback({ type: 'success', message: 'Event details updated successfully!' });
@@ -302,12 +331,6 @@ const Workspace = () => {
     };
   }, [eventId, user?.id]);
 
-  useEffect(() => {
-    if (isNormalOrganizer() && !['tasks', 'confirmed_teams'].includes(activeTab)) {
-      setActiveTab('tasks');
-    }
-  }, [organizers, user?.id, activeTab]);
-
   const handleCreateTask = () => {
     setEditingTask(null);
     setIsTaskModalOpen(true);
@@ -338,16 +361,9 @@ const Workspace = () => {
     const isFacultyRole = user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer') || user.role === 'faculty' || user.role === 'faculty_organizer';
     const isEventFaculty = String(user.id) === String(event.faculty_id);
     const isEventHead = String(user.id) === String(event.student_organizer_id) || String(user.id) === String(event.proposed_by) || String(user.id) === String(event.organizer_id) || String(user.id) === String(event.created_by);
-    const orgMember = (organizers || []).find(org => String(org.userId) === String(user.id));
-    const isCoreOrg = orgMember?.organizerRole === 'core' || orgMember?.category === 'Event Head' || orgMember?.category === 'Faculty Organizer';
+    const isOrganizer = (organizers || []).some(org => String(org.userId) === String(user.id));
 
-    return isAdmin || isFacultyRole || isEventFaculty || isEventHead || isCoreOrg;
-  };
-
-  const isNormalOrganizer = () => {
-    if (!user) return false;
-    const isOrg = (organizers || []).some(org => String(org.userId) === String(user.id));
-    return isOrg && !hasFullAccess();
+    return isAdmin || isFacultyRole || isEventFaculty || isEventHead || isOrganizer;
   };
 
   // Stats
@@ -408,7 +424,6 @@ const Workspace = () => {
           <p className="text-text-secondary">Manage tasks and coordinate with your team</p>
         </div>
         <div className="flex items-center gap-3">
-        {isNormalOrganizer() ? (
           <button
             type="button"
             onClick={() => {
@@ -425,7 +440,7 @@ const Workspace = () => {
             </svg>
             <span>Scan QR</span>
           </button>
-        ) : (
+
           <div className="relative inline-block text-left" ref={dropdownRef}>
             <button
               type="button"
@@ -604,253 +619,424 @@ const Workspace = () => {
               </div>
             )}
           </div>
-        )}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex space-x-2 border-b border-slate-200 mb-6">
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-            activeTab === 'tasks' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-          }`}
-        >
-          Tasks & Progress
-        </button>
-
-        {(event?.registration_type === 'team' || isNormalOrganizer()) && (
-          <button
-            onClick={() => setActiveTab('confirmed_teams')}
-            className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-              activeTab === 'confirmed_teams' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            }`}
-          >
-            Confirmed Teams
-          </button>
-        )}
-
-        {!isNormalOrganizer() && (
-          <>
-            <button
-              onClick={() => setActiveTab('registrations')}
-              className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-                activeTab === 'registrations' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-              }`}
-            >
-              Event Registrations
-            </button>
-
-            {event?.registration_type === 'team' && (
-              <button
-                onClick={() => setActiveTab('allocation')}
-                className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-                  activeTab === 'allocation' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
-              >
-                Team Allocation
-              </button>
-            )}
-
-            {(event?.scoring_enabled || event?.registration_type === 'team') && (
-              <button
-                onClick={() => setActiveTab('scoring')}
-                className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-                  activeTab === 'scoring' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
-              >
-                Scoring
-              </button>
-            )}
-          </>
-        )}
-
-        <button
-          onClick={() => setActiveTab('periodic_attendance')}
-          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 flex items-center gap-1.5 ${
-            activeTab === 'periodic_attendance' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-          }`}
-        >
-          <span>Periodic Attendance</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('id_cards')}
-          className={`px-4 py-2 font-bold text-sm focus:outline-none transition-colors border-b-2 ${
-            activeTab === 'id_cards' ? 'border-fuchsia-500 text-fuchsia-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-          }`}
-        >
-          ID Cards
-        </button>
-      </div>
-
-      {activeTab === 'periodic_attendance' && (
-        <div className="mb-8">
-          <OrganizerPeriodicAttendance eventId={eventId} onScanClick={() => { setScanFeedback(null); setIsScannerOpen(true); }} />
-        </div>
-      )}
-
-      {activeTab === 'registrations' && !isNormalOrganizer() && (
-        <div className="mb-8">
-          <OrganizerRegistrations eventId={eventId} event={event} />
-        </div>
-      )}
-
-      {activeTab === 'scoring' && event?.scoring_enabled && !isNormalOrganizer() && (
-        <ScoringBoard eventId={eventId} canEdit={hasFullAccess()} />
-      )}
-
-      {activeTab === 'confirmed_teams' && (event?.registration_type === 'team' || isNormalOrganizer()) && (
-        <div className="mb-8">
-          <ConfirmedTeamsOverview eventId={eventId} eventTitle={event.title} />
-        </div>
-      )}
-
-      {activeTab === 'allocation' && event?.registration_type === 'team' && !isNormalOrganizer() && (
-        <div className="mb-8">
-          <TeamAllocation eventId={eventId} eventTitle={event.title} />
-        </div>
-      )}
-
-      {activeTab === 'id_cards' && (
-        <div className="mb-8">
-          <IDCardManager eventId={eventId} event={event} />
-        </div>
-      )}
-
-      {activeTab === 'tasks' && (
-        <>
-          {/* Event Progress */}
-          <div className="glass-panel p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-text-primary">Event Progress</h2>
-            <span className="text-xs font-bold px-2.5 py-1 bg-pastel-lavender/10 text-pastel-lavender rounded-lg border border-pastel-lavender/20">
-              {totalTasks} Total Tasks
+      {/* Formal Side Navigation Workspace Layout */}
+      <div className="flex flex-col lg:flex-row items-start gap-8 mt-6">
+        {/* Left Side Navigation Bar */}
+        <aside className="w-full lg:w-64 shrink-0 self-start glass-panel p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm sticky top-20">
+          <div className="px-3 py-2 mb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Workspace Menu
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 capitalize">
+              {event?.status ? event.status.replace(/_/g, ' ') : 'Active'}
             </span>
           </div>
-          <span className="text-lg font-bold text-text-primary">{progressPercent}%</span>
-        </div>
-        <div className="w-full bg-slate-100 dark:bg-[#0F172A] rounded-full h-5 overflow-hidden border border-slate-200">
-          <div className="bg-pastel-lavender h-5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
-        </div>
-      </div>
 
-      {/* Filters */}
-      <div className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-wrap gap-4 items-center">
-        <span className="font-medium text-text-secondary mr-2">Filters:</span>
-        <select 
-          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
-          value={filters.status}
-          onChange={e => setFilters({...filters, status: e.target.value})}
-        >
-          <option value="">All Statuses</option>
-          <option value="To Do">To Do</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Completed">Completed</option>
-          <option value="Blocked">Blocked</option>
-        </select>
+          <nav className="space-y-1">
+            <button
+              type="button"
+              onClick={() => handleTabChange('tasks')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'tasks'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                <span className="truncate">Tasks & Progress</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                activeTab === 'tasks' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+              }`}>
+                {totalTasks}
+              </span>
+            </button>
 
-        <select 
-          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
-          value={filters.priority}
-          onChange={e => setFilters({...filters, priority: e.target.value})}
-        >
-          <option value="">All Priorities</option>
-          <option value="Low">Low</option>
-          <option value="Medium">Medium</option>
-          <option value="High">High</option>
-        </select>
+            <button
+              type="button"
+              onClick={() => handleTabChange('discussion')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'discussion'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span className="truncate">Review & Discussion</span>
+              </div>
+            </button>
 
-        <select 
-          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
-          value={filters.assignedTo}
-          onChange={e => setFilters({...filters, assignedTo: e.target.value})}
-        >
-          <option value="">All Assignees</option>
-          {organizers.map(org => (
-            <option key={org.userId} value={org.userId}>{org.name}</option>
-          ))}
-        </select>
+            <button
+              type="button"
+              onClick={() => handleTabChange('team')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'team'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <span className="truncate">Organizing Team</span>
+              </div>
+              {organizers.length > 0 && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  activeTab === 'team' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                }`}>
+                  {organizers.length}
+                </span>
+              )}
+            </button>
 
-        <select 
-          className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
-          value={filters.category}
-          onChange={e => setFilters({...filters, category: e.target.value})}
-        >
-          <option value="">All Categories</option>
-          {suggestedCategories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
+            <button
+              type="button"
+              onClick={() => handleTabChange('registrations', 'registrations')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'registrations' || activeTab === 'confirmed_teams'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                </svg>
+                <span className="truncate">Registrations</span>
+              </div>
+            </button>
 
-        {(filters.status || filters.priority || filters.assignedTo || filters.category) && (
-          <button 
-            onClick={() => setFilters({status: '', priority: '', assignedTo: '', category: ''})}
-            className="text-sm text-pastel-coral hover:text-red-700 font-bold"
-          >
-            Clear Filters
-          </button>
-        )}
-      </div>
+            <button
+              type="button"
+              onClick={() => handleTabChange('allocation')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'allocation'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+                <span className="truncate">Team Allocation</span>
+              </div>
+            </button>
 
-      {/* Task Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-amber-400 shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-3xl font-black text-amber-500">{pendingTasks}</div>
-          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">To Do</div>
-        </div>
-        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-blue-400 shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-3xl font-black text-blue-500">{inProgressTasks}</div>
-          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">In Progress</div>
-        </div>
-        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-pastel-coral shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-3xl font-black text-pastel-coral">{blockedTasks}</div>
-          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">Blocked</div>
-        </div>
-        <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-pastel-mint shadow-sm transition-transform hover:-translate-y-1">
-          <div className="text-3xl font-black text-pastel-mint">{completedTasks}</div>
-          <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">Completed</div>
-        </div>
-      </div>
-      {/* Task Board */}
-      <TaskBoard 
-        tasks={filteredTasks} 
-        onViewTask={handleViewTask} 
-        onEditTask={hasFullAccess() ? handleEditTask : undefined}
-      />
+            <button
+              type="button"
+              onClick={() => handleTabChange('scoring')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'scoring'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+                <span className="truncate">Scoring Board</span>
+              </div>
+            </button>
 
-      {/* Certificate Management (Strictly Admin only) */}
-      {user && (user.roles?.includes('admin') || user.role === 'admin') && (
-        <CertificateManager eventId={eventId} eventStatus={event.status} />
-      )}
+            <button
+              type="button"
+              onClick={() => handleTabChange('periodic_attendance')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'periodic_attendance'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span className="truncate">Attendance & QR</span>
+              </div>
+            </button>
 
-      {/* Feedback Analytics (Only for completed events) */}
-      {event.status === 'completed' && (
-        <div className="mb-8 mt-8 glass-panel p-6 rounded-[2rem] border border-slate-200">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
-            <div>
-              <h2 className="text-xl font-bold text-text-primary">Post-Event Feedback Analytics</h2>
-              <p className="text-xs text-text-secondary">Track student ratings and responses for this event.</p>
+            <button
+              type="button"
+              onClick={() => handleTabChange('id_cards')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'id_cards'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V4a2 2 0 012-2h2a2 2 0 012 2v2m-4 0h4" />
+                </svg>
+                <span className="truncate">ID Cards</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTabChange('certificates')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'certificates'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+                </svg>
+                <span className="truncate">Certificates</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTabChange('feedback')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'feedback'
+                  ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span className="truncate">Feedback Analytics</span>
+              </div>
+            </button>
+          </nav>
+        </aside>
+
+        {/* Right Main Content Panel */}
+        <main className="flex-1 min-w-0 w-full">
+          {activeTab === 'discussion' && (
+            <div className="mb-8">
+              <ReviewDiscussionTab eventId={eventId} event={event} user={user} hasFullAccess={hasFullAccess()} />
             </div>
-            {hasFullAccess() && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFeedbackQuestions(event.feedback_questions || []);
-                  setIsFeedbackQuestionsModalOpen(true);
-                }}
-                className="px-3.5 py-2 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 hover:bg-violet-100 text-xs font-bold rounded-xl transition-all border border-violet-200 dark:border-violet-800 flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <span>⚙️ Customize Questions</span>
-              </button>
-            )}
-          </div>
-          <FeedbackAnalytics eventId={eventId} />
-        </div>
-      )}
-      </>
-      )}
+          )}
+
+          {activeTab === 'team' && (
+            <div className="mb-8">
+              <OrganizingTeamTab eventId={eventId} event={event} user={user} hasFullAccess={hasFullAccess()} />
+            </div>
+          )}
+
+          {activeTab === 'certificates' && (
+            <div className="mb-8">
+              <CertificateManager eventId={eventId} eventStatus={event?.status} />
+            </div>
+          )}
+
+          {activeTab === 'feedback' && (
+            <div className="mb-8 glass-panel p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 animate-fade-in">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">Post-Event Feedback Analytics</h2>
+                  <p className="text-xs text-text-secondary">Track student ratings and feedback responses for this event.</p>
+                </div>
+                {hasFullAccess() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFeedbackQuestions(event.feedback_questions || []);
+                      setIsFeedbackQuestionsModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 hover:bg-violet-100 text-xs font-bold rounded-xl transition-all border border-violet-200 dark:border-violet-800 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <span>Customize Questions</span>
+                  </button>
+                )}
+              </div>
+              <FeedbackAnalytics eventId={eventId} />
+            </div>
+          )}
+
+          {activeTab === 'periodic_attendance' && (
+            <div className="mb-8">
+              <OrganizerPeriodicAttendance eventId={eventId} onScanClick={() => { setScanFeedback(null); setIsScannerOpen(true); }} />
+            </div>
+          )}
+
+          {(activeTab === 'registrations' || activeTab === 'confirmed_teams') && (
+            <div className="mb-8">
+              {/* Sub-navigation for Registrations & Confirmed Teams */}
+              <div className="mb-6 flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl w-fit border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegistrationSubTab('registrations');
+                    handleTabChange('registrations', 'registrations');
+                  }}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    (activeTab === 'registrations' && registrationSubTab === 'registrations') || (activeTab !== 'confirmed_teams' && registrationSubTab === 'registrations')
+                      ? 'bg-white dark:bg-slate-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm border border-slate-200/60 dark:border-slate-700'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span>Event Registrations</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegistrationSubTab('confirmed_teams');
+                    handleTabChange('confirmed_teams', 'confirmed_teams');
+                  }}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'confirmed_teams' || (activeTab === 'registrations' && registrationSubTab === 'confirmed_teams')
+                      ? 'bg-white dark:bg-slate-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm border border-slate-200/60 dark:border-slate-700'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span>Confirmed Teams</span>
+                </button>
+              </div>
+
+              {activeTab === 'confirmed_teams' || (activeTab === 'registrations' && registrationSubTab === 'confirmed_teams') ? (
+                <ConfirmedTeamsOverview eventId={eventId} eventTitle={event?.title} />
+              ) : (
+                <OrganizerRegistrations eventId={eventId} event={event} />
+              )}
+            </div>
+          )}
+
+          {activeTab === 'allocation' && (
+            <div className="mb-8">
+              <TeamAllocation eventId={eventId} eventTitle={event?.title} />
+            </div>
+          )}
+
+          {activeTab === 'scoring' && (
+            <div className="mb-8">
+              <ScoringBoard eventId={eventId} canEdit={hasFullAccess()} />
+            </div>
+          )}
+
+          {activeTab === 'id_cards' && (
+            <div className="mb-8">
+              <IDCardManager eventId={eventId} event={event} />
+            </div>
+          )}
+
+          {activeTab === 'tasks' && (
+            <>
+              {/* Event Progress */}
+              <div className="glass-panel p-6 rounded-2xl shadow-sm border border-slate-200 mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-semibold text-text-primary">Event Progress</h2>
+                    <span className="text-xs font-bold px-2.5 py-1 bg-pastel-lavender/10 text-pastel-lavender rounded-lg border border-pastel-lavender/20">
+                      {totalTasks} Total Tasks
+                    </span>
+                  </div>
+                  <span className="text-lg font-bold text-text-primary">{progressPercent}%</span>
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-[#0F172A] rounded-full h-5 overflow-hidden border border-slate-200">
+                  <div className="bg-pastel-lavender h-5 rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div>
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="glass-panel p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-wrap gap-4 items-center">
+                <span className="font-medium text-text-secondary mr-2">Filters:</span>
+                <select 
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
+                  value={filters.status}
+                  onChange={e => setFilters({...filters, status: e.target.value})}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="To Do">To Do</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Blocked">Blocked</option>
+                </select>
+
+                <select 
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
+                  value={filters.priority}
+                  onChange={e => setFilters({...filters, priority: e.target.value})}
+                >
+                  <option value="">All Priorities</option>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                </select>
+
+                <select 
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
+                  value={filters.assignedTo}
+                  onChange={e => setFilters({...filters, assignedTo: e.target.value})}
+                >
+                  <option value="">All Assignees</option>
+                  {organizers.map(org => (
+                    <option key={org.userId} value={org.userId}>{org.name}</option>
+                  ))}
+                </select>
+
+                <select 
+                  className="px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-pastel-lavender bg-white dark:bg-[#1E293B] text-text-primary"
+                  value={filters.category}
+                  onChange={e => setFilters({...filters, category: e.target.value})}
+                >
+                  <option value="">All Categories</option>
+                  {suggestedCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+
+                {(filters.status || filters.priority || filters.assignedTo || filters.category) && (
+                  <button 
+                    onClick={() => setFilters({status: '', priority: '', assignedTo: '', category: ''})}
+                    className="text-sm text-pastel-coral hover:text-red-700 font-bold"
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+
+              {/* Task Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-amber-400 shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="text-3xl font-black text-amber-500">{pendingTasks}</div>
+                  <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">To Do</div>
+                </div>
+                <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-blue-400 shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="text-3xl font-black text-blue-500">{inProgressTasks}</div>
+                  <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">In Progress</div>
+                </div>
+                <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-pastel-coral shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="text-3xl font-black text-pastel-coral">{blockedTasks}</div>
+                  <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">Blocked</div>
+                </div>
+                <div className="scrapbook-panel p-4 rounded-[1.5rem] text-center border-slate-200 border-t-4 border-t-pastel-mint shadow-sm transition-transform hover:-translate-y-1">
+                  <div className="text-3xl font-black text-pastel-mint">{completedTasks}</div>
+                  <div className="text-xs text-text-secondary font-bold uppercase tracking-wider mt-1">Completed</div>
+                </div>
+              </div>
+
+              {/* Task Board */}
+              <TaskBoard 
+                tasks={filteredTasks} 
+                onViewTask={handleViewTask} 
+                onEditTask={hasFullAccess() ? handleEditTask : undefined}
+              />
+            </>
+          )}
+        </main>
+      </div>
 
       {/* Modals */}
       <TaskModal 

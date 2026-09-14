@@ -2,6 +2,31 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth, supabase } from '../context/AuthContext';
 import axios from 'axios';
+import { GeometricBlobDoodle, StickyNoteDoodle, SparkleDoodle } from '../components/Doodles';
+
+// Helper to convert DB timestamp to local YYYY-MM-DDTHH:mm string for datetime-local input
+const formatToDatetimeLocal = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+// Helper to convert local YYYY-MM-DDTHH:mm string back to standard UTC ISO string
+const toUtcIso = (dateStr) => {
+  if (!dateStr) return null;
+  if (typeof dateStr === 'string' && (dateStr.endsWith('Z') || dateStr.includes('+'))) {
+    return dateStr;
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+};
 
 const ProposalWorkspace = () => {
   const { proposalId } = useParams();
@@ -27,6 +52,7 @@ const ProposalWorkspace = () => {
   const [facultyAction, setFacultyAction] = useState(null); // 'approve', 'request_revision', 'reject'
   const [remarks, setRemarks] = useState('');
   const [processingAction, setProcessingAction] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   // Event Details editing state
   const [isEditingDetails, setIsEditingDetails] = useState(false);
@@ -43,14 +69,15 @@ const ProposalWorkspace = () => {
   const [addingMember, setAddingMember] = useState(false);
   const [selectedUserForAdd, setSelectedUserForAdd] = useState(null);
   const [selectedResponsibility, setSelectedResponsibility] = useState('');
-  const [selectedOrganizerType, setSelectedOrganizerType] = useState('normal');
   const searchTimeoutRef = useRef(null);
 
   const fetchWorkspace = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await axios.get(`/api/events/${proposalId}/proposal-workspace`);
-      setData(res.data);
+      const res = await axios.get(`/api/events/${proposalId}/proposal-workspace?_t=${Date.now()}`);
+      if (res.data) {
+        setData(res.data);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load proposal workspace.');
       console.error(err);
@@ -61,7 +88,7 @@ const ProposalWorkspace = () => {
   
   const fetchTeam = async () => {
     try {
-      const res = await axios.get(`/api/events/${proposalId}/proposal-team`);
+      const res = await axios.get(`/api/events/${proposalId}/proposal-team?_t=${Date.now()}`);
       setTeam(res.data);
     } catch (err) {
       console.error('Failed to fetch team', err);
@@ -71,28 +98,39 @@ const ProposalWorkspace = () => {
   useEffect(() => {
     fetchWorkspace();
     fetchTeam();
-    // In a real app we'd setup realtime subscriptions here for discussions, but polling or just refreshing after actions is fine for now
+
+    // Poll every 5 seconds for real-time status and discussion sync
+    const interval = setInterval(() => {
+      fetchWorkspace(true);
+      fetchTeam();
+    }, 5000);
+
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalId]);
 
   useEffect(() => {
-    if (searchQuery.length < 2) {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     
-    searchTimeoutRef.current = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         setIsSearching(true);
-        const res = await axios.get(`/api/users/search?query=${encodeURIComponent(searchQuery)}`);
-        setSearchResults(res.data);
+        const res = await axios.get(`/api/users/search?query=${encodeURIComponent(trimmed)}`);
+        setSearchResults(res.data || []);
       } catch (err) {
-        console.error(err);
+        console.error('User search failed:', err);
+        setSearchResults([]);
       } finally {
         setIsSearching(false);
       }
-    }, 400);
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
   const handleAddTeamMember = async (userRecord, roleStr) => {
@@ -107,28 +145,17 @@ const ProposalWorkspace = () => {
         name: userRecord.name || userRecord.fullName,
         email: userRecord.email,
         department: userRecord.department,
-        role: roleStr,
-        organizerType: selectedOrganizerType
+        role: roleStr
       });
       setSearchQuery('');
       setSearchResults([]);
       setSelectedUserForAdd(null);
       setSelectedResponsibility('');
-      setSelectedOrganizerType('normal');
       fetchTeam();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to add team member.');
     } finally {
       setAddingMember(false);
-    }
-  };
-
-  const handleChangeOrganizerType = async (memberId, newType) => {
-    try {
-      await axios.put(`/api/events/${proposalId}/proposal-team/${memberId}/role`, { organizerType: newType });
-      fetchTeam();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to change organizer type.');
     }
   };
 
@@ -206,7 +233,12 @@ const ProposalWorkspace = () => {
         finalImageUrl = publicUrlData.publicUrl;
       }
 
-      const payload = { ...editFormData, imageUrl: finalImageUrl };
+      const payload = { 
+        ...editFormData, 
+        date: toUtcIso(editFormData.date),
+        registrationDeadline: editFormData.registrationDeadline ? toUtcIso(editFormData.registrationDeadline) : null,
+        imageUrl: finalImageUrl 
+      };
       await axios.put(`/api/events/${proposalId}/proposal-details`, payload);
       setIsEditingDetails(false);
       setPosterFile(null);
@@ -251,6 +283,11 @@ const ProposalWorkspace = () => {
   };
 
   const handleFacultyAction = async (status) => {
+    if (event?.status === 'needs_revision' && (status === 'approved' || status === 'rejected')) {
+      alert('This proposal is currently awaiting revisions from the student organizer. Approval and rejection are locked until the student resubmits.');
+      return;
+    }
+
     if (status === 'needs_revision' && !remarks) {
       alert('Please provide revision comments.');
       return;
@@ -260,34 +297,88 @@ const ProposalWorkspace = () => {
 
     try {
       setProcessingAction(true);
-      await axios.put(`/api/events/${proposalId}/proposal-status`, { status, remarks });
+      const res = await axios.put(`/api/events/${proposalId}/proposal-status`, { status, remarks });
+      // Immediately reflect updated event status in UI — preserve nested objects (faculty, student_organizer) that raw API response doesn't include
+      setData(prev => {
+        if (!prev) return prev;
+        const prevEvent = prev.event || {};
+        const apiEvent = res.data || {};
+        return {
+          ...prev,
+          event: {
+            ...prevEvent,
+            ...apiEvent,
+            // Preserve nested objects that the status API doesn't return
+            faculty: prevEvent.faculty,
+            student_organizer: prevEvent.student_organizer,
+            // Explicitly set the new status and remarks
+            status: status,
+            approval_remarks: status === 'needs_revision' ? (remarks || apiEvent.approval_remarks) : (remarks || apiEvent.approval_remarks || prevEvent.approval_remarks)
+          }
+        };
+      });
       setFacultyAction(null);
       setRemarks('');
-      fetchWorkspace(true);
+      // Re-fetch to get fully hydrated data from server
+      await Promise.all([fetchWorkspace(true), fetchTeam()]);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update status.');
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to update status.');
     } finally {
       setProcessingAction(false);
     }
   };
 
   const handleResubmit = async () => {
-    if (!window.confirm('Are you sure you want to resubmit this proposal?')) return;
+    if (!window.confirm('Are you sure you want to resubmit this proposal for review?')) return;
     try {
       setProcessingAction(true);
-      await axios.put(`/api/events/${proposalId}/proposal-resubmit`);
-      fetchWorkspace(true);
+      const res = await axios.put(`/api/events/${proposalId}/proposal-resubmit`);
+      // Immediately reflect updated status — preserve nested objects (faculty, student_organizer) that raw API doesn't include
+      setData(prev => {
+        if (!prev) return prev;
+        const prevEvent = prev.event || {};
+        const apiEvent = res.data || {};
+        return {
+          ...prev,
+          event: {
+            ...prevEvent,
+            ...apiEvent,
+            faculty: prevEvent.faculty,
+            student_organizer: prevEvent.student_organizer,
+            status: 'pending_approval',
+            approval_remarks: null,
+            revision_number: apiEvent.revision_number || (prevEvent.revision_number || 1) + 1
+          }
+        };
+      });
+      alert('Proposal resubmitted for review successfully! The faculty coordinator has been notified.');
+      await Promise.all([fetchWorkspace(true), fetchTeam()]);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to resubmit proposal.');
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to resubmit proposal.');
     } finally {
       setProcessingAction(false);
     }
   };
 
+  const handlePublish = async () => {
+    if (!window.confirm('Are you sure you want to publish this event? Once published, registrations will be open to all students.')) return;
+    try {
+      setPublishing(true);
+      await axios.put(`/api/events/${proposalId}/publish`);
+      alert('Event published successfully! Opening your unified Event Workspace...');
+      navigate(`/workspace/${proposalId}`);
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to publish event.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-slate-50">
-        <div className="animate-spin w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full" />
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <div className="w-10 h-10 border-4 border-fuchsia-500/20 border-t-fuchsia-600 rounded-full animate-spin" />
+        <p className="text-sm font-bold text-slate-500">Loading Proposal Workspace...</p>
       </div>
     );
   }
@@ -300,687 +391,910 @@ const ProposalWorkspace = () => {
 
   const { event, discussions, documents, timeline } = data;
   
-  const isFaculty = user.id === event.faculty_id;
-  const isCreator = user.id === event.proposed_by || user.id === event.student_organizer_id;
+  const isFaculty = Boolean(user && (
+    String(user.id) === String(event.faculty_id) || 
+    user.roles?.includes('admin') || 
+    user.role === 'admin' ||
+    user.roles?.includes('faculty') ||
+    user.roles?.includes('faculty_organizer') ||
+    user.role === 'faculty' ||
+    user.role === 'faculty_organizer'
+  ));
+  const isCreator = Boolean(user && (
+    String(user.id) === String(event.proposed_by) || 
+    String(user.id) === String(event.student_organizer_id) || 
+    String(user.id) === String(event.organizer_id) ||
+    String(user.id) === String(event.created_by) || 
+    user.roles?.includes('admin') || 
+    user.role === 'admin'
+  ));
+
+  // Dynamically resolve actual names for coordinator and proposer (prevent placeholders)
+  const coordinatorName =
+    event.faculty?.name ||
+    event.faculty?.full_name ||
+    team.find(t => t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id)?.name ||
+    event.faculty_name ||
+    (event.faculty_id ? 'Assigned Coordinator' : 'Not Assigned');
+
+  const proposerName =
+    event.student_organizer?.name ||
+    event.student_organizer?.full_name ||
+    team.find(t => t.user_id === event.proposed_by || t.user_id === event.student_organizer_id)?.name ||
+    event.student_name ||
+    event.proposer_name ||
+    (isCreator && (user?.name || user?.fullName) ? (user.name || user.fullName) : 'Student Organizer');
 
   const getStatusBadge = (status) => {
     const s = status || 'draft';
-    const config = {
-      'draft': 'bg-slate-100 text-slate-600 border-slate-200',
-      'pending_approval': 'bg-blue-100 text-blue-600 border-blue-200',
-      'under_review': 'bg-amber-100 text-amber-600 border-amber-200',
-      'needs_revision': 'bg-orange-100 text-orange-600 border-orange-200',
-      'approved': 'bg-emerald-100 text-emerald-600 border-emerald-200',
-      'rejected': 'bg-red-100 text-red-600 border-red-200',
-      'published': 'bg-teal-100 text-teal-600 border-teal-200',
-      'active': 'bg-indigo-100 text-indigo-600 border-indigo-200'
-    };
-    const c = config[s] || config.draft;
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${c}`}>
-        {s.replace('_', ' ')}
-      </span>
-    );
+    switch (s) {
+      case 'pending_approval':
+      case 'under_review':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+            Under Review
+          </span>
+        );
+      case 'needs_revision':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-50 text-orange-700 border border-orange-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+            Needs Revision
+          </span>
+        );
+      case 'approved':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            Approved
+          </span>
+        );
+      case 'published':
+      case 'active':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+            Published
+          </span>
+        );
+      case 'rejected':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200/80">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+            Rejected
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+            {s.replace(/_/g, ' ')}
+          </span>
+        );
+    }
   };
 
   const tabs = [
-    { id: 'summary', label: 'Summary' },
-    { id: 'team', label: 'Organizing Team' },
-    { id: 'discussion', label: 'Discussion' },
-    { id: 'documents', label: 'Documents' },
-    { id: 'timeline', label: 'Timeline' }
+    { id: 'summary', label: 'Overview & Details' },
+    { id: 'discussion', label: 'Discussion', count: discussions?.length || 0 },
+    { id: 'documents', label: 'Documents', count: documents?.length || 0 },
+    { id: 'team', label: 'Organizing Team', count: team?.length || 0 },
+    { id: 'timeline', label: 'Timeline', count: timeline?.length || 0 }
   ];
 
-  // Helper to determine base URL for documents (to handle both dev and prod)
-  // We'll use axios config base URL or assume the same origin if not set.
   const getFileUrl = (url) => {
-      return axios.defaults.baseURL ? `${axios.defaults.baseURL}${url}` : `http://localhost:5001${url}`;
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    return axios.defaults.baseURL ? `${axios.defaults.baseURL}${url}` : `http://localhost:5001${url}`;
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-10 font-body">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6">
+    <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-body text-slate-700">
+      <GeometricBlobDoodle className="absolute top-10 right-10 w-96 h-96 text-pastel-lavender -z-10 opacity-25 animate-spin-slow" />
+      <GeometricBlobDoodle className="absolute bottom-20 left-10 w-80 h-80 text-pastel-mint -z-10 opacity-25 animate-float" />
+
+      <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         
-        {/* Sidebar */}
-        <div className="w-full md:w-1/3 shrink-0 flex flex-col gap-6">
-          {/* Proposal Header */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-            <Link to={isFaculty ? "/faculty-organizer/events" : "/student-organizer/events"} className="text-sm font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mb-4 transition-colors">
-              ← Back to Events
-            </Link>
-            <h1 className="text-2xl font-black font-display text-slate-800 mb-2 leading-tight">{event.title}</h1>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {getStatusBadge(event.status)}
-              <span className="px-3 py-1 rounded-full text-xs font-bold border bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100 uppercase tracking-wider">
-                Rev {event.revision_number || 1}
-              </span>
-            </div>
-            
-            <div className="space-y-4 text-sm mt-6">
-              <div>
-                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Category</span>
-                <p className="font-semibold text-slate-700">{event.category}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Proposed Date</span>
-                <p className="font-semibold text-slate-700">{new Date(event.date).toLocaleDateString()}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Venue</span>
-                <p className="font-semibold text-slate-700">{event.venue}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Organizer</span>
-                <p className="font-semibold text-slate-700">{event.student_organizer?.full_name}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Faculty Coordinator</span>
-                <p className="font-semibold text-slate-700">{event.faculty?.full_name}</p>
-              </div>
-              {event.registration_type === 'team' ? (
-                <div>
-                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Team Limit</span>
-                  <p className="font-semibold text-slate-700">{event.max_teams} teams ({event.min_team_size}-{event.max_team_size} members)</p>
-                </div>
-              ) : event.capacity ? (
-                <div>
-                  <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Number of Slots</span>
-                  <p className="font-semibold text-slate-700">{event.capacity} seats</p>
-                </div>
-              ) : null}
-            </div>
-          </div>
+        {/* Back Link & Breadcrumb */}
+        <div className="flex items-center justify-between">
+          <Link 
+            to={isFaculty ? "/faculty-organizer/events" : "/student-organizer/events"} 
+            className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-fuchsia-600 bg-white/80 backdrop-blur-sm px-3.5 py-1.5 rounded-xl border border-slate-200/70 shadow-xs transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Back to Proposals</span>
+          </Link>
+          <span className="text-xs font-medium text-slate-400">
+            Workspace ID: <span className="font-mono text-slate-600">{proposalId.slice(0, 8)}...</span>
+          </span>
+        </div>
 
-          {/* Workflow Actions */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-            <h3 className="text-sm font-black font-display text-slate-800 uppercase tracking-wider mb-4 border-b pb-2">Workflow Actions</h3>
-            
-            {isFaculty && (event.status === 'pending_approval' || event.status === 'under_review') && (
-              <div className="flex flex-col gap-3">
-                {event.status === 'pending_approval' && (
-                  <button 
-                    onClick={() => handleFacultyAction('under_review')}
-                    disabled={processingAction}
-                    className="w-full py-2.5 rounded-xl font-bold text-sm bg-indigo-500 hover:bg-indigo-600 text-white transition-colors"
-                  >
-                    Start Review (Mark Under Review)
-                  </button>
+        {/* Hero Header Card */}
+        <div className="bg-white/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs relative overflow-hidden">
+          <StickyNoteDoodle className="absolute -top-4 -right-4 w-12 h-12 text-pastel-yellow opacity-70 hidden md:block" />
+          
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="space-y-3 flex-1">
+              {/* Category, Status & Revision Badges */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {event.category && (
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200/70">
+                    {event.category}
+                  </span>
                 )}
-                
-                {event.status === 'under_review' && (
-                  <>
-                    <button 
-                      onClick={() => setFacultyAction(facultyAction === 'approve' ? null : 'approve')}
-                      className="w-full py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
-                    >
-                      Approve Proposal
-                    </button>
-                    <button 
-                      onClick={() => setFacultyAction(facultyAction === 'request_revision' ? null : 'request_revision')}
-                      className="w-full py-2.5 rounded-xl font-bold text-sm bg-orange-500 hover:bg-orange-600 text-white transition-colors"
-                    >
-                      Request Revision
-                    </button>
-                    <button 
-                      onClick={() => setFacultyAction(facultyAction === 'reject' ? null : 'reject')}
-                      className="w-full py-2.5 rounded-xl font-bold text-sm bg-red-500 hover:bg-red-600 text-white transition-colors"
-                    >
-                      Reject Proposal
-                    </button>
-                  </>
-                )}
-                
-                {facultyAction && (
-                  <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 animate-fade-in-up">
-                    <label className="block text-xs font-bold text-slate-600 mb-2">
-                      {facultyAction === 'request_revision' ? 'Revision Comments (Required)' : 'Remarks (Optional)'}
-                    </label>
-                    <textarea 
-                      className="w-full p-2 border border-slate-200 rounded-lg text-sm mb-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                      rows="3"
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Enter comments..."
-                    />
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => setFacultyAction(null)}
-                        className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-lg transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button 
-                        onClick={() => handleFacultyAction(facultyAction === 'approve' ? 'approved' : facultyAction === 'reject' ? 'rejected' : 'needs_revision')}
-                        disabled={processingAction}
-                        className={`flex-1 py-2 font-bold text-xs rounded-lg text-white transition-colors ${
-                          facultyAction === 'approve' ? 'bg-emerald-500 hover:bg-emerald-600' :
-                          facultyAction === 'reject' ? 'bg-red-500 hover:bg-red-600' :
-                          'bg-orange-500 hover:bg-orange-600'
-                        }`}
-                      >
-                        {processingAction ? 'Processing...' : 'Confirm'}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {getStatusBadge(event.status)}
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/70">
+                  Revision {event.revision_number || 1}
+                </span>
               </div>
-            )}
 
-            {isCreator && event.status === 'needs_revision' && (
-              <div className="flex flex-col gap-3">
-                <div className="p-3 bg-orange-50 text-orange-800 rounded-xl border border-orange-200 text-sm font-medium mb-2">
-                  <span className="font-bold block mb-1">Faculty Remarks:</span>
-                  {event.approval_remarks}
+              {/* Title */}
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-black text-slate-900 leading-tight">
+                {event.title}
+              </h1>
+
+              {/* Key Meta Badges */}
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium pt-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/80 text-slate-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                  </svg>
+                  <span>{event.venue || 'Venue TBD'}</span>
                 </div>
-                <button 
-                  onClick={handleResubmit}
-                  disabled={processingAction}
-                  className="w-full py-2.5 rounded-xl font-bold text-sm bg-indigo-500 hover:bg-indigo-600 text-white transition-colors"
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/80 text-slate-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                  </svg>
+                  <span>{new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+                  </svg>
+                  <span>Coordinator: {coordinatorName}</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/80 text-slate-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                  </svg>
+                  <span>Proposed by: {proposerName}</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/80 text-slate-700">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                  </svg>
+                  <span>{team.length} Team Members</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Header Primary Action */}
+            <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {event.status === 'approved' && (isCreator || user?.roles?.includes('admin') || user?.role === 'admin') && (
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing}
+                  className="btn-primary px-6 py-3 rounded-2xl font-bold text-sm text-white shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer hover:opacity-95 active:scale-95 transition-all"
                 >
-                  {processingAction ? 'Processing...' : 'Resubmit Proposal'}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>{publishing ? 'Publishing Event...' : 'Publish Event Live'}</span>
                 </button>
-                <p className="text-xs text-slate-500 text-center px-2">Make sure you have uploaded the revised documents before resubmitting.</p>
-              </div>
-            )}
+              )}
 
-            {(!isFaculty && event.status !== 'needs_revision') || (isFaculty && !['pending_approval', 'under_review'].includes(event.status)) ? (
-              <p className="text-sm text-slate-500 italic text-center">No workflow actions available at this stage.</p>
-            ) : null}
+              {['published', 'active'].includes(event.status) && (
+                <Link
+                  to={`/workspace/${proposalId}`}
+                  className="px-6 py-3 rounded-2xl font-bold text-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/20 flex items-center justify-center gap-2 hover:opacity-95 transition-all cursor-pointer"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                  </svg>
+                  <span>Open All-in-One Workspace</span>
+                </Link>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden h-[80vh] md:h-auto min-h-[600px]">
-          {/* Tabs */}
-          <div className="flex border-b border-slate-100 overflow-x-auto hide-scrollbar">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-4 px-6 text-sm font-bold uppercase tracking-wider whitespace-nowrap transition-colors ${
-                  activeTab === tab.id 
-                    ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' 
-                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+        {/* Faculty Decision & Review Banner (if Faculty) */}
+        {isFaculty && ['pending_approval', 'under_review'].includes(event.status) && (
+          <div className="bg-gradient-to-r from-indigo-50/90 via-purple-50/80 to-white backdrop-blur-md rounded-3xl p-6 border border-indigo-200/80 shadow-xs animate-fade-in">
+            {/* Student Resubmission Alert — only when revision_number > 1 */}
+            {(event.revision_number || 1) > 1 && (
+              <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200/80 flex items-start gap-3 animate-fade-in">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <div className="font-display font-bold text-sm text-emerald-900 flex items-center gap-2">
+                    <span>Student Resubmitted — Revision {event.revision_number} Ready for Review</span>
+                    <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-emerald-200 text-emerald-900 animate-pulse">New</span>
+                  </div>
+                  <p className="text-xs text-emerald-800 mt-1">
+                    The student has addressed your revision feedback and resubmitted this proposal. Please review the updated details, documents, and discussion thread before making a new decision.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+              <div>
+                <h3 className="font-display font-bold text-lg text-slate-800 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+                  </svg>
+                  <span>Faculty Coordinator Decision Panel</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {(event.revision_number || 1) > 1
+                    ? `Reviewing Revision ${event.revision_number} — Please re-evaluate the updated proposal before making a decision.`
+                    : 'Review the event details, team members, and uploaded documents before making an approval decision.'
+                  }
+                </p>
+              </div>
+              <div className="text-xs font-bold text-slate-500">
+                Current Status: <span className="uppercase text-indigo-600">{event.status.replace(/_/g, ' ')}</span>
+                {(event.revision_number || 1) > 1 && <span className="ml-2 uppercase text-emerald-600">• Revision {event.revision_number}</span>}
+              </div>
+            </div>
+
+            {/* Decision Buttons Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <button 
+                onClick={() => setFacultyAction(facultyAction === 'approve' ? null : 'approve')}
+                className={`py-2.5 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  facultyAction === 'approve' 
+                    ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-sm' 
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                 }`}
               >
-                {tab.label}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Approve Proposal</span>
               </button>
-            ))}
-          </div>
 
-          {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-6 relative bg-slate-50/30">
-            
-            {/* Summary Tab */}
-            {activeTab === 'summary' && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-slate-800">Event Details</h3>
-                    {(isCreator || isFaculty || user?.roles?.includes('admin')) && !isEditingDetails && (
-                      <button 
-                        onClick={() => {
-                          const toLocalISO = (d) => {
-                            if (!d) return '';
-                            const date = new Date(d);
-                            if (isNaN(date.getTime())) return '';
-                            return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-                          };
-                          setEditFormData({
-                            title: event.title || '',
-                            description: event.description || '',
-                            date: toLocalISO(event.date),
-                            registrationDeadline: toLocalISO(event.registration_deadline),
-                            category: event.category || '',
-                            venue: event.venue || '',
-                            registrationType: event.registration_type || 'individual',
-                            minTeamSize: event.min_team_size || 1,
-                            maxTeamSize: event.max_team_size || 1,
-                            maxTeams: event.max_teams || '',
-                            imageUrl: event.image_url || event.imageUrl || ''
-                          });
-                          setPosterFile(null);
-                          setPosterPreview('');
-                          setIsEditingDetails(true);
-                        }}
-                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
-                      >
-                        Edit Details
-                      </button>
-                    )}
-                  </div>
-                  
-                  {isEditingDetails ? (
-                    <div className="space-y-4 animate-fade-in">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Event Title</label>
-                          <input
-                            type="text"
-                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            value={editFormData.title}
-                            onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
-                          <input
-                            type="text"
-                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            value={editFormData.category}
-                            onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Venue</label>
-                          <input
-                            type="text"
-                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            value={editFormData.venue}
-                            onChange={(e) => setEditFormData({...editFormData, venue: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Proposed Date</label>
-                          <input
-                            type="datetime-local"
-                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            value={editFormData.date}
-                            onChange={(e) => setEditFormData({...editFormData, date: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Registration Type</label>
-                          <select
-                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
-                            value={editFormData.registrationType}
-                            onChange={(e) => setEditFormData({...editFormData, registrationType: e.target.value})}
-                          >
-                            <option value="individual">Individual</option>
-                            <option value="team">Team</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">Registration Deadline</label>
-                          <input
-                            type="datetime-local"
-                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                            value={editFormData.registrationDeadline}
-                            onChange={(e) => setEditFormData({...editFormData, registrationDeadline: e.target.value})}
-                          />
-                        </div>
-                        
-                        {editFormData.registrationType === 'team' && (
-                          <>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-700 mb-1">Min Team Size</label>
-                              <input
-                                type="number"
-                                min="1"
-                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                value={editFormData.minTeamSize}
-                                onChange={(e) => setEditFormData({...editFormData, minTeamSize: e.target.value})}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-700 mb-1">Max Team Size</label>
-                              <input
-                                type="number"
-                                min="1"
-                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                value={editFormData.maxTeamSize}
-                                onChange={(e) => setEditFormData({...editFormData, maxTeamSize: e.target.value})}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-bold text-slate-700 mb-1">Max Teams (Capacity)</label>
-                              <input
-                                type="number"
-                                min="1"
-                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                value={editFormData.maxTeams}
-                                onChange={(e) => setEditFormData({...editFormData, maxTeams: e.target.value})}
-                              />
-                            </div>
-                          </>
-                        )}
-                      </div>
+              {event.status !== 'under_review' ? (
+                <button 
+                  onClick={() => handleFacultyAction('under_review')}
+                  disabled={processingAction}
+                  className="py-2.5 px-4 rounded-xl font-bold text-xs bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Mark Under Review</span>
+                </button>
+              ) : (
+                <div className="py-2.5 px-4 rounded-xl font-bold text-xs bg-amber-100/70 text-amber-800 border border-amber-300 flex items-center justify-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-amber-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Under Active Review</span>
+                </div>
+              )}
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1 mt-4">Event Poster</label>
-                        <div className="flex flex-col gap-3">
-                          {(posterPreview || editFormData.imageUrl) && (
-                            <img 
-                              src={posterPreview || editFormData.imageUrl} 
-                              alt="Event Poster Preview" 
-                              className="w-full max-w-sm rounded-xl border border-slate-200 object-cover aspect-video"
-                            />
-                          )}
-                          <div className="flex items-center gap-3">
-                            <label className="cursor-pointer px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors inline-block">
-                              Change Poster
-                              <input 
-                                type="file" 
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files[0];
-                                  if (file) {
-                                    setPosterFile(file);
-                                    setPosterPreview(URL.createObjectURL(file));
-                                  }
-                                }}
-                              />
-                            </label>
-                            {posterFile && (
-                              <span className="text-xs text-slate-500 font-medium truncate max-w-xs">New file selected: {posterFile.name}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+              <button 
+                onClick={() => setFacultyAction(facultyAction === 'request_revision' ? null : 'request_revision')}
+                className={`py-2.5 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  facultyAction === 'request_revision' 
+                    ? 'bg-orange-600 text-white ring-2 ring-orange-400 shadow-sm' 
+                    : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span>Request Revision</span>
+              </button>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1 mt-4">Event Description</label>
-                        <textarea
-                          className="w-full p-4 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none min-h-[150px]"
-                          value={editFormData.description}
-                          onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
-                          placeholder="Enter event description..."
-                        />
-                      </div>
-                      
-                      <div className="flex gap-2 justify-end mt-4">
-                        <button 
-                          onClick={() => setIsEditingDetails(false)}
-                          disabled={savingDetails}
-                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors disabled:opacity-50"
-                        >
-                          Cancel
-                        </button>
-                        <button 
-                          onClick={handleSaveDetails}
-                          disabled={savingDetails || !editFormData.title?.trim() || !editFormData.description?.trim()}
-                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-                        >
-                          {savingDetails ? (
-                            <>
-                              <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
-                              Saving...
-                            </>
-                          ) : 'Save Details'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <h4 className="text-xl font-bold text-slate-800 mb-3">{event.title}</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-700">
-                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Category</strong> {event.category || 'N/A'}</div>
-                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Venue</strong> {event.venue || 'TBA'}</div>
-                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Date</strong> {event.date ? new Date(event.date).toLocaleString() : 'TBA'}</div>
-                        <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Type</strong> {event.registration_type === 'team' ? 'Team Event' : 'Individual Event'}</div>
-                        {event.registration_type === 'team' && (
-                          <>
-                            <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Min/Max Size</strong> {event.min_team_size} - {event.max_team_size} Members</div>
-                            <div><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Max Teams</strong> {event.max_teams || 'No Limit'}</div>
-                          </>
-                        )}
-                        {event.registration_deadline && (
-                          <div className="col-span-full md:col-span-1"><strong className="block text-xs text-slate-500 uppercase tracking-wider mb-1">Reg. Deadline</strong> {new Date(event.registration_deadline).toLocaleString()}</div>
-                        )}
-                      </div>
-                      <h5 className="text-sm font-bold text-slate-700 mb-2">Description</h5>
-                      <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">{event.description}</p>
-                    </div>
-                  )}
+              <button 
+                onClick={() => setFacultyAction(facultyAction === 'reject' ? null : 'reject')}
+                className={`py-2.5 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  facultyAction === 'reject' 
+                    ? 'bg-red-600 text-white ring-2 ring-red-400 shadow-sm' 
+                    : 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>Reject Proposal</span>
+              </button>
+            </div>
+
+            {/* Interactive Decision Form */}
+            {facultyAction && (
+              <div className="mt-4 p-5 bg-white rounded-2xl border border-indigo-200 shadow-sm animate-fade-in-up">
+                <label className="block text-xs font-bold text-slate-800 mb-2">
+                  {facultyAction === 'request_revision' ? 'Specify Revision Instructions (Required)' : 
+                   facultyAction === 'reject' ? 'State Rejection Reason (Required)' : 
+                   'Approval Remarks & Instructions for Student (Optional)'}
+                </label>
+                <textarea 
+                  className="w-full p-3 border border-slate-200 rounded-xl text-sm mb-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-slate-50/50 resize-none font-body"
+                  rows="3"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder={
+                    facultyAction === 'request_revision' ? 'Clearly list what the student needs to update, modify, or add before approval...' :
+                    facultyAction === 'reject' ? 'Provide constructive feedback explaining why this proposal cannot proceed...' :
+                    'Add any congratulations or special instructions for the organizing team...'
+                  }
+                />
+                <div className="flex gap-2 justify-end">
+                  <button 
+                    onClick={() => { setFacultyAction(null); setRemarks(''); }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => handleFacultyAction(facultyAction === 'approve' ? 'approved' : facultyAction === 'reject' ? 'rejected' : 'needs_revision')}
+                    disabled={processingAction || (facultyAction === 'reject' && !remarks.trim()) || (facultyAction === 'request_revision' && !remarks.trim())}
+                    className={`px-5 py-2 font-bold text-xs rounded-xl text-white transition-all shadow-xs cursor-pointer disabled:opacity-50 ${
+                      facultyAction === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                      facultyAction === 'reject' ? 'bg-red-600 hover:bg-red-700' :
+                      'bg-orange-600 hover:bg-orange-700'
+                    }`}
+                  >
+                    {processingAction ? 'Confirming...' : 'Confirm Decision'}
+                  </button>
                 </div>
               </div>
             )}
+          </div>
+        )}
 
-            {/* Team Tab */}
-            {activeTab === 'team' && (
-              <div className="space-y-6 animate-fade-in">
-                {/* Search & Add */}
-                {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-wider">Assign Organizers</h3>
-                    {selectedUserForAdd ? (
-                      <div className="mt-4 p-5 border border-indigo-100 bg-indigo-50/30 rounded-xl animate-fade-in">
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">{selectedUserForAdd.name || selectedUserForAdd.fullName}</p>
-                            <p className="text-xs text-slate-500">{selectedUserForAdd.email}</p>
-                          </div>
-                          <button onClick={() => setSelectedUserForAdd(null)} className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm transition-colors">Change User</button>
+        {/* Faculty Awaiting Revision Notice (Actions Locked until Resubmission) */}
+        {isFaculty && event.status === 'needs_revision' && (
+          <div className="p-6 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-white rounded-3xl border border-amber-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-display font-bold">Proposal Under Revision — Actions Locked</span>
+              </div>
+              <p className="text-xs text-amber-800">
+                You have requested revisions for this proposal. Review and approval actions are temporarily locked until the student resubmits the revised proposal.
+              </p>
+              {event.approval_remarks && (
+                <div className="mt-2 text-xs text-slate-700 bg-white/85 p-3 rounded-xl border border-amber-200/60 max-w-3xl">
+                  <span className="font-bold text-slate-800">Requested Revisions: </span>
+                  {event.approval_remarks}
+                </div>
+              )}
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-100/80 text-amber-800 border border-amber-200 shrink-0 self-start md:self-auto">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+              Awaiting Student Resubmission
+            </span>
+          </div>
+        )}
+
+        {/* Proposal Approved Banner */}
+        {event.status === 'approved' && (
+          <div className="p-6 bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-white rounded-3xl border border-emerald-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5 animate-fade-in">
+            <div className="space-y-2 flex-1">
+              <div className="flex items-center gap-2 text-emerald-900 font-bold text-base">
+                <div className="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <span className="font-display">Proposal Formally Approved</span>
+              </div>
+              <p className="text-xs text-emerald-800 leading-relaxed max-w-3xl">
+                This event proposal has been reviewed and approved by the Faculty Coordinator. 
+                {isCreator ? ' You can now review the final parameters and publish the event live to begin student registrations.' : ' The student organizing lead or administrator can now publish the event live.'}
+              </p>
+              {event.approval_remarks && (
+                <div className="mt-2 text-xs text-slate-700 bg-white/90 p-3.5 rounded-xl border border-emerald-200/80 max-w-3xl">
+                  <span className="font-bold text-slate-800">Approval Remarks: </span>
+                  <span className="whitespace-pre-line">{event.approval_remarks.replace(/\[Approved By: [^\]]+\]/g, '').trim() || 'Approved.'}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+              {(isCreator || user?.roles?.includes('admin') || user?.role === 'admin') && (
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing}
+                  className="px-6 py-3 rounded-2xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>{publishing ? 'Publishing Live...' : 'Publish Event Live'}</span>
+                </button>
+              )}
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 self-start sm:self-auto">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Approved
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Proposal Rejected Banner */}
+        {event.status === 'rejected' && (
+          <div className="p-6 bg-gradient-to-r from-red-50/90 via-rose-50/70 to-white rounded-3xl border border-red-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2 text-red-900 font-bold text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span className="font-display font-bold">Proposal Rejected</span>
+              </div>
+              <p className="text-xs text-red-800">
+                This proposal has been rejected by the Faculty Coordinator. Review the feedback below.
+              </p>
+              {event.approval_remarks && (
+                <div className="mt-2 text-xs text-slate-700 bg-white/90 p-3 rounded-xl border border-red-200/80 max-w-3xl">
+                  <span className="font-bold text-slate-800">Coordinator Remarks: </span>
+                  {event.approval_remarks}
+                </div>
+              )}
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200 shrink-0 self-start md:self-auto">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+              Rejected
+            </span>
+          </div>
+        )}
+
+        {/* Needs Revision Notification Banner for Student */}
+        {isCreator && event.status === 'needs_revision' && (
+          <div className="p-6 bg-gradient-to-r from-orange-50/95 via-amber-50/90 to-white rounded-3xl border border-orange-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5 animate-fade-in">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2 text-orange-950 font-bold text-sm">
+                <div className="w-7 h-7 rounded-full bg-orange-500/20 text-orange-700 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <span className="font-display font-bold">Revision Requested by Faculty Coordinator</span>
+              </div>
+              <p className="text-xs text-orange-900/90 leading-relaxed max-w-3xl font-medium">
+                {event.approval_remarks || 'Please address coordinator remarks, update your event details or upload revised documents, and resubmit for review.'}
+              </p>
+            </div>
+            <button
+              onClick={handleResubmit}
+              disabled={processingAction}
+              className="px-6 py-3 rounded-2xl font-bold text-xs bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white shadow-md shadow-orange-500/25 transition-all shrink-0 cursor-pointer self-start md:self-auto flex items-center gap-2 disabled:opacity-50"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{processingAction ? 'Submitting...' : 'Resubmit Proposal for Review'}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Student Pending Review / Under Review Banner */}
+        {!isFaculty && ['pending_approval', 'under_review'].includes(event.status) && (
+          <div className="p-6 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-white rounded-3xl border border-indigo-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5 animate-fade-in">
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2 text-indigo-950 font-bold text-sm">
+                <div className="w-7 h-7 rounded-full bg-indigo-500/15 text-indigo-700 flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <span className="font-display font-bold">Proposal Submitted — Under Faculty Review</span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed max-w-3xl">
+                Your proposal (Revision {event.revision_number || 1}) has been submitted to <span className="font-bold text-slate-800">{coordinatorName}</span> for review. You will receive an automated email and notification once an approval decision is recorded.
+              </p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-indigo-100/90 text-indigo-800 border border-indigo-200/80 shrink-0 self-start md:self-auto">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+              Awaiting Faculty Decision
+            </span>
+          </div>
+        )}
+
+        {/* Workspace Tab Navigation Track */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <div className="p-1.5 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200/70 shadow-xs flex items-center gap-1.5 shrink-0">
+            {tabs.map(tab => {
+              const renderTabIcon = () => {
+                switch(tab.id) {
+                  case 'summary':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
+                  case 'discussion':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>;
+                  case 'documents':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>;
+                  case 'team':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
+                  case 'timeline':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+                  default:
+                    return null;
+                }
+              };
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                    activeTab === tab.id
+                      ? 'bg-fuchsia-500 text-white shadow-sm shadow-fuchsia-500/20'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/70'
+                  }`}
+                >
+                  {renderTabIcon()}
+                  <span>{tab.label}</span>
+                  {typeof tab.count === 'number' && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === tab.id ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Workspace Main Tab Panels */}
+        <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/80 shadow-xs p-6 min-h-[500px]">
+          
+          {/* TAB 1: OVERVIEW & DETAILS */}
+          {activeTab === 'summary' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <h2 className="font-display font-bold text-xl text-slate-900">Event Overview & Specifications</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Comprehensive proposal parameters and settings</p>
+                </div>
+                {(isCreator || isFaculty || user?.roles?.includes('admin')) && !isEditingDetails && (
+                  <button 
+                    onClick={() => {
+                      setEditFormData({
+                        title: event.title || '',
+                        description: event.description || '',
+                        date: formatToDatetimeLocal(event.date),
+                        registrationDeadline: formatToDatetimeLocal(event.registration_deadline),
+                        category: event.category || '',
+                        venue: event.venue || '',
+                        registrationType: event.registration_type || 'individual',
+                        minTeamSize: event.min_team_size || 1,
+                        maxTeamSize: event.max_team_size || 1,
+                        maxTeams: event.max_teams || '',
+                        imageUrl: event.image_url || event.imageUrl || ''
+                      });
+                      setPosterFile(null);
+                      setPosterPreview('');
+                      setIsEditingDetails(true);
+                    }}
+                    className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span>Edit Details</span>
+                  </button>
+                )}
+              </div>
+
+              {isEditingDetails ? (
+                <div className="space-y-5 animate-fade-in bg-slate-50/60 p-6 rounded-2xl border border-slate-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Event Title *</label>
+                      <input
+                        type="text"
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                        value={editFormData.title}
+                        onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Category *</label>
+                      <input
+                        type="text"
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                        value={editFormData.category}
+                        onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Venue / Hall *</label>
+                      <input
+                        type="text"
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                        value={editFormData.venue}
+                        onChange={(e) => setEditFormData({...editFormData, venue: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Proposed Date & Time *</label>
+                      <input
+                        type="datetime-local"
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                        value={editFormData.date}
+                        onChange={(e) => setEditFormData({...editFormData, date: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Registration Type</label>
+                      <select
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none cursor-pointer"
+                        value={editFormData.registrationType}
+                        onChange={(e) => setEditFormData({...editFormData, registrationType: e.target.value})}
+                      >
+                        <option value="individual">Individual Registration</option>
+                        <option value="team">Team Registration</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Registration Deadline</label>
+                      <input
+                        type="datetime-local"
+                        className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                        value={editFormData.registrationDeadline}
+                        onChange={(e) => setEditFormData({...editFormData, registrationDeadline: e.target.value})}
+                      />
+                    </div>
+                    
+                    {editFormData.registrationType === 'team' && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Min Team Size</label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                            value={editFormData.minTeamSize}
+                            onChange={(e) => setEditFormData({...editFormData, minTeamSize: e.target.value})}
+                          />
                         </div>
-                        
-                        <div className="mb-4">
-                          <label className="block text-xs font-bold text-slate-700 mb-2">Organizer Type <span className="text-red-500">*</span></label>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedOrganizerType('core')}
-                              className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
-                                selectedOrganizerType === 'core'
-                                  ? 'bg-indigo-600 text-white border-indigo-600'
-                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              ⭐ Core Organizer
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedOrganizerType('normal')}
-                              className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
-                                selectedOrganizerType === 'normal'
-                                  ? 'bg-slate-700 text-white border-slate-700'
-                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              Normal Organizer
-                            </button>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Max Team Size</label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                            value={editFormData.maxTeamSize}
+                            onChange={(e) => setEditFormData({...editFormData, maxTeamSize: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Max Teams Limit</label>
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                            value={editFormData.maxTeams}
+                            onChange={(e) => setEditFormData({...editFormData, maxTeams: e.target.value})}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Event Poster Image</label>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                      {(posterPreview || editFormData.imageUrl) && (
+                        <img 
+                          src={posterPreview || editFormData.imageUrl} 
+                          alt="Poster Preview" 
+                          className="w-48 h-28 rounded-xl border border-slate-200 object-cover shadow-xs"
+                        />
+                      )}
+                      <label className="cursor-pointer px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition-colors shadow-xs inline-block">
+                        Choose New Poster
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              setPosterFile(file);
+                              setPosterPreview(URL.createObjectURL(file));
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Description *</label>
+                    <textarea
+                      className="w-full p-3 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none min-h-[140px]"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({...editFormData, description: e.target.value})}
+                      placeholder="Enter detailed proposal description..."
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button 
+                      onClick={() => setIsEditingDetails(false)}
+                      disabled={savingDetails}
+                      className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={handleSaveDetails}
+                      disabled={savingDetails || !editFormData.title?.trim() || !editFormData.description?.trim()}
+                      className="btn-primary px-5 py-2 font-bold text-xs rounded-xl text-white shadow-xs cursor-pointer flex items-center gap-2"
+                    >
+                      {savingDetails ? 'Saving...' : 'Save Details'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Poster & Specs Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Poster */}
+                    <div className="lg:col-span-1">
+                      <div className="w-full h-52 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/80 shadow-xs relative">
+                        <img 
+                          src={event.image_url || event.imageUrl} 
+                          alt={event.title} 
+                          className="w-full h-full object-cover" 
+                        />
+                        {event.category && (
+                          <span className="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold bg-black/60 text-white backdrop-blur-xs">
+                            {event.category}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Specification Badges Grid */}
+                    <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Venue</span>
+                        <p className="font-semibold text-slate-800 text-sm">{event.venue || 'TBA'}</p>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Date & Time</span>
+                        <p className="font-semibold text-slate-800 text-sm">
+                          {event.date ? new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'TBA'}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                        <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Registration Type</span>
+                        <p className="font-semibold text-slate-800 text-sm capitalize">
+                          {event.registration_type === 'team' ? 'Team Event' : 'Individual Event'}
+                        </p>
+                      </div>
+
+                      {event.registration_type === 'team' ? (
+                        <>
+                          <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                            <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Team Size Limit</span>
+                            <p className="font-semibold text-slate-800 text-sm">{event.min_team_size} to {event.max_team_size} members</p>
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-1">
-                            {selectedOrganizerType === 'core'
-                              ? 'Core Organizers can access the Proposal Workspace and manage the organizing team.'
-                              : 'Normal Organizers help with the event but cannot manage the organizing team.'}
+                          <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                            <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Max Teams</span>
+                            <p className="font-semibold text-slate-800 text-sm">{event.max_teams ? `${event.max_teams} teams` : 'Unlimited'}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                          <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Capacity</span>
+                          <p className="font-semibold text-slate-800 text-sm">{event.capacity ? `${event.capacity} seats` : 'Open'}</p>
+                        </div>
+                      )}
+
+                      {event.registration_deadline && (
+                        <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
+                          <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Reg. Deadline</span>
+                          <p className="font-semibold text-slate-800 text-sm">
+                            {new Date(event.registration_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
-
-                        <div className="mb-4">
-                          <label className="block text-xs font-bold text-slate-700 mb-2">Responsibility <span className="text-red-500">*</span></label>
-                          <select 
-                            className="w-full p-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
-                            value={selectedResponsibility}
-                            onChange={(e) => setSelectedResponsibility(e.target.value)}
-                          >
-                            <option value="">-- Select Responsibility --</option>
-                            <option value="Event Lead">Event Lead</option>
-                            <option value="Co-Lead">Co-Lead</option>
-                            <option value="Logistics">Logistics</option>
-                            <option value="Hospitality">Hospitality</option>
-                            <option value="Registration">Registration</option>
-                            <option value="Technical">Technical</option>
-                            <option value="Marketing">Marketing</option>
-                            <option value="Design">Design</option>
-                            <option value="Photography">Photography</option>
-                            <option value="Documentation">Documentation</option>
-                            {(isFaculty || user?.roles?.includes('admin')) && (
-                               <option value="Faculty Coordinator">Faculty Coordinator</option>
-                            )}
-                          </select>
-                        </div>
-                        
-                        <button 
-                          onClick={() => handleAddTeamMember(selectedUserForAdd, selectedResponsibility)}
-                          disabled={!selectedResponsibility || addingMember}
-                          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
-                        >
-                          {addingMember ? 'Adding...' : 'Add to Team'}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <input 
-                          type="text" 
-                          placeholder="Search by name, email, or department..." 
-                          className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                        {isSearching && (
-                          <div className="absolute right-3 top-3 animate-spin h-5 w-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
-                        )}
-                      </div>
-                    )}
-                    
-                    {!selectedUserForAdd && searchResults.length > 0 && (
-                      <div className="mt-2 border border-slate-100 rounded-lg divide-y divide-slate-100 bg-slate-50 overflow-hidden max-h-60 overflow-y-auto">
-                        {searchResults.map(u => (
-                          <div key={u.id} className="p-3 flex items-center justify-between hover:bg-slate-100 transition-colors">
-                            <div>
-                              <p className="font-bold text-sm text-slate-800">{u.name || u.fullName}</p>
-                              <p className="text-xs text-slate-500">{u.email} {u.department ? `• ${u.department}` : ''}</p>
-                            </div>
-                            <button 
-                              onClick={() => setSelectedUserForAdd(u)}
-                              disabled={team.some(t => t.user_id === u.id)}
-                              className="px-4 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {team.some(t => t.user_id === u.id) ? 'Already Added' : 'Select'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Team Members List */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                    <h3 className="font-bold text-slate-700">Organizing Team</h3>
-                  </div>
-                  
-                  <div className="p-4 border-b border-slate-100 bg-white">
-                     <h4 className="font-bold text-sm text-indigo-600 mb-3 uppercase tracking-wider">Faculty Coordinators</h4>
-                     <ul className="divide-y divide-slate-100">
-                       {team.filter(t => t.global_role?.startsWith('faculty')).length === 0 && (
-                         <li className="py-2 text-xs text-slate-400 italic">No faculty assigned yet.</li>
-                       )}
-                       {team.filter(t => t.global_role?.startsWith('faculty')).map(t => (
-                         <li key={t.id} className="py-3 flex justify-between items-center">
-                           <div>
-                             <p className="font-bold text-sm text-slate-800">
-                               {t.name}
-                               {t.role && (
-                                 <span className="ml-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full border border-slate-200">
-                                   {t.role}
-                                 </span>
-                               )}
-                             </p>
-                             <p className="text-xs text-slate-500 mt-0.5">{t.email}</p>
-                           </div>
-                           {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && t.user_id !== event.faculty_id && (
-                             <button onClick={() => handleRemoveTeamMember(t.id)} className="text-xs text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded transition-colors">Remove</button>
-                           )}
-                         </li>
-                       ))}
-                     </ul>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="p-4 bg-white">
-                     <h4 className="font-bold text-sm text-indigo-600 mb-3 uppercase tracking-wider">Student Organizers</h4>
-                     <ul className="divide-y divide-slate-100">
-                       {team.filter(t => !t.global_role?.startsWith('faculty')).length === 0 && (
-                         <li className="py-2 text-xs text-slate-400 italic">No students assigned yet.</li>
-                       )}
-                       {team.filter(t => !t.global_role?.startsWith('faculty')).map(t => {
-                         const isProtected = t.user_id === event.proposed_by || t.user_id === event.student_organizer_id;
-                         const isCoreOrg = t.organizer_type === 'core';
-                         const canManage = (isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status);
-                         return (
-                           <li key={t.id} className="py-3 flex justify-between items-center gap-3">
-                             <div className="flex-1 min-w-0">
-                               <p className="font-bold text-sm text-slate-800 flex items-center flex-wrap gap-1.5">
-                                 {t.name}
-                                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${isCoreOrg ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                   {isCoreOrg ? '⭐ Core' : 'Normal'}
-                                 </span>
-                                 {t.role && (
-                                   <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-semibold rounded-full border border-slate-200">
-                                     {t.role}
-                                   </span>
-                                 )}
-                                 {isProtected && (
-                                   <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full border border-amber-200">Primary</span>
-                                 )}
-                               </p>
-                               <p className="text-xs text-slate-500 mt-0.5 truncate">{t.email}</p>
-                             </div>
-                             {canManage && (
-                               <div className="flex items-center gap-1.5 shrink-0">
-                                 {!isProtected && (
-                                   <button
-                                     onClick={() => handleChangeOrganizerType(t.id, isCoreOrg ? 'normal' : 'core')}
-                                     className="text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-                                   >
-                                     {isCoreOrg ? 'Set Normal' : 'Set Core'}
-                                   </button>
-                                 )}
-                                 {!isProtected && (
-                                   <button
-                                     onClick={() => handleRemoveTeamMember(t.id)}
-                                     className="text-[10px] text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded-lg border border-red-100 transition-colors"
-                                   >
-                                     Remove
-                                   </button>
-                                 )}
-                               </div>
-                             )}
-                           </li>
-                         );
-                       })}
-                     </ul>
+                  {/* Description Section */}
+                  <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-200/60 space-y-2">
+                    <h3 className="font-display font-bold text-sm text-slate-800 uppercase tracking-wider">Proposal Description</h3>
+                    <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      {event.description || 'No description provided.'}
+                    </p>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: REVIEW & DISCUSSION */}
+          {activeTab === 'discussion' && (
+            <div className="flex flex-col h-[550px] animate-fade-in">
+              <div className="border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-bold text-lg text-slate-900">Review & Discussion Channel</h3>
+                  <p className="text-xs text-slate-500">Direct message channel between student organizers and faculty coordinator</p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">
+                  {discussions.length} {discussions.length === 1 ? 'Message' : 'Messages'}
+                </span>
               </div>
-            )}
 
-            {/* Discussion Tab */}
-            {activeTab === 'discussion' && (
-              <div className="flex flex-col h-full animate-fade-in">
-                <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2">
-                  {discussions.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-slate-400 italic">No messages yet.</div>
-                  ) : (
-                    discussions.map(msg => {
-                      const isMe = msg.user_id === user.id;
-                      return (
-                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                          <div className={`max-w-[80%] rounded-2xl p-4 ${isMe ? 'bg-indigo-500 text-white rounded-tr-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm shadow-sm'}`}>
-                            <div className="flex flex-col mb-2 opacity-90">
-                              <span className="text-xs font-bold">{isMe ? 'You' : msg.sender?.full_name}</span>
-                              <span className={`text-[10px] font-medium mt-0.5 ${isMe ? 'text-indigo-100' : 'text-slate-500'}`}>
-                                {getRoleBadge(msg.user_id, msg.sender?.role)}
+              {/* Messages Container */}
+              <div className="flex-1 overflow-y-auto space-y-3.5 pr-2">
+                {discussions.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-8">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                    </div>
+                    <p className="font-bold text-sm text-slate-600">No discussion messages yet</p>
+                    <p className="text-xs text-slate-400 max-w-xs mt-1">Start a conversation regarding questions, requirements, or approvals.</p>
+                  </div>
+                ) : (
+                  discussions.map(msg => {
+                    const isMe = String(msg.user_id) === String(user.id);
+                    const isFacultySender = String(msg.user_id) === String(event.faculty_id);
+                    const isProposerSender = String(msg.user_id) === String(event.proposed_by) || String(msg.user_id) === String(event.student_organizer_id);
+
+                    return (
+                      <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                        <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-4 transition-all ${
+                          isMe 
+                            ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white rounded-tr-xs shadow-xs' 
+                            : 'bg-slate-50 border border-slate-200/80 text-slate-800 rounded-tl-xs shadow-xs'
+                        }`}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-xs font-bold">
+                              {isMe ? 'You' : (msg.sender?.full_name || msg.sender?.name || 'User')}
+                            </span>
+                            {isFacultySender && (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isMe ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
+                                Faculty
                               </span>
-                              <span className="text-[10px] opacity-75 mt-0.5">
-                                {new Date(msg.created_at).toLocaleDateString()} • {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            )}
+                            {isProposerSender && !isFacultySender && (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isMe ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                                Proposer
                               </span>
-                            </div>
-                            <p className="text-sm">{msg.message}</p>
+                            )}
+                            <span className={`text-[10px] ml-auto opacity-75`}>
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                           </div>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
                         </div>
-                      );
-                    })
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-                
-                <form onSubmit={handleSendMessage} className="mt-auto bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-end gap-2">
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Message Input Bar */}
+              <form onSubmit={handleSendMessage} className="mt-4 pt-3 border-t border-slate-100 flex items-end gap-3">
+                <div className="flex-1 relative">
                   <textarea
-                    className="flex-1 max-h-32 min-h-[44px] p-3 text-sm focus:outline-none resize-none bg-transparent"
-                    placeholder="Type a message..."
+                    className="w-full p-3.5 pr-12 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none resize-none font-body transition-all max-h-28 min-h-[50px]"
+                    placeholder="Type a message or response to coordinator..."
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => {
@@ -990,136 +1304,374 @@ const ProposalWorkspace = () => {
                       }
                     }}
                   />
+                  <div className="text-[10px] text-slate-400 mt-1 pl-1">
+                    Press <span className="font-semibold">Enter</span> to send • <span className="font-semibold">Shift + Enter</span> for new line
+                  </div>
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={submittingMsg || !message.trim()}
+                  className="btn-primary p-3.5 rounded-2xl text-white shadow-xs disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center shrink-0 mb-5"
+                  title="Send Message"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 rotate-90" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                  </svg>
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 3: DOCUMENTS */}
+          {activeTab === 'documents' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-bold text-lg text-slate-900">Proposal Documents & Attachments</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Rulebooks, schedules, budgets, and approval forms</p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  {documents.length} {documents.length === 1 ? 'File' : 'Files'}
+                </span>
+              </div>
+
+              {/* Upload Box */}
+              {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
+                <form onSubmit={handleUploadDocument} className="p-6 bg-slate-50/70 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center gap-4">
+                  <div className="flex-1 w-full">
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">Upload Revision / Supplementary Document</label>
+                    <input 
+                      type="file" 
+                      onChange={(e) => setUploadFile(e.target.files[0])}
+                      className="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-white file:text-fuchsia-700 hover:file:bg-fuchsia-50 file:border-slate-200 file:shadow-xs cursor-pointer"
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1.5">Supported formats: PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX</p>
+                  </div>
                   <button 
-                    type="submit" 
-                    disabled={submittingMsg || !message.trim()}
-                    className="p-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    type="submit"
+                    disabled={!uploadFile || uploading}
+                    className="btn-primary px-6 py-2.5 rounded-xl font-bold text-xs text-white shadow-xs disabled:opacity-50 transition-all cursor-pointer shrink-0"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                    </svg>
+                    {uploading ? 'Uploading...' : 'Upload Document'}
                   </button>
                 </form>
-              </div>
-            )}
+              )}
 
-            {/* Documents Tab */}
-            {activeTab === 'documents' && (
-              <div className="space-y-6 animate-fade-in">
-                {(isCreator || isFaculty) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                  <form onSubmit={handleUploadDocument} className="bg-white p-6 rounded-xl border border-slate-200 border-dashed flex items-center gap-4">
-                    <div className="flex-1">
-                      <label className="block text-sm font-bold text-slate-700 mb-2">Upload Document</label>
-                      <input 
-                        type="file" 
-                        onChange={(e) => setUploadFile(e.target.files[0])}
-                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
-                        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
-                      />
-                    </div>
-                    <button 
-                      type="submit"
-                      disabled={!uploadFile || uploading}
-                      className="px-6 py-2.5 bg-slate-800 text-white text-sm font-bold rounded-xl hover:bg-slate-700 disabled:opacity-50 transition-colors"
-                    >
-                      {uploading ? 'Uploading...' : 'Upload'}
-                    </button>
-                  </form>
-                )}
-
-                <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-                    <h3 className="font-bold text-slate-700">Document History</h3>
+              {/* Documents List */}
+              <div className="space-y-3">
+                {documents.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 italic bg-slate-50/50 rounded-2xl border border-slate-100">
+                    No documents uploaded for this proposal yet.
                   </div>
-                  {documents.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 italic">No documents uploaded yet.</div>
-                  ) : (
-                    <ul className="divide-y divide-slate-100">
-                      {documents.map(doc => (
-                        <li key={doc.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-500">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm text-slate-700 line-clamp-1">{doc.file_name}</p>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
-                                <span className="uppercase tracking-wider font-bold text-indigo-500">Rev {doc.version}</span>
-                                <span>•</span>
-                                <span>{doc.uploader?.full_name}</span>
-                                <span>•</span>
-                                <span>{new Date(doc.created_at).toLocaleString()}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <a 
-                              href={getFileUrl(doc.file_url)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                              download
-                              title="Download/View Document"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                              </svg>
-                            </a>
-                            {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                              <button
-                                onClick={() => handleRemoveDocument(doc.id)}
-                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                title="Remove Document"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Timeline Tab */}
-            {activeTab === 'timeline' && (
-              <div className="py-4 animate-fade-in relative">
-                <div className="absolute left-[27px] top-4 bottom-4 w-0.5 bg-slate-200 rounded-full" />
-                <div className="space-y-6 relative">
-                  {timeline.length === 0 ? (
-                    <div className="text-center text-slate-400 italic">No timeline events.</div>
-                  ) : (
-                    timeline.map((item, idx) => (
-                      <div key={item.id} className="flex gap-4 relative">
-                        <div className="w-14 h-14 shrink-0 bg-white rounded-full border-4 border-slate-50 flex items-center justify-center shadow-sm relative z-10 text-indigo-500">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                ) : (
+                  documents.map(doc => (
+                    <div 
+                      key={doc.id} 
+                      className="p-4 bg-slate-50/60 hover:bg-slate-50 rounded-2xl border border-slate-200/70 flex items-center justify-between gap-4 transition-all"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="w-11 h-11 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-indigo-500 shrink-0 shadow-xs">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                         </div>
-                        <div className="pt-2">
-                          <p className="font-bold text-slate-800 text-sm">{item.action}</p>
-                          {item.details && <p className="text-sm text-slate-500 mt-1">{item.details}</p>}
-                          <div className="flex items-center gap-2 text-xs text-slate-400 mt-2">
-                            <span className="font-medium text-indigo-400">{item.actor?.full_name}</span>
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-slate-800 truncate">{doc.file_name}</p>
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                            <span className="font-bold text-fuchsia-600 bg-fuchsia-50 px-2 py-0.5 rounded-md">
+                              Revision {doc.version || 1}
+                            </span>
                             <span>•</span>
-                            <span>{new Date(item.created_at).toLocaleString()}</span>
+                            <span>Uploaded by {doc.uploader?.full_name || doc.uploader?.name || 'User'}</span>
+                            <span>•</span>
+                            <span>{new Date(doc.created_at).toLocaleDateString()}</span>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Download & Remove Buttons */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a 
+                          href={getFileUrl(doc.file_url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-white border border-slate-200/80 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition-colors shadow-xs inline-flex items-center gap-1.5"
+                          download
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          <span>Download</span>
+                        </a>
+                        {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
+                          <button
+                            onClick={() => handleRemoveDocument(doc.id)}
+                            className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: ORGANIZING TEAM */}
+          {activeTab === 'team' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-bold text-lg text-slate-900">Organizing Committee & Team</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Designated faculty coordinators and student organizers</p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100">
+                  {team.length} Members
+                </span>
+              </div>
+
+              {/* Add Team Member Bar */}
+              {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
+                <div className="p-5 bg-slate-50/70 rounded-2xl border border-slate-200">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Add Team Member</h4>
+                  {selectedUserForAdd ? (
+                    <div className="p-4 bg-white rounded-xl border border-fuchsia-200 shadow-xs space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-sm text-slate-800">{selectedUserForAdd.name || selectedUserForAdd.fullName}</p>
+                          <p className="text-xs text-slate-500">{selectedUserForAdd.email}</p>
+                        </div>
+                        <button 
+                          onClick={() => setSelectedUserForAdd(null)} 
+                          className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1 bg-slate-100 rounded-lg cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                        <select 
+                          className="flex-1 p-2.5 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none cursor-pointer"
+                          value={selectedResponsibility}
+                          onChange={(e) => setSelectedResponsibility(e.target.value)}
+                        >
+                          <option value="">-- Select Responsibility --</option>
+                          <option value="Event Lead">Event Lead</option>
+                          <option value="Co-Lead">Co-Lead</option>
+                          <option value="Technical">Technical</option>
+                          <option value="Logistics">Logistics</option>
+                          <option value="Hospitality">Hospitality</option>
+                          <option value="Marketing">Marketing</option>
+                          <option value="Design">Design</option>
+                          <option value="Registration">Registration</option>
+                          <option value="Documentation">Documentation</option>
+                          {(isFaculty || user?.roles?.includes('admin')) && (
+                            <option value="Faculty Coordinator">Faculty Coordinator</option>
+                          )}
+                        </select>
+                        <button 
+                          onClick={() => handleAddTeamMember(selectedUserForAdd, selectedResponsibility)}
+                          disabled={!selectedResponsibility || addingMember}
+                          className="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+                        >
+                          {addingMember ? 'Adding...' : 'Confirm Member'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        placeholder="Search student or faculty by name, email, or roll number..." 
+                        className="w-full pl-3 pr-10 py-3 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none font-body shadow-xs"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                      <div className="absolute right-3 top-3 flex items-center gap-2">
+                        {isSearching && (
+                          <div className="animate-spin h-4 w-4 border-2 border-fuchsia-500 border-t-transparent rounded-full" />
+                        )}
+                        {searchQuery && !isSearching && (
+                          <button
+                            type="button"
+                            onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                            className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {!selectedUserForAdd && searchQuery.trim().length >= 2 && !isSearching && searchResults.length === 0 && (
+                    <div className="mt-2 p-3.5 border border-slate-200 rounded-xl bg-slate-50 text-center text-xs text-slate-500">
+                      No registered student or faculty found matching "{searchQuery}".
+                    </div>
+                  )}
+
+                  {!selectedUserForAdd && searchResults.length > 0 && (
+                    <div className="mt-2 border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden max-h-56 overflow-y-auto shadow-sm">
+                      {searchResults.map(u => (
+                        <div key={u.id} className="p-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                          <div>
+                            <p className="font-bold text-xs text-slate-800">{u.name || u.fullName}</p>
+                            <p className="text-[10px] text-slate-500">
+                              {u.email} {u.roll_number ? `• ${u.roll_number}` : ''} {u.department ? `• ${u.department}` : ''}
+                            </p>
+                          </div>
+                          <button 
+                            onClick={() => setSelectedUserForAdd(u)}
+                            disabled={team.some(t => t.user_id === u.id)}
+                            className="px-3 py-1 bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {team.some(t => t.user_id === u.id) ? 'Added' : 'Select'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Members List */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Faculty List */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+                    </svg>
+                    <span>Faculty Coordinators</span>
+                  </h4>
+                  <div className="space-y-2.5">
+                    {team.filter(t => t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id).length === 0 ? (
+                      <div className="p-4 bg-slate-50 rounded-xl text-xs text-slate-400 italic text-center">
+                        No faculty coordinator assigned.
+                      </div>
+                    ) : (
+                      team.filter(t => t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id).map(t => (
+                        <div key={t.id} className="p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-xs text-slate-800">{t.name}</p>
+                            <p className="text-[10px] text-slate-500">{t.email}</p>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">
+                            {t.role || 'Coordinator'}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Students List */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-fuchsia-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-fuchsia-600" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                    </svg>
+                    <span>Student Organizers</span>
+                  </h4>
+                  <div className="space-y-2.5">
+                    {team.filter(t => !(t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id)).length === 0 ? (
+                      <div className="p-4 bg-slate-50 rounded-xl text-xs text-slate-400 italic text-center">
+                        No student organizers added yet.
+                      </div>
+                    ) : (
+                      team.filter(t => !(t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id)).map(t => {
+                        const isLead = t.user_id === event.proposed_by || t.user_id === event.student_organizer_id;
+                        return (
+                          <div key={t.id} className="p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200/70 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                                <span>{t.name}</span>
+                                {isLead && (
+                                  <span className="px-2 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[9px] font-bold">
+                                    Lead Proposer
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-[10px] text-slate-500">{t.email}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/70 text-slate-700">
+                                {t.role || 'Organizer'}
+                              </span>
+                              {!isLead && (isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
+                                <button
+                                  onClick={() => handleRemoveTeamMember(t.id)}
+                                  className="text-[10px] text-rose-500 hover:text-rose-700 font-bold px-2 py-0.5 bg-rose-50 rounded-lg cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: TIMELINE */}
+          {activeTab === 'timeline' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-bold text-lg text-slate-900">Activity & Proposal History</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Chronological audit log of all decisions and uploads</p>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                  {timeline.length} Events
+                </span>
+              </div>
+
+              <div className="py-4 relative pl-4 sm:pl-8">
+                <div className="absolute left-[23px] sm:left-[39px] top-6 bottom-6 w-0.5 bg-slate-200 rounded-full" />
+                <div className="space-y-6">
+                  {timeline.length === 0 ? (
+                    <div className="text-center text-slate-400 italic py-8">No timeline entries yet.</div>
+                  ) : (
+                    timeline.map((item, idx) => (
+                      <div key={item.id || idx} className="flex items-start gap-4 relative">
+                        <div className="w-8 h-8 rounded-full bg-white border-2 border-fuchsia-500 text-fuchsia-600 flex items-center justify-center font-bold text-xs shadow-xs relative z-10 shrink-0">
+                          {idx + 1}
+                        </div>
+                        <div className="p-4 bg-slate-50/70 rounded-2xl border border-slate-200/70 flex-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <p className="font-bold text-xs text-slate-800">{item.action}</p>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(item.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          {item.details && (
+                            <p className="text-xs text-slate-600 mt-0.5">{item.details}</p>
+                          )}
+                          {item.actor && (
+                            <div className="text-[10px] font-medium text-indigo-500 mt-1.5">
+                              Actor: {item.actor.full_name || item.actor.name}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))
                   )}
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-          </div>
         </div>
+
       </div>
     </div>
   );
