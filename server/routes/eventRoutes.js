@@ -17,12 +17,12 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'];
+    const allowed = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg', '.webp'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, PPT, PPTX, XLS, and XLSX are allowed.'));
+      cb(new Error('Invalid file type. Only PDF, Word, Excel, PowerPoint documents and images are allowed.'));
     }
   }
 });
@@ -266,6 +266,14 @@ router.put(
   eventController.updateProposalTeamMemberRole
 );
 
+// Update Proposal Team Member Module Permissions
+router.put(
+  '/:id/proposal-team/:memberId/permissions',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.updateProposalTeamMemberPermissions
+);
+
 // Update Proposal Details
 router.put(
   '/:id/proposal-details',
@@ -274,18 +282,18 @@ router.put(
   eventController.updateProposalDescription
 );
 
-// Admin-only close & open registrations
+// Close & open registrations (Admin, Faculty Coordinator, Organizers)
 router.post(
   '/admin/:id/close-registrations',
   authMiddleware,
-  adminMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
   eventController.adminCloseRegistrations
 );
 
 router.post(
   '/admin/:id/open-registrations',
   authMiddleware,
-  adminMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
   eventController.adminOpenRegistrations
 );
 
@@ -310,6 +318,36 @@ router.delete(
   authMiddleware,
   roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
   eventController.deleteConfirmationAttachment
+);
+
+// Higher Official Event Permissions Routes
+router.get(
+  '/official-permissions/all',
+  authMiddleware,
+  roleMiddleware(['admin', 'official']),
+  eventController.getAllOfficialPermissions
+);
+
+router.post(
+  '/:id/official-permission',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'student_organizer', 'organizer']),
+  upload.any(),
+  eventController.requestOfficialPermission
+);
+
+router.get(
+  '/:id/official-permission',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'student_organizer', 'organizer']),
+  eventController.getEventOfficialPermissions
+);
+
+router.put(
+  '/:id/official-permission/:permissionId/decision',
+  authMiddleware,
+  roleMiddleware(['admin', 'official']),
+  eventController.decideOfficialPermission
 );
 
 // getEventById — must come AFTER all static subroutes

@@ -14,6 +14,11 @@ function getCachedProfile(key) {
   return null;
 }
 
+function invalidateProfileCache(key) {
+  if (!key) return;
+  profileCache.delete(String(key).toLowerCase());
+}
+
 function setCachedProfile(key, data) {
   if (!key || !data) return;
   // Limit cache size to prevent memory leaks
@@ -24,7 +29,7 @@ function setCachedProfile(key, data) {
   profileCache.set(String(key).toLowerCase(), { data, ts: Date.now() });
 }
 
-module.exports = async (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ message: 'Missing or malformed Authorization header.' });
@@ -205,8 +210,9 @@ module.exports = async (req, res, next) => {
       degree_program: profileData.degree_program || null,
       yearOfStudy: profileData.year_of_study || null,
       year_of_study: profileData.year_of_study || null,
-      collegeName: profileData.college_name || null,
-      college_name: profileData.college_name || null,
+      college: profileData.college_name || profileData.college || null,
+      collegeName: profileData.college_name || profileData.college || null,
+      college_name: profileData.college_name || profileData.college || null,
     };
 
     // Enforce first_login on backend for all protected routes except profile and change-password
@@ -227,3 +233,8 @@ module.exports = async (req, res, next) => {
     return res.status(401).json({ message: 'Invalid or expired token.' });
   }
 };
+
+authMiddleware.invalidateProfileCache = invalidateProfileCache;
+authMiddleware.clearProfileCache = () => profileCache.clear();
+
+module.exports = authMiddleware;

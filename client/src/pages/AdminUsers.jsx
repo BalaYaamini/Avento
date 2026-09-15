@@ -306,7 +306,7 @@ const AdminUsers = () => {
                 <option value="">All Roles</option>
                 <option value="student">Student</option>
                 <option value="faculty">Faculty</option>
-                <option value="admin">University Official</option>
+                <option value="admin">University Admin</option>
               </select>
             </div>
 
@@ -449,9 +449,13 @@ const AdminUsers = () => {
                         <div className="text-[10px] text-slate-400 mt-0.5">{user.rollNumber || user.employeeId || 'No ID'}</div>
                       </td>
                       <td className="px-6 py-4">
-                        {user.roles?.some(r => r.includes('admin')) ? (
+                        {user.email === 'admin.avento@gmail.com' ? (
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-700 border-amber-300 shadow-2xs">
+                            Avento Admin
+                          </span>
+                        ) : user.roles?.some(r => r.includes('admin')) ? (
                           <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-purple-100 text-purple-700 border-purple-200">
-                            University Official
+                            University Admin
                           </span>
                         ) : (
                           <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${

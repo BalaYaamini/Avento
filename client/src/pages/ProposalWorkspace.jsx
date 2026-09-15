@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth, supabase } from '../context/AuthContext';
 import axios from 'axios';
 import { GeometricBlobDoodle, StickyNoteDoodle, SparkleDoodle } from '../components/Doodles';
+import OrganizingTeamTab from '../components/OrganizingTeamTab';
 
 // Helper to convert DB timestamp to local YYYY-MM-DDTHH:mm string for datetime-local input
 const formatToDatetimeLocal = (dateStr) => {
@@ -63,13 +64,97 @@ const ProposalWorkspace = () => {
 
   // Team state
   const [team, setTeam] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [addingMember, setAddingMember] = useState(false);
-  const [selectedUserForAdd, setSelectedUserForAdd] = useState(null);
-  const [selectedResponsibility, setSelectedResponsibility] = useState('');
-  const searchTimeoutRef = useRef(null);
+
+  // Higher Official Permission State
+  const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
+  const [higherOfficials, setHigherOfficials] = useState([]);
+  const [loadingOfficials, setLoadingOfficials] = useState(false);
+  const [selectedOfficialId, setSelectedOfficialId] = useState('');
+  const [permissionSubject, setPermissionSubject] = useState('');
+  const [proposalLetter, setProposalLetter] = useState('');
+  const [permissionFiles, setPermissionFiles] = useState([]);
+  const [submittingPermission, setSubmittingPermission] = useState(false);
+
+  const fetchHigherOfficials = async () => {
+    try {
+      setLoadingOfficials(true);
+      const res = await axios.get('/api/users/higher-officials');
+      setHigherOfficials(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to load higher officials:', err);
+    } finally {
+      setLoadingOfficials(false);
+    }
+  };
+
+  const openPermissionModal = () => {
+    fetchHigherOfficials();
+    const evtTitle = event?.title || 'Event Proposal';
+    const evtDate = event?.date ? new Date(event.date).toLocaleDateString() : 'TBD';
+    const evtVenue = event?.venue || 'Campus Venue';
+    const proposer = user?.name || user?.fullName || 'Event Coordinator';
+
+    setPermissionSubject(`Formal Permission Request: ${evtTitle}`);
+    setProposalLetter(
+`Respected Authority,
+
+I am writing to formally request official permission to conduct the proposed event "${evtTitle}".
+
+Event Summary:
+- Proposed Date: ${evtDate}
+- Venue: ${evtVenue}
+- Category: ${event?.category || 'Technical'}
+- Estimated Capacity: ${event?.capacity || '50'}
+- Coordinator: ${proposer}
+
+Please find the attached proposal details, agenda, and budget estimate for your kind perusal and official clearance.
+
+Thank you.
+Sincerely,
+${proposer}`
+    );
+    setSelectedOfficialId('');
+    setPermissionFiles([]);
+    setIsPermissionModalOpen(true);
+  };
+
+  const handlePermissionSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedOfficialId) {
+      alert('Please select a Higher Official.');
+      return;
+    }
+    if (!proposalLetter.trim()) {
+      alert('Please enter a proposal letter.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('official_id', selectedOfficialId);
+    formData.append('officialId', selectedOfficialId);
+    formData.append('subject', permissionSubject.trim() || `Permission Request: ${event?.title || 'Event'}`);
+    formData.append('proposal_letter', proposalLetter.trim());
+    formData.append('proposalLetter', proposalLetter.trim());
+
+    Array.from(permissionFiles).forEach(file => {
+      formData.append('attachments', file);
+    });
+
+    try {
+      setSubmittingPermission(true);
+      await axios.post(`/api/events/${proposalId}/official-permission`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      alert('Formal proposal letter and documents submitted to Higher Official successfully.');
+      setIsPermissionModalOpen(false);
+      setPermissionFiles([]);
+      fetchWorkspace(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to submit permission request.');
+    } finally {
+      setSubmittingPermission(false);
+    }
+  };
 
   const fetchWorkspace = async (silent = false) => {
     try {
@@ -108,66 +193,6 @@ const ProposalWorkspace = () => {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalId]);
-
-  useEffect(() => {
-    const trimmed = searchQuery.trim();
-    if (trimmed.length < 2) {
-      setSearchResults([]);
-      setIsSearching(false);
-      return;
-    }
-    
-    const timer = setTimeout(async () => {
-      try {
-        setIsSearching(true);
-        const res = await axios.get(`/api/users/search?query=${encodeURIComponent(trimmed)}`);
-        setSearchResults(res.data || []);
-      } catch (err) {
-        console.error('User search failed:', err);
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const handleAddTeamMember = async (userRecord, roleStr) => {
-    if (!roleStr) {
-      alert('Please select a responsibility.');
-      return;
-    }
-    try {
-      setAddingMember(true);
-      await axios.post(`/api/events/${proposalId}/proposal-team`, {
-        userId: userRecord.id,
-        name: userRecord.name || userRecord.fullName,
-        email: userRecord.email,
-        department: userRecord.department,
-        role: roleStr
-      });
-      setSearchQuery('');
-      setSearchResults([]);
-      setSelectedUserForAdd(null);
-      setSelectedResponsibility('');
-      fetchTeam();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to add team member.');
-    } finally {
-      setAddingMember(false);
-    }
-  };
-
-  const handleRemoveTeamMember = async (memberId) => {
-    if (!window.confirm('Are you sure you want to remove this team member?')) return;
-    try {
-      await axios.delete(`/api/events/${proposalId}/proposal-team/${memberId}`);
-      fetchTeam();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to remove team member.');
-    }
-  };
 
   useEffect(() => {
     if (activeTab === 'discussion') {
@@ -409,7 +434,7 @@ const ProposalWorkspace = () => {
     user.role === 'admin'
   ));
 
-  // Dynamically resolve actual names for coordinator and proposer (prevent placeholders)
+  // Dynamically resolve actual names for coordinator and proposer (prevent generic placeholders)
   const coordinatorName =
     event.faculty?.name ||
     event.faculty?.full_name ||
@@ -417,13 +442,67 @@ const ProposalWorkspace = () => {
     event.faculty_name ||
     (event.faculty_id ? 'Assigned Coordinator' : 'Not Assigned');
 
-  const proposerName =
-    event.student_organizer?.name ||
-    event.student_organizer?.full_name ||
-    team.find(t => t.user_id === event.proposed_by || t.user_id === event.student_organizer_id)?.name ||
-    event.student_name ||
-    event.proposer_name ||
-    (isCreator && (user?.name || user?.fullName) ? (user.name || user.fullName) : 'Student Organizer');
+  const proposerName = (() => {
+    // 1. Check direct event student organizer / proposer properties
+    const directProposer = event.student_organizer || event.proposer;
+    if (directProposer?.name && directProposer.name.trim() && directProposer.name !== 'Student' && directProposer.name !== 'Student Organizer') {
+      return directProposer.name;
+    }
+    if (event.proposer_name && event.proposer_name.trim() && event.proposer_name !== 'Student' && event.proposer_name !== 'Student Organizer') {
+      return event.proposer_name;
+    }
+    if (event.student_name && event.student_name.trim() && event.student_name !== 'Student' && event.student_name !== 'Student Organizer') {
+      return event.student_name;
+    }
+
+    // 2. Search in team list for the proposer or lead organizer
+    const teamProposer = team.find(t => 
+      (t.user_id === event.proposed_by || t.user_id === event.student_organizer_id || t.user_id === event.created_by || t.user_id === event.organizer_id) &&
+      t.name && t.name.trim() && t.name !== 'Student' && t.name !== 'Student Organizer'
+    );
+    if (teamProposer?.name) return teamProposer.name;
+
+    // 3. Search in team for any student member with a valid non-placeholder name
+    const studentTeamMember = team.find(t => 
+      !(t.global_role?.startsWith('faculty') || t.role?.toLowerCase()?.includes('faculty') || t.user_id === event.faculty_id) &&
+      t.name && t.name.trim() && t.name !== 'Student' && t.name !== 'Student Organizer'
+    );
+    if (studentTeamMember?.name) return studentTeamMember.name;
+
+    // 4. Check timeline for proposal submission actor
+    const timelineActor = data?.timeline?.find(t => t.action?.toLowerCase().includes('submitted') || t.action?.toLowerCase().includes('created'))?.actor;
+    if (timelineActor?.name && timelineActor.name.trim() && timelineActor.name !== 'Student' && timelineActor.name !== 'Student Organizer') {
+      return timelineActor.name;
+    }
+
+    // 5. If current user is student or creator
+    if ((isCreator || user?.role === 'student' || user?.roles?.includes('student')) && (user?.name || user?.fullName) && (user.name || user.fullName).trim() && (user.name || user.fullName) !== 'Student') {
+      return user.name || user.fullName;
+    }
+
+    // 6. Check if email gives a meaningful formatted username
+    const studentEmail = directProposer?.email || teamProposer?.email || studentTeamMember?.email || (isCreator ? user?.email : null);
+    if (studentEmail) {
+      const emailPrefix = studentEmail.split('@')[0];
+      const emailName = emailPrefix.replace(/[._-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const roll = directProposer?.roll_number || teamProposer?.roll_number || studentTeamMember?.roll_number || (isCreator ? user?.roll_number : null);
+      if (emailName && emailName.toLowerCase() !== 'student') {
+        return roll ? `${emailName} (${roll})` : emailName;
+      }
+      if (roll) return `Student (${roll})`;
+      if (emailPrefix) return emailPrefix;
+    }
+
+    // 7. Check roll number if present
+    const roll = directProposer?.roll_number || teamProposer?.roll_number || studentTeamMember?.roll_number || (isCreator ? user?.roll_number : null);
+    if (roll) return `Student (${roll})`;
+
+    // 8. Fallback to direct name or generic role
+    if (directProposer?.name) return directProposer.name;
+    if (studentTeamMember?.name) return studentTeamMember.name;
+
+    return 'Student Organizer';
+  })();
 
   const getStatusBadge = (status) => {
     const s = status || 'draft';
@@ -474,10 +553,14 @@ const ProposalWorkspace = () => {
     }
   };
 
+  const officialPermissions = data?.officialPermissions || [];
+  const latestPermission = officialPermissions[0] || null;
+
   const tabs = [
     { id: 'summary', label: 'Overview & Details' },
     { id: 'discussion', label: 'Discussion', count: discussions?.length || 0 },
     { id: 'documents', label: 'Documents', count: documents?.length || 0 },
+    { id: 'permissions', label: 'Higher Official Permissions', count: officialPermissions.length },
     { id: 'team', label: 'Organizing Team', count: team?.length || 0 },
     { id: 'timeline', label: 'Timeline', count: timeline?.length || 0 }
   ];
@@ -530,6 +613,19 @@ const ProposalWorkspace = () => {
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/70">
                   Revision {event.revision_number || 1}
                 </span>
+                {latestPermission && (
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
+                    latestPermission.status === 'granted'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : latestPermission.status === 'rejected'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : latestPermission.status === 'revision_requested'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-violet-50 text-violet-700 border-violet-200'
+                  }`}>
+                    <span>Official: {latestPermission.status === 'granted' ? 'Permission Granted' : latestPermission.status === 'rejected' ? 'Permission Denied' : latestPermission.status === 'revision_requested' ? 'Revision Needed' : 'Pending Review'}</span>
+                  </span>
+                )}
               </div>
 
               {/* Title */}
@@ -917,6 +1013,8 @@ const ProposalWorkspace = () => {
                     return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>;
                   case 'documents':
                     return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>;
+                  case 'permissions':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>;
                   case 'team':
                     return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
                   case 'timeline':
@@ -1420,206 +1518,169 @@ const ProposalWorkspace = () => {
             </div>
           )}
 
-          {/* TAB 4: ORGANIZING TEAM */}
-          {activeTab === 'team' && (
+          {/* TAB: HIGHER OFFICIAL PERMISSIONS */}
+          {activeTab === 'permissions' && (
             <div className="space-y-6 animate-fade-in">
-              <div className="border-b border-slate-100 pb-4 flex items-center justify-between">
+              <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-display font-bold text-lg text-slate-900">Organizing Committee & Team</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Designated faculty coordinators and student organizers</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-display font-bold text-lg text-slate-900">Permission from Higher Official</h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Formal administrative clearance, proposal letters, and official decision remarks from University Admins / Higher Authorities
+                  </p>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-100">
-                  {team.length} Members
-                </span>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={openPermissionModal}
+                    className="btn-primary px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs hover:opacity-95 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <span>Request Permission from Higher Official</span>
+                  </button>
+
+                  {user?.roles?.includes('admin') && (
+                    <Link
+                      to="/admin/permissions"
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors shrink-0"
+                    >
+                      Admin Decision Portal
+                    </Link>
+                  )}
+                </div>
               </div>
 
-              {/* Add Team Member Bar */}
-              {(isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                <div className="p-5 bg-slate-50/70 rounded-2xl border border-slate-200">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Add Team Member</h4>
-                  {selectedUserForAdd ? (
-                    <div className="p-4 bg-white rounded-xl border border-fuchsia-200 shadow-xs space-y-3 animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-sm text-slate-800">{selectedUserForAdd.name || selectedUserForAdd.fullName}</p>
-                          <p className="text-xs text-slate-500">{selectedUserForAdd.email}</p>
+              {/* Permissions History List */}
+              <div className="space-y-4">
+                {officialPermissions.length === 0 ? (
+                  <div className="p-12 text-center bg-slate-50/60 rounded-3xl border border-slate-200/80 space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center mx-auto text-2xl shadow-xs border border-slate-200">
+                      📜
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800">No Official Permissions Requested Yet</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                      Faculty and student coordinators can request formal permission from a Higher Official (University Admin) by drafting a proposal letter and attaching supporting documents.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openPermissionModal}
+                      className="mt-2 btn-primary px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs hover:opacity-95 transition-all inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <span>Request Official Clearance Now</span>
+                    </button>
+                  </div>
+                ) : (
+                  officialPermissions.map(perm => {
+                    const attachments = Array.isArray(perm.attachments) ? perm.attachments : [];
+                    return (
+                      <div
+                        key={perm.id}
+                        className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 space-y-5 hover:border-violet-300 transition-all"
+                      >
+                        {/* Header of Permission Record */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                                perm.status === 'granted'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : perm.status === 'rejected'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : perm.status === 'revision_requested'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-violet-50 text-violet-700 border-violet-200'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  perm.status === 'granted' ? 'bg-emerald-500' :
+                                  perm.status === 'rejected' ? 'bg-rose-500' :
+                                  perm.status === 'revision_requested' ? 'bg-amber-500' : 'bg-violet-500 animate-pulse'
+                                }`}></span>
+                                {perm.status === 'granted' ? 'Permission Granted' :
+                                 perm.status === 'rejected' ? 'Permission Denied' :
+                                 perm.status === 'revision_requested' ? 'Revision Requested' : 'Pending Official Review'}
+                              </span>
+                              <span className="text-xs text-slate-400 font-medium">
+                                Submitted {new Date(perm.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </span>
+                            </div>
+                            <h4 className="text-base font-bold text-slate-900 mt-1">
+                              {perm.subject || 'Higher Official Permission Request'}
+                            </h4>
+                          </div>
+
+                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-right sm:text-left shrink-0">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase">Target Authority</div>
+                            <div className="font-bold text-slate-800">{perm.official_user?.name || perm.official_user?.fullName || 'Higher Official'}</div>
+                            <div className="text-slate-500 text-[11px]">{perm.official_user?.department || 'University Admin'}</div>
+                          </div>
                         </div>
-                        <button 
-                          onClick={() => setSelectedUserForAdd(null)} 
-                          className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1 bg-slate-100 rounded-lg cursor-pointer"
-                        >
-                          Change
-                        </button>
-                      </div>
 
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                        <select 
-                          className="flex-1 p-2.5 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none cursor-pointer"
-                          value={selectedResponsibility}
-                          onChange={(e) => setSelectedResponsibility(e.target.value)}
-                        >
-                          <option value="">-- Select Responsibility --</option>
-                          <option value="Event Lead">Event Lead</option>
-                          <option value="Co-Lead">Co-Lead</option>
-                          <option value="Technical">Technical</option>
-                          <option value="Logistics">Logistics</option>
-                          <option value="Hospitality">Hospitality</option>
-                          <option value="Marketing">Marketing</option>
-                          <option value="Design">Design</option>
-                          <option value="Registration">Registration</option>
-                          <option value="Documentation">Documentation</option>
-                          {(isFaculty || user?.roles?.includes('admin')) && (
-                            <option value="Faculty Coordinator">Faculty Coordinator</option>
-                          )}
-                        </select>
-                        <button 
-                          onClick={() => handleAddTeamMember(selectedUserForAdd, selectedResponsibility)}
-                          disabled={!selectedResponsibility || addingMember}
-                          className="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs disabled:opacity-50 transition-all cursor-pointer"
-                        >
-                          {addingMember ? 'Adding...' : 'Confirm Member'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <input 
-                        type="text" 
-                        placeholder="Search student or faculty by name, email, or roll number..." 
-                        className="w-full pl-3 pr-10 py-3 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none font-body shadow-xs"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                      />
-                      <div className="absolute right-3 top-3 flex items-center gap-2">
-                        {isSearching && (
-                          <div className="animate-spin h-4 w-4 border-2 border-fuchsia-500 border-t-transparent rounded-full" />
+                        {/* Proposal Letter Text */}
+                        <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/60 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap font-sans">
+                          {perm.proposal_letter}
+                        </div>
+
+                        {/* Attachments */}
+                        {attachments.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="text-[11px] font-bold uppercase text-slate-400 tracking-wider">
+                              Attached Proposal Documents ({attachments.length})
+                            </div>
+                            <div className="flex flex-wrap gap-2.5">
+                              {attachments.map((file, idx) => (
+                                <a
+                                  key={idx}
+                                  href={getFileUrl(file.file_url)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl shadow-2xs inline-flex items-center gap-2 transition-colors"
+                                  download
+                                >
+                                  <span>📄</span>
+                                  <span className="truncate max-w-xs">{file.file_name}</span>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
                         )}
-                        {searchQuery && !isSearching && (
-                          <button
-                            type="button"
-                            onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                            className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
-                  {!selectedUserForAdd && searchQuery.trim().length >= 2 && !isSearching && searchResults.length === 0 && (
-                    <div className="mt-2 p-3.5 border border-slate-200 rounded-xl bg-slate-50 text-center text-xs text-slate-500">
-                      No registered student or faculty found matching "{searchQuery}".
-                    </div>
-                  )}
-
-                  {!selectedUserForAdd && searchResults.length > 0 && (
-                    <div className="mt-2 border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden max-h-56 overflow-y-auto shadow-sm">
-                      {searchResults.map(u => (
-                        <div key={u.id} className="p-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                          <div>
-                            <p className="font-bold text-xs text-slate-800">{u.name || u.fullName}</p>
-                            <p className="text-[10px] text-slate-500">
-                              {u.email} {u.roll_number ? `• ${u.roll_number}` : ''} {u.department ? `• ${u.department}` : ''}
+                        {/* Official Decision Remarks */}
+                        {perm.decided_at && (
+                          <div className={`p-4 rounded-xl border text-xs space-y-1 ${
+                            perm.status === 'granted'
+                              ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                              : perm.status === 'rejected'
+                              ? 'bg-rose-50/80 border-rose-200 text-rose-900'
+                              : 'bg-amber-50/80 border-amber-200 text-amber-900'
+                          }`}>
+                            <div className="flex items-center justify-between font-bold">
+                              <span>Official Decision Remarks from Higher Authority:</span>
+                              <span className="text-[10px] font-normal opacity-75">
+                                Decided on {new Date(perm.decided_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <p className="mt-1 leading-relaxed font-medium">
+                              {perm.official_remarks || 'Permission decision recorded.'}
                             </p>
                           </div>
-                          <button 
-                            onClick={() => setSelectedUserForAdd(u)}
-                            disabled={team.some(t => t.user_id === u.id)}
-                            className="px-3 py-1 bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100 text-xs font-bold rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                          >
-                            {team.some(t => t.user_id === u.id) ? 'Added' : 'Select'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Members List */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Faculty List */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
-                    </svg>
-                    <span>Faculty Coordinators</span>
-                  </h4>
-                  <div className="space-y-2.5">
-                    {team.filter(t => t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id).length === 0 ? (
-                      <div className="p-4 bg-slate-50 rounded-xl text-xs text-slate-400 italic text-center">
-                        No faculty coordinator assigned.
+                        )}
                       </div>
-                    ) : (
-                      team.filter(t => t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id).map(t => (
-                        <div key={t.id} className="p-3.5 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-bold text-xs text-slate-800">{t.name}</p>
-                            <p className="text-[10px] text-slate-500">{t.email}</p>
-                          </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">
-                            {t.role || 'Coordinator'}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Students List */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-fuchsia-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-fuchsia-600" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-                    </svg>
-                    <span>Student Organizers</span>
-                  </h4>
-                  <div className="space-y-2.5">
-                    {team.filter(t => !(t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id)).length === 0 ? (
-                      <div className="p-4 bg-slate-50 rounded-xl text-xs text-slate-400 italic text-center">
-                        No student organizers added yet.
-                      </div>
-                    ) : (
-                      team.filter(t => !(t.global_role?.startsWith('faculty') || t.role === 'Faculty Coordinator' || t.user_id === event.faculty_id)).map(t => {
-                        const isLead = t.user_id === event.proposed_by || t.user_id === event.student_organizer_id;
-                        return (
-                          <div key={t.id} className="p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200/70 flex items-center justify-between gap-3">
-                            <div>
-                              <p className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-                                <span>{t.name}</span>
-                                {isLead && (
-                                  <span className="px-2 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[9px] font-bold">
-                                    Lead Proposer
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-[10px] text-slate-500">{t.email}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/70 text-slate-700">
-                                {t.role || 'Organizer'}
-                              </span>
-                              {!isLead && (isCreator || isFaculty || user?.roles?.includes('admin')) && ['draft', 'pending_approval', 'under_review', 'needs_revision'].includes(event.status) && (
-                                <button
-                                  onClick={() => handleRemoveTeamMember(t.id)}
-                                  className="text-[10px] text-rose-500 hover:text-rose-700 font-bold px-2 py-0.5 bg-rose-50 rounded-lg cursor-pointer"
-                                >
-                                  Remove
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+                    );
+                  })
+                )}
               </div>
             </div>
+          )}
+
+          {/* TAB 4: ORGANIZING TEAM */}
+          {activeTab === 'team' && (
+            <OrganizingTeamTab
+              eventId={proposalId}
+              event={event}
+              user={user}
+              hasFullAccess={isCreator || isFaculty}
+            />
           )}
 
           {/* TAB 5: TIMELINE */}
@@ -1673,6 +1734,145 @@ const ProposalWorkspace = () => {
         </div>
 
       </div>
+
+      {/* ── MODAL: REQUEST PERMISSION FROM HIGHER OFFICIAL ── */}
+      {isPermissionModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 animate-scale-up max-h-[90vh] flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-violet-50 text-violet-600">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-lg text-slate-900">
+                    Request Permission from Higher Official
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Select a university authority, write your proposal letter, and attach supporting files.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPermissionModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handlePermissionSubmit} className="p-6 overflow-y-auto space-y-5 flex-1">
+              
+              {/* Higher Official Dropdown */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Select Higher Official (University Admin) *
+                </label>
+                <select
+                  required
+                  value={selectedOfficialId}
+                  onChange={(e) => setSelectedOfficialId(e.target.value)}
+                  className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all cursor-pointer shadow-xs"
+                >
+                  <option value="" disabled>-- Choose Higher Official / University Admin --</option>
+                  {higherOfficials.map(off => (
+                    <option key={off.id} value={off.id}>
+                      {off.displayLabel || `${off.name} (${off.department || 'University Admin'})`}
+                    </option>
+                  ))}
+                </select>
+                {higherOfficials.length === 0 && !loadingOfficials && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    No higher officials found. Please ensure an administrator account is active.
+                  </p>
+                )}
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Subject / Heading
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={permissionSubject}
+                  onChange={(e) => setPermissionSubject(e.target.value)}
+                  placeholder="e.g. Formal Permission Request for Annual Hackathon 2026"
+                  className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                />
+              </div>
+
+              {/* Proposal Letter Body */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Proposal Letter *
+                </label>
+                <textarea
+                  required
+                  rows={8}
+                  value={proposalLetter}
+                  onChange={(e) => setProposalLetter(e.target.value)}
+                  placeholder="Write formal event proposal letter to the higher official..."
+                  className="w-full p-4 text-sm bg-white border border-slate-300 text-slate-800 rounded-2xl focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 focus:outline-none transition-all font-sans leading-relaxed"
+                />
+              </div>
+
+              {/* Attachments */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Attach Supporting Documents (Agenda, Budget, Circulars)
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,image/*"
+                  onChange={(e) => setPermissionFiles(e.target.files)}
+                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-violet-700 hover:file:bg-violet-50 file:border-slate-200 file:shadow-xs cursor-pointer"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  You can select multiple PDF, Word, PowerPoint, Excel, or image files.
+                </p>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPermissionModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPermission}
+                  className="btn-primary px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs hover:opacity-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {submittingPermission ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Sending Letter...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>✉️</span>
+                      <span>Send Proposal Letter to Higher Official</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

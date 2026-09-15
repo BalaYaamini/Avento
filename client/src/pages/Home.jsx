@@ -193,11 +193,24 @@ const Home = () => {
       setExternalInviteEmail('');
       setIsTeamRegOpen(true);
     } else {
-      if (!user.phone || !user.college || !user.gender) {
-        setFeedback({ type: 'error', message: 'Please complete your profile (phone, college, gender) before registering.' });
-        setTimeout(() => setFeedback(null), 4000);
+      const userPhone = user?.phone || user?.phoneNumber || user?.phone_number;
+      const userCollege = user?.college || user?.collegeName || user?.college_name;
+      const userGender = user?.gender;
+
+      const missing = [];
+      if (!userPhone) missing.push('10-digit Phone Number');
+      if (!userCollege) missing.push('College / Institution Name');
+      if (!userGender) missing.push('Gender');
+
+      if (missing.length > 0) {
+        setProfileIncompleteModalData({
+          eventId: event._id || event.id,
+          message: `Please complete your profile details (${missing.join(', ')}) before registering for events.`,
+          missingFields: missing
+        });
         return;
       }
+
       setConfirmRegEvent(event);
       setIsConfirmRegOpen(true);
     }

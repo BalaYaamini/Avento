@@ -1,5 +1,6 @@
 const supabase = require('../config/supabaseClient');
 const nodemailer = require('nodemailer');
+const { invalidateProfileCache } = require('../middleware/authMiddleware');
 
 exports.getUsers = async (req, res) => {
   try {
@@ -56,29 +57,30 @@ exports.getUsers = async (req, res) => {
 
 exports.getFacultyCoordinators = async (req, res) => {
   try {
-    // Query only profiles with eligible roles directly (much faster than fetching all)
+    // Query only profiles with eligible faculty coordinator roles (faculty, faculty_organizer)
     const { data: byRole, error: roleErr } = await supabase
       .from('profiles')
       .select('id, name, email, role, department, employee_id, status')
-      .in('role', ['faculty', 'faculty_organizer', 'admin'])
+      .in('role', ['faculty', 'faculty_organizer'])
       .neq('status', 'inactive');
 
     if (roleErr) throw roleErr;
 
-    // Also check for non-student profiles with employee_id (university officials)
-    const { data: byEmpId, error: empErr } = await supabase
-      .from('profiles')
-      .select('id, name, email, role, department, employee_id, status')
-      .not('employee_id', 'is', null)
-      .neq('status', 'inactive');
-
-    if (empErr) throw empErr;
-
-    // Merge and deduplicate
+    // Deduplicate and strictly exclude admins, higher officials, and student profiles
     const merged = new Map();
-    [...(byRole || []), ...(byEmpId || [])].forEach(f => {
+    (byRole || []).forEach(f => {
       const r = (f.role || '').toLowerCase();
-      if (!r.includes('student')) {
+      const name = (f.name || f.fullName || '').toLowerCase();
+      const email = (f.email || '').toLowerCase();
+      if (
+        (r === 'faculty' || r === 'faculty_organizer') &&
+        !r.includes('admin') &&
+        !r.includes('higher') &&
+        !r.includes('official') &&
+        !name.includes('higher official') &&
+        !name.includes('administrator') &&
+        !email.includes('admin')
+      ) {
         merged.set(f.id, f);
       }
     });
@@ -102,23 +104,101 @@ exports.getFacultyCoordinators = async (req, res) => {
   }
 };
 
+exports.getHigherOfficials = async (req, res) => {
+  try {
+    const { data: officials, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, department, employee_id, status')
+      .in('role', ['admin', 'official'])
+      .neq('status', 'inactive');
+
+    if (error) throw error;
+
+    const result = (officials || []).map(o => {
+      const isSuperAdmin = (o.email || '').toLowerCase().trim() === 'admin.avento@gmail.com';
+      const empText = o.employee_id ? `${o.employee_id} • ` : '';
+      const deptText = o.department ? `${o.department} - ` : '';
+      return {
+        id: o.id,
+        fullName: o.name || (isSuperAdmin ? 'Avento Admin' : 'University Admin'),
+        name: o.name || (isSuperAdmin ? 'Avento Admin' : 'University Admin'),
+        email: o.email,
+        role: o.role,
+        isSuperAdmin,
+        isUniversityAdmin: !isSuperAdmin,
+        roleName: isSuperAdmin ? 'Avento Admin' : 'University Admin',
+        employeeId: o.employee_id || '',
+        department: o.department || (isSuperAdmin ? 'Platform Super Admin' : 'University Administration'),
+        displayLabel: isSuperAdmin 
+          ? `${o.name || 'Avento Admin'} (Avento Admin • Master Access)`
+          : `${o.name || 'University Admin'} (${empText}${deptText}University Admin)`
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('getHigherOfficials error:', err.message);
+    res.status(500).json({ message: 'Server error fetching higher officials.', error: err.message });
+  }
+};
+
 exports.searchUsers = async (req, res) => {
   try {
-    const { query } = req.query;
+    const { query, eventId } = req.query;
     if (!query || !query.trim()) return res.json([]);
 
     const cleanQuery = query.trim().replace(/[%_]/g, '');
     if (!cleanQuery) return res.json([]);
 
+    let excludedUserIds = new Set();
+    if (eventId) {
+      // 1. Fetch registered users for this event (exclude all active/attended/pending participants)
+      const { data: regs } = await supabase
+        .from('event_registrations')
+        .select('user_id, status')
+        .eq('event_id', eventId);
+
+      (regs || []).forEach(r => {
+        if (r.user_id && r.status !== 'cancelled') {
+          excludedUserIds.add(String(r.user_id));
+        }
+      });
+
+      // 2. Fetch existing proposal team members
+      const { data: existingMembers } = await supabase
+        .from('event_members')
+        .select('user_id')
+        .eq('event_id', eventId);
+
+      (existingMembers || []).forEach(m => {
+        if (m.user_id) excludedUserIds.add(String(m.user_id));
+      });
+
+      // 3. Fetch existing event organizers
+      const { data: existingOrgs } = await supabase
+        .from('event_organizers')
+        .select('student_id')
+        .eq('event_id', eventId);
+
+      (existingOrgs || []).forEach(o => {
+        if (o.student_id) excludedUserIds.add(String(o.student_id));
+      });
+    }
+
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, name, email, department, role, roll_number, employee_id, status')
       .or(`name.ilike.%${cleanQuery}%,email.ilike.%${cleanQuery}%,department.ilike.%${cleanQuery}%,roll_number.ilike.%${cleanQuery}%`)
-      .limit(25);
+      .limit(50);
 
     if (error) throw error;
-    const activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
-    res.json(activeProfiles);
+    
+    let activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
+    if (excludedUserIds.size > 0) {
+      activeProfiles = activeProfiles.filter(p => !excludedUserIds.has(String(p.id)));
+    }
+
+    res.json(activeProfiles.slice(0, 25));
   } catch (err) {
     res.status(500).json({ message: 'Server error searching users.', error: err.message });
   }
@@ -272,6 +352,11 @@ exports.updateProfileDetails = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
+    if (invalidateProfileCache) {
+      invalidateProfileCache(userId);
+      invalidateProfileCache(req.user?.email);
+    }
+
     const finalProf = savedDbProfile || profileUpdate;
 
     // Return updated user object with dual-casing property aliases
@@ -289,8 +374,9 @@ exports.updateProfileDetails = async (req, res) => {
       degree_program: finalProf.degree_program || finalProf.degreeProgram || req.user.degree_program || req.user.degreeProgram || null,
       yearOfStudy: finalProf.year_of_study || finalProf.yearOfStudy || req.user.yearOfStudy || req.user.year_of_study || null,
       year_of_study: finalProf.year_of_study || finalProf.yearOfStudy || req.user.year_of_study || req.user.yearOfStudy || null,
-      collegeName: finalProf.college_name || finalProf.collegeName || req.user.collegeName || req.user.college_name || null,
-      college_name: finalProf.college_name || finalProf.collegeName || req.user.college_name || req.user.collegeName || null,
+      college: finalProf.college_name || finalProf.collegeName || finalProf.college || req.user.college || null,
+      collegeName: finalProf.college_name || finalProf.collegeName || finalProf.college || req.user.collegeName || req.user.college_name || null,
+      college_name: finalProf.college_name || finalProf.collegeName || finalProf.college || req.user.college_name || req.user.collegeName || null,
       rollNumber: finalProf.roll_number || finalProf.rollNumber || req.user.rollNumber || req.user.roll_number || null,
       roll_number: finalProf.roll_number || finalProf.rollNumber || req.user.roll_number || req.user.rollNumber || null,
       department: (finalProf.department !== undefined && finalProf.department !== null) ? finalProf.department : (req.user.department || null),
@@ -890,9 +976,14 @@ exports.updateFullProfile = async (req, res) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', String(userId));
     if (error) throw error;
 
+    if (invalidateProfileCache) {
+      invalidateProfileCache(userId);
+      invalidateProfileCache(req.user?.email);
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, name, email, phone, college, gender, avatar_url, role')
+      .select('id, name, email, phone, college, college_name, gender, avatar_url, role, department, roll_number, degree_program, year_of_study')
       .eq('id', String(userId))
       .single();
 
@@ -903,10 +994,17 @@ exports.updateFullProfile = async (req, res) => {
         fullName: profile.name,
         email: profile.email,
         phone: profile.phone,
-        college: profile.college,
+        college: profile.college_name || profile.college,
+        collegeName: profile.college_name || profile.college,
+        college_name: profile.college_name || profile.college,
         gender: profile.gender,
         avatarUrl: profile.avatar_url,
         roles: [profile.role],
+        department: profile.department,
+        rollNumber: profile.roll_number,
+        roll_number: profile.roll_number,
+        degreeProgram: profile.degree_program,
+        yearOfStudy: profile.year_of_study
       }
     });
   } catch (err) {

@@ -123,11 +123,24 @@ const StudentOrgEvents = () => {
       const { data: byRole, error: roleErr } = await supabase
         .from('profiles')
         .select('id, name, email, role, department, employee_id, status')
-        .in('role', ['faculty', 'faculty_organizer', 'admin'])
+        .in('role', ['faculty', 'faculty_organizer'])
         .neq('status', 'inactive');
 
       if (!roleErr && byRole && byRole.length > 0) {
-        const result = byRole.map(f => ({
+        const filtered = byRole.filter(f => {
+          const r = (f.role || '').toLowerCase();
+          const name = (f.name || '').toLowerCase();
+          const email = (f.email || '').toLowerCase();
+          return (r === 'faculty' || r === 'faculty_organizer') &&
+                 !r.includes('admin') &&
+                 !r.includes('higher') &&
+                 !r.includes('official') &&
+                 !name.includes('higher official') &&
+                 !name.includes('administrator') &&
+                 !email.includes('admin');
+        });
+
+        const result = filtered.map(f => ({
           id: f.id,
           fullName: f.name,
           name: f.name,
@@ -151,7 +164,19 @@ const StudentOrgEvents = () => {
     try {
       const res = await axios.get('/api/users/faculty-coordinators');
       const data = Array.isArray(res.data) ? res.data : [];
-      setFacultyList(data);
+      const filtered = data.filter(f => {
+        const r = (f.role || '').toLowerCase();
+        const name = (f.fullName || f.name || '').toLowerCase();
+        const email = (f.email || '').toLowerCase();
+        return (r === 'faculty' || r === 'faculty_organizer') &&
+               !r.includes('admin') &&
+               !r.includes('higher') &&
+               !r.includes('official') &&
+               !name.includes('higher official') &&
+               !name.includes('administrator') &&
+               !email.includes('admin');
+      });
+      setFacultyList(filtered);
     } catch (apiErr) {
       console.error('Backend faculty API also failed:', apiErr?.response?.status, apiErr?.response?.data?.message || apiErr.message);
       setFacultyList([]);
@@ -1504,10 +1529,21 @@ const StudentOrgEvents = () => {
                 <option value="" disabled>-- Select Faculty Coordinator Reviewer --</option>
                 {(() => {
                   const filteredFaculty = facultyList.filter(fac => {
-                    if (!facultySearchTerm.trim()) return true;
-                    const search = facultySearchTerm.toLowerCase();
+                    const r = (fac.role || '').toLowerCase();
                     const name = (fac.displayLabel || fac.fullName || fac.name || '').toLowerCase();
                     const email = (fac.email || '').toLowerCase();
+                    if (
+                      r.includes('admin') ||
+                      r.includes('higher') ||
+                      r.includes('official') ||
+                      name.includes('higher official') ||
+                      name.includes('administrator') ||
+                      email.includes('admin')
+                    ) {
+                      return false;
+                    }
+                    if (!facultySearchTerm.trim()) return true;
+                    const search = facultySearchTerm.toLowerCase();
                     const dept = (fac.department || '').toLowerCase();
                     const empId = (fac.employeeId || '').toLowerCase();
                     return name.includes(search) || email.includes(search) || dept.includes(search) || empId.includes(search);

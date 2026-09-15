@@ -291,8 +291,6 @@ const FacultyOrgEvents = () => {
                               Scan QR
                             </button>
                           )}
-
-                          {evt.status === 'published' && <span className="text-xs text-emerald-400 font-semibold italic px-1">Published</span>}
                         </div>
                         {evt.status === 'rejected' && evt.approval_remarks && (
                           <div className="text-[9px] text-red-400 mt-1 text-right max-w-[180px] ml-auto truncate" title={evt.approval_remarks}>

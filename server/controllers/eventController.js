@@ -1481,6 +1481,13 @@ const getEventOrganizers = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Fetch event record
+    const { data: event } = await supabase
+      .from('events')
+      .select('id, faculty_id, student_organizer_id, proposed_by, created_by, organizer_id')
+      .eq('id', id)
+      .maybeSingle();
+
     // Fetch from event_organizers
     const { data: organizers, error: orgErr } = await supabase
       .from('event_organizers')
@@ -1497,6 +1504,11 @@ const getEventOrganizers = async (req, res) => {
 
     // Combine unique user IDs
     const userIds = new Set([
+      event?.faculty_id,
+      event?.student_organizer_id,
+      event?.proposed_by,
+      event?.created_by,
+      event?.organizer_id,
       ...(organizers || []).map(o => o.student_id),
       ...(members || []).map(m => m.user_id)
     ].filter(Boolean));
@@ -1514,28 +1526,60 @@ const getEventOrganizers = async (req, res) => {
     // Map organizers
     const unifiedMap = new Map();
 
+    // Include event creator/head if available
+    const headId = event?.student_organizer_id || event?.proposed_by || event?.created_by || event?.organizer_id;
+    if (headId && !unifiedMap.has(headId)) {
+      unifiedMap.set(headId, {
+        id: `head-${headId}`,
+        userId: headId,
+        category: 'Event Head',
+        organizerRole: 'core',
+        joinedAt: new Date().toISOString(),
+        name: profilesMap[headId]?.name || 'Student Organizer',
+        email: profilesMap[headId]?.email || '',
+        department: profilesMap[headId]?.department || ''
+      });
+    }
+
+    // Include faculty coordinator if available
+    if (event?.faculty_id && !unifiedMap.has(event.faculty_id)) {
+      unifiedMap.set(event.faculty_id, {
+        id: `faculty-${event.faculty_id}`,
+        userId: event.faculty_id,
+        category: 'Faculty Coordinator',
+        organizerRole: 'core',
+        joinedAt: new Date().toISOString(),
+        name: profilesMap[event.faculty_id]?.name || 'Faculty Coordinator',
+        email: profilesMap[event.faculty_id]?.email || '',
+        department: profilesMap[event.faculty_id]?.department || ''
+      });
+    }
+
     (members || []).forEach(m => {
-      if (!unifiedMap.has(m.user_id)) {
+      if (m.user_id && !unifiedMap.has(m.user_id)) {
         unifiedMap.set(m.user_id, {
           id: `mem-${m.id}`,
+          memberId: m.id,
           userId: m.user_id,
           category: m.role || 'Core Organizer',
           organizerRole: m.organizer_type || 'normal',
-          joinedAt: new Date().toISOString(), // Fallback
-          name: profilesMap[m.user_id]?.name || 'Unknown',
-          email: profilesMap[m.user_id]?.email || '',
+          allowed_modules: m.allowed_modules || ['all'],
+          joinedAt: new Date().toISOString(),
+          name: profilesMap[m.user_id]?.name || m.name || 'Unknown',
+          email: profilesMap[m.user_id]?.email || m.email || '',
           department: profilesMap[m.user_id]?.department || ''
         });
       }
     });
 
     (organizers || []).forEach(org => {
-      if (!unifiedMap.has(org.student_id)) {
+      if (org.student_id && !unifiedMap.has(org.student_id)) {
         unifiedMap.set(org.student_id, {
           id: org.id,
           userId: org.student_id,
           category: org.category,
           organizerRole: org.organizer_role || 'normal',
+          allowed_modules: org.allowed_modules || ['all'],
           joinedAt: org.joined_at,
           name: profilesMap[org.student_id]?.name || 'Unknown Student',
           email: profilesMap[org.student_id]?.email || '',
@@ -1554,7 +1598,7 @@ const getEventOrganizers = async (req, res) => {
 const recruitOrganizer = async (req, res) => {
   try {
     const { id } = req.params;
-    const { studentId, category, organizerRole } = req.body;
+    const { studentId, category, organizerRole, allowedModules } = req.body;
 
     if (!studentId || !category) {
       return res.status(400).json({ message: 'Student ID and Category are required.' });
@@ -1623,13 +1667,12 @@ const recruitOrganizer = async (req, res) => {
       return res.status(400).json({ message: 'This user is already an organizer for this event.' });
     }
 
-    // Verify user is not already participating as a member of a confirmed team
+    // Verify user is not already registered for the event
     const { data: existingRegs, error: regErr } = await supabase
       .from('event_registrations')
-      .select('team_id')
+      .select('id, status, team_id')
       .eq('event_id', id)
-      .eq('user_id', studentId)
-      .eq('status', 'registered');
+      .eq('user_id', studentId);
 
     if (regErr) {
       console.error("Error fetching registrations for recruitment:", regErr);
@@ -1637,43 +1680,13 @@ const recruitOrganizer = async (req, res) => {
     }
 
     if (existingRegs && existingRegs.length > 0) {
-      const teamIds = existingRegs.map(r => r.team_id).filter(Boolean);
-      if (teamIds.length > 0) {
-        const { data: confirmedTeams, error: teamErr } = await supabase
-          .from('event_teams')
-          .select('id')
-          .in('id', teamIds)
-          .eq('status', 'registered')
-          .limit(1);
-
-        if (teamErr) {
-          console.error("Error fetching teams for recruitment:", teamErr);
-          return res.status(500).json({ message: 'Error checking user team status.', error: teamErr.message });
-        }
-
-        if (confirmedTeams && confirmedTeams.length > 0) {
-          return res.status(400).json({ message: 'This user is already a member of a confirmed team and cannot be recruited as an organizer.' });
-        }
+      const hasActive = existingRegs.some(r => r.status !== 'cancelled');
+      if (hasActive) {
+        return res.status(400).json({ message: 'This user is already registered for this event and cannot be recruited as an organizer.' });
       }
     }
 
-    // Dynamic Edge Case Cleanup: If user has an individual or pending participant registration for this event, clean it up
-    const { data: userRegs } = await supabase
-      .from('event_registrations')
-      .select('id, status, team_id')
-      .eq('event_id', id)
-      .eq('user_id', studentId);
-
-    if (userRegs && userRegs.length > 0) {
-      for (const reg of userRegs) {
-        if (reg.status === 'registered' && !reg.team_id) {
-          await supabase.from('event_registrations').delete().eq('id', reg.id);
-          await supabase.from('events').update({ registered_count: Math.max(0, event.registered_count - 1) }).eq('id', id);
-        } else if (reg.status === 'pending') {
-          await supabase.from('event_registrations').delete().eq('id', reg.id);
-        }
-      }
-    }
+    const modulesToSave = Array.isArray(allowedModules) && allowedModules.length > 0 ? allowedModules : ['all'];
 
     // Insert into event_organizers
     const newOrg = {
@@ -1681,16 +1694,38 @@ const recruitOrganizer = async (req, res) => {
       student_id: studentId,
       category: category,
       organizer_role: selectedRole,
+      allowed_modules: modulesToSave,
       joined_at: new Date().toISOString()
     };
 
-    const { data: inserted, error: insertErr } = await supabase
-      .from('event_organizers')
-      .insert(newOrg)
-      .select()
-      .single();
+    let inserted;
+    try {
+      const { data: ins, error: insertErr } = await supabase
+        .from('event_organizers')
+        .insert(newOrg)
+        .select()
+        .single();
 
-    if (insertErr) throw insertErr;
+      if (insertErr) throw insertErr;
+      inserted = ins;
+    } catch (insertError) {
+      // Graceful fallback if column allowed_modules does not exist in event_organizers table
+      const fallbackOrg = {
+        event_id: id,
+        student_id: studentId,
+        category: category,
+        organizer_role: selectedRole,
+        joined_at: new Date().toISOString()
+      };
+      const { data: fallbackIns, error: fallbackErr } = await supabase
+        .from('event_organizers')
+        .insert(fallbackOrg)
+        .select()
+        .single();
+
+      if (fallbackErr) throw fallbackErr;
+      inserted = { ...fallbackIns, allowed_modules: modulesToSave };
+    }
 
     res.status(201).json({
       message: 'Organizer added successfully.',
@@ -1699,6 +1734,7 @@ const recruitOrganizer = async (req, res) => {
         userId: inserted.student_id,
         category: inserted.category,
         organizerRole: selectedRole,
+        allowed_modules: inserted.allowed_modules || modulesToSave,
         joinedAt: inserted.joined_at,
         name: profile.name || profile.fullName,
         email: profile.email,
@@ -2267,32 +2303,85 @@ const getProposalWorkspace = async (req, res) => {
       }
       
       // 1c. Fetch Proposer/Student Organizer manually
-      const studentId = event.student_organizer_id || event.proposed_by || event.created_by;
+      const studentId = event.student_organizer_id || event.proposed_by || event.created_by || event.organizer_id;
       if (studentId) {
         const { data: stu } = await supabase.from('profiles').select('id, name, email, department, roll_number').eq('id', studentId).maybeSingle();
         if (stu) {
+          const resolvedName = (stu.name && stu.name.trim() && stu.name !== 'Student' && stu.name !== 'Student Organizer')
+            ? stu.name
+            : (stu.roll_number ? (stu.name && stu.name.trim() ? `${stu.name} (${stu.roll_number})` : `Student (${stu.roll_number})`) : (stu.email ? stu.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : (stu.name || 'Student Proposer')));
           event.student_organizer = {
             ...stu,
-            full_name: stu.name,
-            name: stu.name
+            full_name: resolvedName,
+            name: resolvedName
           };
+          event.proposer = event.student_organizer;
+          event.proposer_name = resolvedName;
+          event.student_name = resolvedName;
         }
       }
 
-      // Fallback: check if a lead organizer exists in event_members
-      if (!event.student_organizer) {
+      // Fallback 1: check if a student organizer exists in event_organizers
+      if (!event.student_organizer || !event.student_organizer.name || event.student_organizer.name === 'Student' || event.student_organizer.name === 'Student Organizer') {
+        const { data: orgMember } = await supabase
+          .from('event_organizers')
+          .select('student_id, category, organizer_role')
+          .eq('event_id', id)
+          .maybeSingle();
+        if (orgMember?.student_id) {
+          const { data: orgProf } = await supabase
+            .from('profiles')
+            .select('id, name, email, department, roll_number')
+            .eq('id', orgMember.student_id)
+            .maybeSingle();
+          if (orgProf) {
+            const resolvedOrgName = (orgProf.name && orgProf.name.trim() && orgProf.name !== 'Student' && orgProf.name !== 'Student Organizer')
+              ? orgProf.name
+              : (orgProf.roll_number ? (orgProf.name && orgProf.name.trim() ? `${orgProf.name} (${orgProf.roll_number})` : `Student (${orgProf.roll_number})`) : (orgProf.email ? orgProf.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Student Organizer'));
+            event.student_organizer = {
+              ...orgProf,
+              full_name: resolvedOrgName,
+              name: resolvedOrgName
+            };
+            event.proposer = event.student_organizer;
+            event.proposer_name = resolvedOrgName;
+            event.student_name = resolvedOrgName;
+          }
+        }
+      }
+
+      // Fallback 2: check if a member exists in event_members
+      if (!event.student_organizer || !event.student_organizer.name || event.student_organizer.name === 'Student' || event.student_organizer.name === 'Student Organizer') {
         const { data: leadMember } = await supabase
           .from('event_members')
           .select('user_id, name, email, role')
           .eq('event_id', id)
+          .not('role', 'ilike', '%faculty%')
           .maybeSingle();
         if (leadMember) {
+          let resolvedMemberName = (leadMember.name && leadMember.name.trim() && leadMember.name !== 'Student' && leadMember.name !== 'Student Organizer')
+            ? leadMember.name
+            : null;
+          if (!resolvedMemberName && leadMember.user_id) {
+            const { data: mProf } = await supabase.from('profiles').select('id, name, email, department, roll_number').eq('id', leadMember.user_id).maybeSingle();
+            if (mProf) {
+              resolvedMemberName = (mProf.name && mProf.name.trim() && mProf.name !== 'Student' && mProf.name !== 'Student Organizer')
+                ? mProf.name
+                : (mProf.roll_number ? `Student (${mProf.roll_number})` : (mProf.email ? mProf.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : null));
+            }
+          }
+          if (!resolvedMemberName) {
+            resolvedMemberName = leadMember.email ? leadMember.email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Student Organizer';
+          }
           event.student_organizer = {
             id: leadMember.user_id,
-            name: leadMember.name,
-            full_name: leadMember.name,
+            name: resolvedMemberName,
+            full_name: resolvedMemberName,
             email: leadMember.email
           };
+          event.proposer = event.student_organizer;
+          event.proposer_name = resolvedMemberName;
+          event.student_name = resolvedMemberName;
         }
       }
     }
@@ -2330,16 +2419,34 @@ const getProposalWorkspace = async (req, res) => {
 
     if (timeErr && timeErr.code !== '42P01') throw timeErr;
 
+    // 4b. Fetch Official Permissions
+    let officialPermissions = [];
+    try {
+      const { data: perms, error: permErr } = await supabase
+        .from('proposal_official_permissions')
+        .select('*')
+        .eq('proposal_id', id)
+        .order('created_at', { ascending: false });
+
+      if (!permErr && perms) {
+        officialPermissions = perms;
+      }
+    } catch (pErr) {
+      console.warn('Non-fatal official_permissions query warning:', pErr.message);
+    }
+
     // 5. Manually attach profiles
     const allUserIds = [...new Set([
       ...(discussions || []).map(d => d.user_id),
       ...(documents || []).map(d => d.user_id),
-      ...(timeline || []).map(t => t.user_id)
+      ...(timeline || []).map(t => t.user_id),
+      ...(officialPermissions || []).map(p => p.requested_by),
+      ...(officialPermissions || []).map(p => p.official_id)
     ].filter(Boolean))];
 
     let profilesMap = {};
     if (allUserIds.length > 0) {
-      const { data: profs } = await supabase.from('profiles').select('id, name, role, avatar_url').in('id', allUserIds);
+      const { data: profs } = await supabase.from('profiles').select('id, name, role, department, employee_id, avatar_url').in('id', allUserIds);
       (profs || []).forEach(p => { 
         profilesMap[p.id] = {
           ...p,
@@ -2351,12 +2458,18 @@ const getProposalWorkspace = async (req, res) => {
     const formattedDiscussions = (discussions || []).map(d => ({ ...d, sender: profilesMap[d.user_id] || {} }));
     const formattedDocuments = (documents || []).map(d => ({ ...d, uploader: profilesMap[d.user_id] || {} }));
     const formattedTimeline = (timeline || []).map(t => ({ ...t, actor: profilesMap[t.user_id] || {} }));
+    const formattedOfficialPermissions = (officialPermissions || []).map(p => ({
+      ...p,
+      requested_by_user: profilesMap[p.requested_by] || {},
+      official_user: profilesMap[p.official_id] || {}
+    }));
 
     res.json({
       event,
       discussions: formattedDiscussions,
       documents: formattedDocuments,
-      timeline: formattedTimeline
+      timeline: formattedTimeline,
+      officialPermissions: formattedOfficialPermissions
     });
 
   } catch (err) {
@@ -2907,28 +3020,71 @@ const getProposalTeam = async (req, res) => {
       .select('*')
       .eq('event_id', id);
     if (error) throw error;
+
+    // Also fetch event_organizers to ensure full unified visibility
+    let organizers = [];
+    try {
+      const { data: orgData } = await supabase
+        .from('event_organizers')
+        .select('*')
+        .eq('event_id', id);
+      organizers = orgData || [];
+    } catch (e) {
+      console.warn('Could not fetch event_organizers in getProposalTeam:', e);
+    }
     
     // Fetch names and emails manually from profiles
-    const userIds = (members || []).map(m => m.user_id).filter(Boolean);
+    const userIds = new Set();
+    (members || []).forEach(m => m.user_id && userIds.add(m.user_id));
+    (organizers || []).forEach(o => o.student_id && userIds.add(o.student_id));
+
     let profilesMap = {};
-    if (userIds.length > 0) {
+    if (userIds.size > 0) {
       const { data: profilesData } = await supabase
         .from('profiles')
         .select('id, name, email, role, department, roll_number')
-        .in('id', userIds);
+        .in('id', Array.from(userIds));
       profilesMap = (profilesData || []).reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
     }
+
+    const unifiedList = [];
+    const seenUserIds = new Set();
     
-    const formattedMembers = (members || []).map(m => ({
-      ...m,
-      name: profilesMap[m.user_id]?.name || m.name || 'Unknown',
-      email: profilesMap[m.user_id]?.email || m.email || null,
-      global_role: profilesMap[m.user_id]?.role || 'student',
-      department: profilesMap[m.user_id]?.department || null,
-      roll_number: profilesMap[m.user_id]?.roll_number || null,
-    }));
+    (members || []).forEach(m => {
+      if (m.user_id) seenUserIds.add(m.user_id);
+      unifiedList.push({
+        ...m,
+        id: m.id,
+        user_id: m.user_id,
+        name: profilesMap[m.user_id]?.name || m.name || 'Unknown',
+        email: profilesMap[m.user_id]?.email || m.email || null,
+        global_role: profilesMap[m.user_id]?.role || 'student',
+        department: profilesMap[m.user_id]?.department || null,
+        roll_number: profilesMap[m.user_id]?.roll_number || null,
+        allowed_modules: Array.isArray(m.allowed_modules) && m.allowed_modules.length > 0 ? m.allowed_modules : ['all'],
+      });
+    });
+
+    (organizers || []).forEach(org => {
+      if (org.student_id && !seenUserIds.has(org.student_id)) {
+        seenUserIds.add(org.student_id);
+        unifiedList.push({
+          id: org.id,
+          event_id: org.event_id,
+          user_id: org.student_id,
+          role: org.category || 'Organizer',
+          organizer_type: org.organizer_role || 'normal',
+          name: profilesMap[org.student_id]?.name || 'Unknown Student',
+          email: profilesMap[org.student_id]?.email || null,
+          global_role: profilesMap[org.student_id]?.role || 'student',
+          department: profilesMap[org.student_id]?.department || null,
+          roll_number: profilesMap[org.student_id]?.roll_number || null,
+          allowed_modules: Array.isArray(org.allowed_modules) && org.allowed_modules.length > 0 ? org.allowed_modules : ['all'],
+        });
+      }
+    });
     
-    res.json(formattedMembers);
+    res.json(unifiedList);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching team.', error: err.message });
   }
@@ -2937,7 +3093,7 @@ const getProposalTeam = async (req, res) => {
 const addProposalTeamMember = async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId, name, email, department, role, organizerType } = req.body;
+    const { userId, name, email, department, role, organizerType, allowedModules } = req.body;
     
     const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
     if (evErr) throw evErr;
@@ -2957,6 +3113,22 @@ const addProposalTeamMember = async (req, res) => {
     const { data: existing } = await supabase.from('event_members').select('id').eq('event_id', id).eq('user_id', userId).maybeSingle();
     if (existing) {
       return res.status(400).json({ message: 'User is already in the organizing team.' });
+    }
+
+    // Verify user is not already registered as a participant for this event
+    if (userId) {
+      const { data: existingRegs } = await supabase
+        .from('event_registrations')
+        .select('id, status')
+        .eq('event_id', id)
+        .eq('user_id', userId);
+
+      if (existingRegs && existingRegs.length > 0) {
+        const hasActive = existingRegs.some(r => r.status !== 'cancelled');
+        if (hasActive) {
+          return res.status(400).json({ message: 'This user is already registered for this event and cannot be added to the organizing team.' });
+        }
+      }
     }
 
     // Fetch profile details for the user to satisfy not-null constraints
@@ -2980,17 +3152,38 @@ const addProposalTeamMember = async (req, res) => {
       userName = 'Student Organizer';
     }
 
-    const { data: member, error: insErr } = await supabase.from('event_members').insert({
-      event_id: id,
-      user_id: userId,
-      name: userName,
-      email: userEmail,
-      roll_number: userRollNumber,
-      role,
-      organizer_type: 'normal'
-    }).select('*').single();
-    
-    if (insErr) throw insErr;
+    const modulesToSave = Array.isArray(allowedModules) && allowedModules.length > 0 ? allowedModules : ['all'];
+
+    let member;
+    try {
+      const { data: inserted, error: insErr } = await supabase.from('event_members').insert({
+        event_id: id,
+        user_id: userId,
+        name: userName,
+        email: userEmail,
+        roll_number: userRollNumber,
+        role,
+        organizer_type: 'normal',
+        allowed_modules: modulesToSave
+      }).select('*').single();
+      
+      if (insErr) throw insErr;
+      member = inserted;
+    } catch (insertError) {
+      // Fallback
+      const { data: fallbackInserted, error: fallbackErr } = await supabase.from('event_members').insert({
+        event_id: id,
+        user_id: userId,
+        name: userName,
+        email: userEmail,
+        roll_number: userRollNumber,
+        role,
+        organizer_type: 'normal'
+      }).select('*').single();
+
+      if (fallbackErr) throw fallbackErr;
+      member = { ...fallbackInserted, allowed_modules: modulesToSave };
+    }
     
     try {
       await notifyUser({
@@ -3005,11 +3198,82 @@ const addProposalTeamMember = async (req, res) => {
     res.json({
       ...member,
       name: userName,
-      email: userEmail
+      email: userEmail,
+      allowed_modules: member.allowed_modules || modulesToSave
     });
   } catch (err) {
     console.error('DEBUG ROOT CAUSE:', err);
     res.status(500).json({ message: `Server error adding team member: ${err.message || JSON.stringify(err)}`, error: err.message });
+  }
+};
+
+const updateProposalTeamMemberPermissions = async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const { allowedModules, userId } = req.body;
+
+    const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (evErr) throw evErr;
+
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const modulesToSave = Array.isArray(allowedModules) && allowedModules.length > 0 ? allowedModules : ['all'];
+    const cleanMemberId = String(memberId).replace(/^mem-/, '');
+    const targetUserId = userId || (cleanMemberId.includes('-') && cleanMemberId.length > 20 ? cleanMemberId : null);
+
+    // 1. Update in event_members by id
+    try {
+      await supabase
+        .from('event_members')
+        .update({ allowed_modules: modulesToSave })
+        .eq('event_id', id)
+        .eq('id', cleanMemberId);
+    } catch (e1) {
+      console.warn('event_members update by id skipped/failed:', e1.message);
+    }
+
+    // 2. Update in event_members by user_id if targetUserId is available
+    if (targetUserId) {
+      try {
+        await supabase
+          .from('event_members')
+          .update({ allowed_modules: modulesToSave })
+          .eq('event_id', id)
+          .eq('user_id', targetUserId);
+      } catch (e2) {
+        console.warn('event_members update by user_id skipped/failed:', e2.message);
+      }
+    }
+
+    // 3. Update in event_organizers by id or student_id
+    try {
+      await supabase
+        .from('event_organizers')
+        .update({ allowed_modules: modulesToSave })
+        .eq('event_id', id)
+        .eq('id', cleanMemberId);
+    } catch (e3) {
+      console.warn('event_organizers update by id skipped/failed:', e3.message);
+    }
+
+    if (targetUserId) {
+      try {
+        await supabase
+          .from('event_organizers')
+          .update({ allowed_modules: modulesToSave })
+          .eq('event_id', id)
+          .eq('student_id', targetUserId);
+      } catch (e4) {
+        console.warn('event_organizers update by student_id skipped/failed:', e4.message);
+      }
+    }
+
+    res.json({ id: memberId, allowed_modules: modulesToSave, success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error updating permissions.', error: err.message });
   }
 };
 
@@ -3266,14 +3530,10 @@ const removeProposalDocument = async (req, res) => {
 };
 
 /**
- * ADMIN ONLY: Manually close event registrations.
+ * Close event registrations (Admins, Faculty Coordinators, Organizers).
  */
 const adminCloseRegistrations = async (req, res) => {
   try {
-    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
-    }
-
     const { id } = req.params;
 
     const { data: event, error: fetchErr } = await supabase
@@ -3284,6 +3544,11 @@ const adminCloseRegistrations = async (req, res) => {
 
     if (fetchErr || !event) {
       return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied. You do not have permission to manage registrations for this event.' });
     }
 
     // Set registration_deadline to now (past/current timestamp closes registrations in system)
@@ -3298,7 +3563,7 @@ const adminCloseRegistrations = async (req, res) => {
 
     if (updateErr) throw updateErr;
 
-    res.json({ message: 'Event registrations manually closed by Admin.', event: updatedEvent });
+    res.json({ message: 'Event registrations closed.', event: updatedEvent });
   } catch (err) {
     console.error('Error in adminCloseRegistrations:', err);
     res.status(500).json({ message: 'Server error closing event registrations.', error: err.message });
@@ -3306,14 +3571,10 @@ const adminCloseRegistrations = async (req, res) => {
 };
 
 /**
- * ADMIN ONLY: Manually open event registrations.
+ * Open event registrations (Admins, Faculty Coordinators, Organizers).
  */
 const adminOpenRegistrations = async (req, res) => {
   try {
-    if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
-      return res.status(403).json({ message: 'Access denied. Administrator permissions required.' });
-    }
-
     const { id } = req.params;
 
     const { data: event, error: fetchErr } = await supabase
@@ -3326,6 +3587,11 @@ const adminOpenRegistrations = async (req, res) => {
       return res.status(404).json({ message: 'Event not found.' });
     }
 
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied. You do not have permission to manage registrations for this event.' });
+    }
+
     // Setting registration_deadline to null re-opens registrations in the system
     const { data: updatedEvent, error: updateErr } = await supabase
       .from('events')
@@ -3336,7 +3602,7 @@ const adminOpenRegistrations = async (req, res) => {
 
     if (updateErr) throw updateErr;
 
-    res.json({ message: 'Event registrations manually opened by Admin.', event: updatedEvent });
+    res.json({ message: 'Event registrations opened.', event: updatedEvent });
   } catch (err) {
     console.error('Error in adminOpenRegistrations:', err);
     res.status(500).json({ message: 'Server error opening event registrations.', error: err.message });
@@ -3453,6 +3719,373 @@ const deleteConfirmationAttachment = async (req, res) => {
   }
 };
 
+const requestOfficialPermission = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const targetOfficialId = req.body.officialId || req.body.official_id;
+    const letter = req.body.proposalLetter || req.body.proposal_letter;
+    const sub = req.body.subject;
+
+    if (!targetOfficialId) {
+      return res.status(400).json({ message: 'Please select a Higher Official to request permission from.' });
+    }
+    if (!letter || !letter.trim()) {
+      return res.status(400).json({ message: 'Proposal letter cannot be empty.' });
+    }
+
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('id, title, faculty_id, proposed_by, student_organizer_id, status, category, date, venue')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Event proposal not found.' });
+    }
+
+    const hasAccess = await checkCoreOrganizerAccess(id, event, req.user);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Only authorized coordinators can request higher official permission.' });
+    }
+
+    // Verify official exists
+    const { data: officialProfile, error: offErr } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, department')
+      .eq('id', targetOfficialId)
+      .maybeSingle();
+
+    if (offErr || !officialProfile) {
+      return res.status(400).json({ message: 'Invalid Higher Official selected.' });
+    }
+
+    // Process file attachments if any
+    let attachments = [];
+    const files = req.files || (req.file ? [req.file] : []);
+
+    for (const file of files) {
+      const fileExt = (file.originalname.split('.').pop() || 'bin').toLowerCase();
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const storagePath = `official_permissions/${id}/${uniqueSuffix}.${fileExt}`;
+
+      let fileUrl = '';
+      let { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('documents')
+        .upload(storagePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true
+        });
+
+      if (uploadErr && /bucket.*not found|not found.*bucket/i.test(uploadErr.message || '')) {
+        await supabase.storage.createBucket('documents', { public: true });
+        ({ data: uploadData, error: uploadErr } = await supabase.storage
+          .from('documents')
+          .upload(storagePath, file.buffer, {
+            contentType: file.mimetype,
+            upsert: true
+          }));
+      }
+
+      if (uploadErr) {
+        console.warn('Supabase storage upload failed; using fallback:', uploadErr.message);
+        if (file.buffer && file.buffer.length <= 8 * 1024 * 1024) {
+          fileUrl = `data:${file.mimetype || 'application/octet-stream'};base64,${file.buffer.toString('base64')}`;
+        }
+      } else {
+        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+        fileUrl = urlData?.publicUrl || '';
+      }
+
+      attachments.push({
+        file_name: file.originalname,
+        file_url: fileUrl,
+        file_type: fileExt.toUpperCase(),
+        file_size: file.size
+      });
+    }
+
+    // Insert permission request record
+    const { data: permissionRecord, error: insertErr } = await supabase
+      .from('proposal_official_permissions')
+      .insert({
+        proposal_id: id,
+        requested_by: req.user.id,
+        official_id: targetOfficialId,
+        subject: sub || `Permission Request: ${event.title}`,
+        proposal_letter: letter.trim(),
+        attachments: attachments,
+        status: 'pending'
+      })
+      .select('*')
+      .single();
+
+    if (insertErr) {
+      console.error('Error inserting official permission:', insertErr);
+      throw insertErr;
+    }
+
+    permissionRecord.requested_by_user = {
+      id: req.user.id,
+      name: req.user.name || req.user.fullName,
+      email: req.user.email
+    };
+    permissionRecord.official_user = {
+      id: officialProfile.id,
+      name: officialProfile.name,
+      email: officialProfile.email,
+      department: officialProfile.department
+    };
+
+    // Log to proposal timeline
+    try {
+      await supabase.from('proposal_timeline').insert({
+        proposal_id: id,
+        user_id: req.user.id,
+        action: 'Permission Requested from Higher Official',
+        details: `Sent formal proposal letter & ${attachments.length} attachment(s) to ${officialProfile.name || 'Higher Official'}.`
+      });
+    } catch (timelineErr) {
+      console.warn('Non-fatal proposal_timeline insert error:', timelineErr.message);
+    }
+
+    // Notify the Higher Official
+    try {
+      await notifyUser({
+        recipientId: targetOfficialId,
+        userId: targetOfficialId,
+        recipientEmail: officialProfile.email,
+        type: 'official_permission_request',
+        title: 'Event Permission Request',
+        message: `Formal permission requested for event proposal "${event.title}" by ${req.user.name || 'Coordinator'}.`,
+        emailSubject: `[AVENTO] Official Permission Request: ${event.title}`,
+        eventId: id
+      });
+    } catch (notifyErr) {
+      console.warn('Failed to notify higher official:', notifyErr.message);
+    }
+
+    res.status(201).json({
+      message: 'Permission request sent to Higher Official successfully.',
+      permission: permissionRecord
+    });
+  } catch (err) {
+    console.error('Error in requestOfficialPermission:', err);
+    res.status(500).json({ message: 'Server error requesting official permission.', error: err.message });
+  }
+};
+
+const getEventOfficialPermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: permissions, error: permErr } = await supabase
+      .from('proposal_official_permissions')
+      .select('*')
+      .eq('proposal_id', id)
+      .order('created_at', { ascending: false });
+
+    if (permErr && permErr.code !== '42P01') throw permErr;
+
+    const list = permissions || [];
+    const allUserIds = [...new Set([
+      ...list.map(p => p.requested_by),
+      ...list.map(p => p.official_id)
+    ].filter(Boolean))];
+
+    let profilesMap = {};
+    if (allUserIds.length > 0) {
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, name, email, department, role, employee_id')
+        .in('id', allUserIds);
+      (profs || []).forEach(p => {
+        profilesMap[p.id] = p;
+      });
+    }
+
+    const formatted = list.map(p => ({
+      ...p,
+      requested_by_user: profilesMap[p.requested_by] || {},
+      official_user: profilesMap[p.official_id] || {}
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Error in getEventOfficialPermissions:', err);
+    res.status(500).json({ message: 'Server error fetching official permissions.', error: err.message });
+  }
+};
+
+const getAllOfficialPermissions = async (req, res) => {
+  try {
+    const query = supabase
+      .from('proposal_official_permissions')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    const { data: permissions, error: permErr } = await query;
+    if (permErr && permErr.code !== '42P01') throw permErr;
+
+    const list = permissions || [];
+    const proposalIds = [...new Set(list.map(p => p.proposal_id).filter(Boolean))];
+    const userIds = [...new Set([
+      ...list.map(p => p.requested_by),
+      ...list.map(p => p.official_id)
+    ].filter(Boolean))];
+
+    let eventsMap = {};
+    if (proposalIds.length > 0) {
+      const { data: evts } = await supabase
+        .from('events')
+        .select('id, title, category, date, venue, status, image_url, proposed_by, student_organizer_id, faculty_id')
+        .in('id', proposalIds);
+      (evts || []).forEach(e => {
+        eventsMap[e.id] = e;
+      });
+    }
+
+    // Also fetch faculty and proposer profiles for events
+    const eventUserIds = [...new Set(
+      Object.values(eventsMap).flatMap(e => [e.proposed_by, e.student_organizer_id, e.faculty_id]).filter(Boolean)
+    )];
+
+    const combinedUserIds = [...new Set([...userIds, ...eventUserIds])];
+
+    let profilesMap = {};
+    if (combinedUserIds.length > 0) {
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, name, email, department, role, employee_id')
+        .in('id', combinedUserIds);
+      (profs || []).forEach(p => {
+        profilesMap[p.id] = p;
+      });
+    }
+
+    const result = list.map(p => {
+      const rawEvt = eventsMap[p.proposal_id] || {};
+      const facultyProfile = profilesMap[rawEvt.faculty_id] || {};
+      const proposerProfile = profilesMap[rawEvt.student_organizer_id || rawEvt.proposed_by] || {};
+
+      const evt = {
+        ...rawEvt,
+        faculty: facultyProfile,
+        proposer: proposerProfile
+      };
+
+      return {
+        ...p,
+        event: evt,
+        requested_by_user: profilesMap[p.requested_by] || {},
+        official_user: profilesMap[p.official_id] || {}
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getAllOfficialPermissions:', err);
+    res.status(500).json({ message: 'Server error fetching all official permissions.', error: err.message });
+  }
+};
+
+const decideOfficialPermission = async (req, res) => {
+  try {
+    const { id, permissionId } = req.params;
+    const { status, remarks } = req.body;
+
+    const allowedStatuses = ['granted', 'rejected', 'revision_requested'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Invalid decision status. Must be granted, rejected, or revision_requested.' });
+    }
+
+    const { data: perm, error: fetchErr } = await supabase
+      .from('proposal_official_permissions')
+      .select('*')
+      .eq('id', permissionId)
+      .eq('proposal_id', id)
+      .single();
+
+    if (fetchErr || !perm) {
+      return res.status(404).json({ message: 'Permission request not found.' });
+    }
+
+    const userEmail = (req.user?.email || '').toLowerCase().trim();
+    const isAventoAdmin = userEmail === 'admin.avento@gmail.com';
+    const isAdmin = isAventoAdmin || req.user.roles?.includes('admin') || req.user.role === 'admin';
+    const isAssignedOfficial = String(perm.official_id) === String(req.user.id);
+
+    if (!isAdmin && !isAssignedOfficial) {
+      return res.status(403).json({ message: 'Only the assigned Higher Official (University Admin) or Avento Admin can decide on this permission.' });
+    }
+
+    const now = new Date().toISOString();
+    const { data: updatedPerm, error: updateErr } = await supabase
+      .from('proposal_official_permissions')
+      .update({
+        status,
+        official_remarks: remarks || null,
+        decided_at: now,
+        updated_at: now
+      })
+      .eq('id', permissionId)
+      .select('*')
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    // Fetch event for notification & timeline
+    const { data: event } = await supabase
+      .from('events')
+      .select('id, title, faculty_id, proposed_by, student_organizer_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    const actionText = status === 'granted'
+      ? 'Higher Official Permission Granted'
+      : (status === 'rejected' ? 'Higher Official Permission Denied' : 'Higher Official Requested Revision');
+
+    // Add to proposal timeline
+    try {
+      await supabase.from('proposal_timeline').insert({
+        proposal_id: id,
+        user_id: req.user.id,
+        action: actionText,
+        details: remarks
+          ? `${req.user.name || 'Higher Official'} decided: ${status.toUpperCase()}. Remarks: "${remarks}"`
+          : `${req.user.name || 'Higher Official'} granted permission for this event proposal.`
+      });
+    } catch (timelineErr) {
+      console.warn('Non-fatal timeline insert error:', timelineErr.message);
+    }
+
+    // Notify requester and faculty coordinator
+    const notifyTargets = new Set([perm.requested_by, event?.faculty_id, event?.proposed_by, event?.student_organizer_id].filter(Boolean));
+    for (const targetId of notifyTargets) {
+      if (String(targetId) !== String(req.user.id)) {
+        try {
+          await notifyUser({
+            userId: targetId,
+            type: 'official_permission_decision',
+            title: `Higher Official Decision: ${status === 'granted' ? 'Approved' : status.replace('_', ' ')}`,
+            message: `${req.user.name || 'Higher Official'} has ${status === 'granted' ? 'granted permission' : (status === 'rejected' ? 'rejected permission' : 'requested revision')} for "${event?.title || 'Event Proposal'}".`,
+            link: `/proposals/${id}`
+          });
+        } catch (notifyErr) {
+          console.warn('Failed to notify user of permission decision:', notifyErr.message);
+        }
+      }
+    }
+
+    res.json({
+      message: `Permission request ${status === 'granted' ? 'granted' : status} successfully.`,
+      permission: updatedPerm
+    });
+  } catch (err) {
+    console.error('Error in decideOfficialPermission:', err);
+    res.status(500).json({ message: 'Server error processing permission decision.', error: err.message });
+  }
+};
+
 module.exports = {
   checkCoreOrganizerAccess,
   getEvents,
@@ -3485,6 +4118,7 @@ module.exports = {
   updateProposalTeamMemberRole,
   getProposalTeam,
   addProposalTeamMember,
+  updateProposalTeamMemberPermissions,
   removeProposalTeamMember,
   updateProposalDescription,
   removeProposalDocument,
@@ -3492,5 +4126,9 @@ module.exports = {
   adminOpenRegistrations,
   saveConfirmationEmailConfig,
   uploadConfirmationAttachment,
-  deleteConfirmationAttachment
+  deleteConfirmationAttachment,
+  requestOfficialPermission,
+  getEventOfficialPermissions,
+  getAllOfficialPermissions,
+  decideOfficialPermission
 };

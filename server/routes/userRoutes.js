@@ -17,6 +17,7 @@ const upload = multer({
 const organizerRoles = ['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student', 'organizer'];
 const facultyLookupRoles = ['admin', 'faculty', 'faculty_organizer', 'student_organizer', 'student', 'organizer'];
 router.get('/faculty-coordinators', authMiddleware, roleMiddleware(facultyLookupRoles), userController.getFacultyCoordinators);
+router.get('/higher-officials', authMiddleware, roleMiddleware(organizerRoles), userController.getHigherOfficials);
 router.get('/students', authMiddleware, roleMiddleware(organizerRoles), userController.getStudents);
 router.get('/search', authMiddleware, roleMiddleware(organizerRoles), userController.searchUsers);
 

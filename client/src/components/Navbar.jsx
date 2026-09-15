@@ -297,9 +297,20 @@ const Navbar = () => {
              {user && user.roles?.includes('admin') && (
                <>
                  <NavLink to="/admin" end className={navLinkClass}>Dashboard</NavLink>
-                 <NavLink to="/admin/events" className={navLinkClass}>Events</NavLink>
-                 <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
-                 <NavLink to="/admin/announcements" className={navLinkClass}>Announcements</NavLink>
+                 {user.email === 'admin.avento@gmail.com' ? (
+                   <>
+                     <NavLink to="/admin/events" className={navLinkClass}>Events</NavLink>
+                     <NavLink to="/admin/permissions" className={navLinkClass}>Permissions</NavLink>
+                     <NavLink to="/admin/users" className={navLinkClass}>Users</NavLink>
+                     <NavLink to="/admin/announcements" className={navLinkClass}>Announcements</NavLink>
+                   </>
+                 ) : (
+                   <>
+                     <NavLink to="/admin/permissions" className={navLinkClass}>Proposals</NavLink>
+                     <NavLink to="/admin/events" className={navLinkClass}>Campus Events</NavLink>
+                     <NavLink to="/announcements" className={navLinkClass}>Announcements{announcementUnread > 0 && <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold text-white bg-red-500 rounded-full">{announcementUnread}</span>}</NavLink>
+                   </>
+                 )}
                </>
              )}
            </div>
@@ -502,9 +513,20 @@ const Navbar = () => {
           {user && user.roles?.includes('admin') && (
             <>
               <NavLink to="/admin" end onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Dashboard</NavLink>
-              <NavLink to="/admin/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Events</NavLink>
-                <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
-                <NavLink to="/admin/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements</NavLink>
+              {user.email === 'admin.avento@gmail.com' ? (
+                <>
+                  <NavLink to="/admin/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Events</NavLink>
+                  <NavLink to="/admin/permissions" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Permissions</NavLink>
+                  <NavLink to="/admin/users" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Users</NavLink>
+                  <NavLink to="/admin/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements</NavLink>
+                </>
+              ) : (
+                <>
+                  <NavLink to="/admin/permissions" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Proposals</NavLink>
+                  <NavLink to="/admin/events" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Campus Events</NavLink>
+                  <NavLink to="/announcements" onClick={() => setIsOpen(false)} className={mobileNavLinkClass}>Announcements{announcementUnread > 0 && <span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold text-white bg-red-500 rounded-full">{announcementUnread}</span>}</NavLink>
+                </>
+              )}
             </>
           )}
 
@@ -549,7 +571,8 @@ const Navbar = () => {
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-pastel-coral uppercase tracking-widest font-quicksand">
-                      {user.roles?.includes('admin') ? 'Admin' : 
+                      {user.email === 'admin.avento@gmail.com' ? 'Avento Admin' :
+                       user.roles?.includes('admin') ? 'University Admin' : 
                        (user.roles?.includes('faculty') || user.roles?.includes('faculty_organizer')) ? 'Faculty' : 
                        'Student'}
                     </p>

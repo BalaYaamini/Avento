@@ -73,7 +73,7 @@ const fetchCompleteProfile = async (userId, userEmail, reqUser = null) => {
     } catch (e) {}
   }
 
-  const objects = [reqUser, dbById, dbByEmail];
+  const objects = [reqUser, dbByEmail, dbById];
   const merged = {};
   for (const obj of objects) {
     if (!obj) continue;
@@ -85,6 +85,41 @@ const fetchCompleteProfile = async (userId, userEmail, reqUser = null) => {
       }
     }
   }
+
+  // Ensure all standard aliases are populated on merged
+  const cName = merged.college_name || merged.collegeName || merged.college || merged.institution;
+  if (cName) {
+    merged.college = cName;
+    merged.college_name = cName;
+    merged.collegeName = cName;
+  }
+  const rNum = merged.roll_number || merged.rollNumber || merged.roll_no || merged.rollNo;
+  if (rNum) {
+    merged.roll_number = rNum;
+    merged.rollNumber = rNum;
+  }
+  const dProg = merged.degree_program || merged.degreeProgram || merged.program || merged.degree;
+  if (dProg) {
+    merged.degree_program = dProg;
+    merged.degreeProgram = dProg;
+  }
+  const yStudy = merged.year_of_study !== undefined && merged.year_of_study !== null && String(merged.year_of_study).trim() !== ''
+    ? merged.year_of_study
+    : (merged.yearOfStudy || merged.year);
+  if (yStudy) {
+    merged.year_of_study = yStudy;
+    merged.yearOfStudy = yStudy;
+  }
+  const dept = merged.department || merged.dept || merged.branch;
+  if (dept) {
+    merged.department = dept;
+  }
+  const ph = merged.phone || merged.phoneNumber || merged.phone_number;
+  if (ph) {
+    merged.phone = ph;
+    merged.phone_number = ph;
+  }
+
   return merged;
 };
 

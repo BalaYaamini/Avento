@@ -31,6 +31,7 @@ import AdminEvents from './pages/AdminEvents';
 import AdminRegistrations from './pages/AdminRegistrations';
 import AdminUsers from './pages/AdminUsers';
 import AdminAnnouncements from './pages/AdminAnnouncements';
+import AdminPermissions from './pages/AdminPermissions';
 import Announcements from './pages/Announcements';
 
 // Protected Faculty Organizer views
@@ -199,6 +200,14 @@ const AnimatedRoutes = () => {
           element={
             <ProtectedRoute allowedRoles={['admin']}>
               <AdminAnnouncements />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/permissions"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminPermissions />
             </ProtectedRoute>
           }
         />

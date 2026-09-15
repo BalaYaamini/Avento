@@ -21,7 +21,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
     if (r === 'admin') {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-          🏛️ University Official
+          🏛️ University Admin
         </span>
       );
     }
@@ -323,7 +323,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                   }`}
                 >
                   <span className="text-base mb-0.5">🏛️</span>
-                  <span className="text-xs font-bold">University Official</span>
+                  <span className="text-xs font-bold">University Admin</span>
                 </button>
                 <button
                   type="button"
