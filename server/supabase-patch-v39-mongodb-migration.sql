@@ -45,6 +45,22 @@ CREATE TABLE IF NOT EXISTS public.announcement_reads (
 CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON public.announcement_reads(user_id);
 CREATE INDEX IF NOT EXISTS idx_announcement_reads_announcement ON public.announcement_reads(announcement_id);
 
+-- RLS policies for announcements (authorization enforced at Express middleware layer)
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "announcements_select_all" ON public.announcements;
+CREATE POLICY "announcements_select_all" ON public.announcements FOR SELECT USING (true);
+DROP POLICY IF EXISTS "announcements_insert_all" ON public.announcements;
+CREATE POLICY "announcements_insert_all" ON public.announcements FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "announcements_update_all" ON public.announcements;
+CREATE POLICY "announcements_update_all" ON public.announcements FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "announcements_delete_all" ON public.announcements;
+CREATE POLICY "announcements_delete_all" ON public.announcements FOR DELETE USING (true);
+
+-- RLS policies for announcement_reads
+ALTER TABLE public.announcement_reads ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "announcement_reads_all" ON public.announcement_reads;
+CREATE POLICY "announcement_reads_all" ON public.announcement_reads FOR ALL USING (true);
+
 -- 4. Problem statement documents table (replaces MongoDB problem_statement_documents)
 CREATE TABLE IF NOT EXISTS public.problem_statement_documents (
   event_id TEXT PRIMARY KEY,

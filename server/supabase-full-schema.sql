@@ -283,7 +283,38 @@ CREATE TABLE IF NOT EXISTS public.proposal_timeline (
 );
 
 
--- ─── 15. TEAM_ALLOCATIONS TABLE ─────────────────────────────
+-- ─── 15. ANNOUNCEMENTS TABLE ─────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.announcements (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL CHECK (char_length(title) <= 140),
+  message TEXT NOT NULL CHECK (char_length(message) <= 5000),
+  image_url TEXT DEFAULT '',
+  audience TEXT DEFAULT 'all' CHECK (audience IN ('all', 'registered')),
+  status TEXT DEFAULT 'published' CHECK (status IN ('draft', 'published')),
+  event_id TEXT DEFAULT '',
+  event_name TEXT DEFAULT '',
+  author_id TEXT NOT NULL,
+  author_name TEXT DEFAULT 'Administrator',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_status ON public.announcements(status);
+CREATE INDEX IF NOT EXISTS idx_announcements_event_id ON public.announcements(event_id);
+
+-- ─── 16. ANNOUNCEMENT_READS TABLE ────────────────────────────
+CREATE TABLE IF NOT EXISTS public.announcement_reads (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  announcement_id UUID NOT NULL REFERENCES public.announcements(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, announcement_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON public.announcement_reads(user_id);
+CREATE INDEX IF NOT EXISTS idx_announcement_reads_announcement ON public.announcement_reads(announcement_id);
+
+-- ─── 17. TEAM_ALLOCATIONS TABLE ─────────────────────────────
 CREATE TABLE IF NOT EXISTS public.team_allocations (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
@@ -317,6 +348,25 @@ ALTER TABLE public.proposal_discussions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.proposal_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.proposal_timeline ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.team_allocations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcement_reads ENABLE ROW LEVEL SECURITY;
+
+-- ─── ANNOUNCEMENTS ──────────────────────────────────────────
+DROP POLICY IF EXISTS "announcements_select_all" ON public.announcements;
+CREATE POLICY "announcements_select_all" ON public.announcements FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "announcements_insert_all" ON public.announcements;
+CREATE POLICY "announcements_insert_all" ON public.announcements FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "announcements_update_all" ON public.announcements;
+CREATE POLICY "announcements_update_all" ON public.announcements FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "announcements_delete_all" ON public.announcements;
+CREATE POLICY "announcements_delete_all" ON public.announcements FOR DELETE USING (true);
+
+-- ─── ANNOUNCEMENT_READS ─────────────────────────────────────
+DROP POLICY IF EXISTS "announcement_reads_all" ON public.announcement_reads;
+CREATE POLICY "announcement_reads_all" ON public.announcement_reads FOR ALL USING (true);
 
 -- ─── PROFILES ───────────────────────────────────────────────
 DROP POLICY IF EXISTS "profiles_select_all" ON public.profiles;

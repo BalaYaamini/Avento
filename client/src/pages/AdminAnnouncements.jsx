@@ -59,24 +59,37 @@ const AdminAnnouncements = () => {
   const submit = async (event) => {
     event.preventDefault();
     if (!form.title.trim() || !form.message.trim()) return setError('Please enter a title and message.');
+    if (form.title.trim().length > 140) return setError('Title cannot exceed 140 characters.');
+    if (form.message.trim().length > 5000) return setError('Message cannot exceed 5000 characters.');
+    
     try {
       setSubmitting(true);
+      setError('');
       let imageUrl = form.imageUrl || '';
       if (imageFile) {
         if (imageFile.size > 5 * 1024 * 1024) throw new Error('Announcement image must be less than 5MB.');
         const ext = imageFile.name.split('.').pop();
         const path = `announcement-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: uploadError } = await supabase.storage.from('posters').upload(path, imageFile);
-        if (uploadError) throw new Error('Failed to upload announcement image.');
+        if (uploadError) throw new Error(`Image upload failed: ${uploadError.message}`);
         imageUrl = supabase.storage.from('posters').getPublicUrl(path).data.publicUrl;
       }
-      const payload = { ...form, imageUrl };
+      const payload = {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        imageUrl: imageUrl || '',
+        audience: form.audience || 'all',
+        status: form.status || 'published',
+        eventId: form.eventId || '',
+        eventName: form.eventName || ''
+      };
       if (editingId) await axios.put(`/api/announcements/${editingId}`, payload);
       else await axios.post('/api/announcements', payload);
       setIsModalOpen(false);
       await fetchAnnouncements();
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to save announcement.');
+      const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to save announcement.';
+      setError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -219,17 +232,17 @@ const AdminAnnouncements = () => {
         )}
       </div>
 
-      {isModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center"><h2 className="text-xl font-heading font-bold text-text-primary">{editingId ? 'Edit Announcement' : 'Create Announcement'}</h2><button onClick={() => setIsModalOpen(false)} className="text-2xl text-slate-400">&times;</button></div>
-          <form onSubmit={submit} className="p-6 space-y-5">
+      {isModalOpen && <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm p-0 sm:p-4">
+        <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex justify-between items-center flex-shrink-0"><h2 className="text-lg sm:text-xl font-heading font-bold text-text-primary">{editingId ? 'Edit Announcement' : 'Create Announcement'}</h2><button onClick={() => setIsModalOpen(false)} className="text-2xl text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center">&times;</button></div>
+          <form onSubmit={submit} className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 min-h-0">
             {error && <div className="rounded-xl bg-red-50 border border-red-200 text-red-600 px-4 py-3 text-sm">{error}</div>}
             <label className="block"><span className="text-sm font-bold text-slate-700">Title</span><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} maxLength={140} className="mt-2 w-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 rounded-xl" placeholder="Announcement title" /></label>
-            <label className="block"><span className="text-sm font-bold text-slate-700">Message</span><textarea value={form.message} onChange={e => setForm({ ...form, message: e.target.value })} maxLength={5000} rows={6} className="mt-2 w-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 rounded-xl resize-none" placeholder="Write the update for your users..." /></label>
-            <div><span className="text-sm font-bold text-slate-700">Image (optional)</span><input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; setImageFile(file || null); setImagePreview(file ? URL.createObjectURL(file) : form.imageUrl || ''); }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:rounded-xl file:border-0 file:bg-violet-50 file:px-4 file:py-2 file:font-bold file:text-violet-700 hover:file:bg-violet-100" />{imagePreview && <img src={imagePreview} alt="Preview" className="mt-3 h-32 w-full rounded-xl object-cover" />}</div>
+            <label className="block"><span className="text-sm font-bold text-slate-700">Message</span><textarea value={form.message} onChange={e => setForm({ ...form, message: e.target.value })} maxLength={5000} rows={4} className="mt-2 w-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 rounded-xl resize-none" placeholder="Write the update for your users..." /></label>
+            <div><span className="text-sm font-bold text-slate-700">Image (optional)</span><input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; setImageFile(file || null); setImagePreview(file ? URL.createObjectURL(file) : form.imageUrl || ''); }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:rounded-xl file:border-0 file:bg-violet-50 file:px-4 file:py-2 file:font-bold file:text-violet-700 hover:file:bg-violet-100" />{imagePreview && <img src={imagePreview} alt="Preview" className="mt-3 h-28 sm:h-32 w-full rounded-xl object-cover" />}</div>
             <label className="block"><span className="text-sm font-bold text-slate-700">Attach to Event (optional)</span><select value={form.eventId} onChange={e => { const opt = e.target.options[e.target.selectedIndex]; setForm({ ...form, eventId: e.target.value, eventName: opt.dataset.name || '' }); }} className="mt-2 w-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 rounded-xl"><option value="">No event — Public announcement</option>{events.map(ev => <option key={ev._id || ev.id} value={ev._id || ev.id} data-name={ev.title}>{ev.title}</option>)}</select></label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><label className="block"><span className="text-sm font-bold text-slate-700">Audience</span><select value={form.audience} onChange={e => setForm({ ...form, audience: e.target.value })} className="mt-2 w-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 rounded-xl"><option value="all">All participants</option><option value="registered">Registered users</option></select></label><label className="block"><span className="text-sm font-bold text-slate-700">Visibility</span><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="mt-2 w-full border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-400 rounded-xl"><option value="published">Publish now</option><option value="draft">Save as draft</option></select></label></div>
-            <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary px-5 py-2.5 text-sm font-bold rounded-xl">Cancel</button><button disabled={submitting} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white">{submitting ? 'Saving...' : editingId ? 'Save Changes' : 'Post Announcement'}</button></div>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2 pb-2 sm:pb-0 flex-shrink-0"><button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary px-5 py-2.5 text-sm font-bold rounded-xl w-full sm:w-auto">Cancel</button><button disabled={submitting} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white w-full sm:w-auto">{submitting ? 'Saving...' : editingId ? 'Save Changes' : 'Post Announcement'}</button></div>
           </form>
         </div>
       </div>}
