@@ -55,12 +55,17 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
     teams.forEach((team) => {
       const leader = team.members.find(m => m.userId === team.leaderId);
       const leaderName = leader ? leader.name : 'Unknown';
+      const slotObj = team.slot;
 
       team.members.forEach((member) => {
         const isPresent = member.attendanceStatus === 'Present';
+        const memberSlot = slotObj || member.slot;
 
         exportData.push({
           'Team Name': team.name,
+          'Time Slot': memberSlot ? memberSlot.slot_name : 'N/A',
+          'Slot Timing': memberSlot ? `${(memberSlot.start_time || '').substring(0, 5)} - ${(memberSlot.end_time || '').substring(0, 5)}${memberSlot.slot_date ? ` (${memberSlot.slot_date})` : ''}` : 'N/A',
+          'Slot Venue': memberSlot?.venue_room || 'N/A',
           'Team Leader': leaderName,
           'Team Leader Contact Number': team.leaderContactNumber || 'N/A',
           'Member Name': member.name,
@@ -81,6 +86,9 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
     // Auto-size columns for better readability
     const colWidths = [
       { wch: 20 }, // Team Name
+      { wch: 18 }, // Time Slot
+      { wch: 24 }, // Slot Timing
+      { wch: 16 }, // Slot Venue
       { wch: 20 }, // Team Leader
       { wch: 25 }, // Team Leader Contact Number
       { wch: 25 }, // Member Name
@@ -144,7 +152,7 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
         
         <button
           onClick={handleExportExcel}
-          className="flex items-center gap-2 px-4 py-2 bg-[#ff3e6c] hover:bg-[#e0355f] text-white font-medium rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#ff3e6c]/20"
+          className="flex items-center gap-2 px-4 py-2 bg-[#ff3e6c] hover:bg-[#e0355f] text-white font-medium rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#ff3e6c]/20 cursor-pointer"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           Export to Excel
@@ -159,14 +167,14 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
             className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:shadow-md transition-shadow duration-200"
           >
             {/* Team Header */}
-            <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="bg-gray-50 px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#ff3e6c] to-[#ff7e95] flex items-center justify-center text-white font-bold shadow-sm">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#ff3e6c] to-[#ff7e95] flex items-center justify-center text-white font-bold shadow-sm shrink-0">
                   {team.name.substring(0, 2).toUpperCase()}
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-lg">{team.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <p className="text-xs text-gray-600">
                       <span className="font-semibold text-gray-700">Team Leader:</span> {team.members.find(m => m.userId === team.leaderId)?.name || 'Unknown'}
                     </p>
@@ -175,6 +183,25 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
                   </div>
                 </div>
               </div>
+
+              {/* Slot Badge */}
+              {team.slot && (
+                <div className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  <span>{team.slot.slot_name}</span>
+                  <span className="text-[11px] text-indigo-500 font-normal">
+                    ({(team.slot.start_time || '').substring(0, 5)} - {(team.slot.end_time || '').substring(0, 5)})
+                  </span>
+                  {team.slot.venue_room && (
+                    <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                      {team.slot.venue_room}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Team Members List */}

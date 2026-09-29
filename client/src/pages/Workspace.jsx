@@ -21,6 +21,7 @@ import IDCardManager from '../components/IDCardManager';
 import OrganizerPeriodicAttendance from '../components/OrganizerPeriodicAttendance';
 import ReviewDiscussionTab from '../components/ReviewDiscussionTab';
 import OrganizingTeamTab from '../components/OrganizingTeamTab';
+import SlotManagementTab from '../components/SlotManagementTab';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -189,7 +190,8 @@ const Workspace = () => {
       minTeamSize: event.min_team_size || 1,
       maxTeamSize: event.max_team_size || 4,
       imageUrl: event.image_url || event.imageUrl || '',
-      registrationType: event.registration_type || 'individual'
+      registrationType: event.registration_type || 'individual',
+      has_slots: Boolean(event.has_slots)
     });
     setIsEditModalOpen(true);
   };
@@ -201,12 +203,14 @@ const Workspace = () => {
     try {
       const payload = {
         ...editFormData,
+        has_slots: Boolean(editFormData.has_slots),
         date: editFormData.date ? (editFormData.date.includes('Z') || editFormData.date.includes('+') ? editFormData.date : new Date(editFormData.date).toISOString()) : undefined,
         registrationDeadline: editFormData.registrationDeadline ? (editFormData.registrationDeadline.includes('Z') || editFormData.registrationDeadline.includes('+') ? editFormData.registrationDeadline : new Date(editFormData.registrationDeadline).toISOString()) : null,
       };
       const res = await axios.put(`/api/events/${eventId}`, payload);
       setEditFeedback({ type: 'success', message: 'Event details updated successfully!' });
       setEvent(prev => ({ ...prev, ...res.data }));
+      fetchWorkspaceData(true);
       setTimeout(() => {
         setIsEditModalOpen(false);
       }, 1200);
@@ -414,6 +418,7 @@ const Workspace = () => {
 
     if (Array.isArray(allowed)) {
       if (moduleId === 'confirmed_teams' && allowed.includes('registrations')) return true;
+      if (moduleId === 'slots' && (allowed.includes('registrations') || allowed.includes('slots'))) return true;
       return allowed.includes(moduleId);
     }
     return true;
@@ -435,6 +440,7 @@ const Workspace = () => {
     'discussion',
     'team',
     'registrations',
+    'slots',
     'allocation',
     'scoring',
     'periodic_attendance',
@@ -835,6 +841,25 @@ const Workspace = () => {
               </button>
             )}
 
+            {isModuleAllowed('slots') && (
+              <button
+                type="button"
+                onClick={() => handleTabChange('slots')}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                  activeTab === 'slots'
+                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="truncate">Time Slots & Schedule</span>
+                </div>
+              </button>
+            )}
+
             {isModuleAllowed('allocation') && (
               <button
                 type="button"
@@ -1041,6 +1066,17 @@ const Workspace = () => {
               ) : (
                 <OrganizerRegistrations eventId={eventId} event={event} />
               )}
+            </div>
+          )}
+
+          {activeTab === 'slots' && isModuleAllowed('slots') && (
+            <div className="mb-8">
+              <SlotManagementTab
+                eventId={eventId}
+                event={event}
+                user={user}
+                hasFullAccess={hasFullAccess()}
+              />
             </div>
           )}
 
@@ -1573,6 +1609,22 @@ const Workspace = () => {
                 />
               </div>
             )}
+
+            <div className="flex items-center justify-between p-3.5 bg-violet-500/5 dark:bg-violet-950/20 border border-violet-500/15 rounded-xl">
+              <div>
+                <h4 className="text-xs font-bold text-text-primary">Enable Slot-Wise Registration</h4>
+                <p className="text-[10px] text-text-secondary">Allow students/teams to choose their preferred time slot during registration</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={editFormData.has_slots} 
+                  onChange={(e) => setEditFormData({ ...editFormData, has_slots: e.target.checked })}
+                  className="sr-only peer" 
+                />
+                <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+              </label>
+            </div>
 
             <div>
               <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Event Poster Image URL</label>

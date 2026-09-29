@@ -27,6 +27,14 @@ const StudentRegistrations = () => {
   const [isConfirmTeamOpen, setIsConfirmTeamOpen] = useState(false);
   const [confirmTeamReg, setConfirmTeamReg] = useState(null);
   
+  // Slot Rescheduling state
+  const [rescheduleReg, setRescheduleReg] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedNewSlotId, setSelectedNewSlotId] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleFeedback, setRescheduleFeedback] = useState(null);
+  
   // Edit Team state
   const [editTeamData, setEditTeamData] = useState(null);
   const [editTeamName, setEditTeamName] = useState('');
@@ -114,6 +122,52 @@ const StudentRegistrations = () => {
       setPsError(err.response?.data?.message || 'Failed to select problem statement.');
     } finally {
       setIsSubmittingPs(false);
+    }
+  };
+
+  const openRescheduleModal = async (reg) => {
+    setRescheduleReg(reg);
+    const currentSlotId = reg.slot_id || reg.slot?.id || reg.teamId?.slot_id || reg.teamId?.slot?.id || '';
+    setSelectedNewSlotId(currentSlotId);
+    setRescheduleFeedback(null);
+    setLoadingSlots(true);
+    try {
+      const eventId = reg.eventId?.id || reg.eventId?._id || reg.event_id;
+      const res = await axios.get(`/api/slots/event/${eventId}`);
+      setAvailableSlots(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch event slots:', err);
+      setRescheduleFeedback({ type: 'error', message: 'Failed to load available slots.' });
+    } finally {
+      setLoadingSlots(false);
+    }
+  };
+
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleReg || !selectedNewSlotId) return;
+    const currentSlotId = rescheduleReg.slot_id || rescheduleReg.slot?.id || rescheduleReg.teamId?.slot_id || rescheduleReg.teamId?.slot?.id || '';
+    if (selectedNewSlotId === currentSlotId) {
+      setRescheduleFeedback({ type: 'error', message: 'Please select a different slot to switch to.' });
+      return;
+    }
+
+    setRescheduling(true);
+    setRescheduleFeedback(null);
+    try {
+      await axios.put(`/api/slots/reschedule/${rescheduleReg.id}`, {
+        newSlotId: selectedNewSlotId
+      });
+      setRescheduleFeedback({ type: 'success', message: 'Time slot changed successfully!' });
+      setTimeout(() => {
+        setRescheduleReg(null);
+        setSelectedNewSlotId('');
+        fetchRegistrations();
+      }, 1200);
+    } catch (err) {
+      console.error('Failed to reschedule slot:', err);
+      setRescheduleFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to reschedule time slot.' });
+    } finally {
+      setRescheduling(false);
     }
   };
 
@@ -682,6 +736,20 @@ const StudentRegistrations = () => {
                                   </svg>
                                   {formatDate(evt.date)}
                                 </div>
+                                {(reg.slot || reg.teamId?.slot) && (
+                                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-violet-700 bg-violet-50 px-3 py-1.5 rounded-xl border border-violet-200/80 mt-2 w-fit">
+                                    <span>⏰</span>
+                                    <span>Slot: <strong>{(reg.slot || reg.teamId?.slot).slot_name}</strong></span>
+                                    <span>•</span>
+                                    <span>{(reg.slot || reg.teamId?.slot).slot_date} ({(reg.slot || reg.teamId?.slot).start_time} - {(reg.slot || reg.teamId?.slot).end_time})</span>
+                                    {(reg.slot || reg.teamId?.slot).venue_room && (
+                                      <>
+                                        <span>•</span>
+                                        <span>📍 Room {(reg.slot || reg.teamId?.slot).venue_room}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             
@@ -774,6 +842,18 @@ const StudentRegistrations = () => {
                             View Pass
                           </button>
                         ) : null}
+                        {(evt.has_slots || reg.slot || reg.teamId?.slot) && evt.status !== 'completed' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                          (!reg.teamId && reg.status === 'registered') ||
+                          (reg.teamId && reg.teamDetails?.leader_id === user?.id && (reg.status === 'registered' || reg.teamDetails?.teamStatus === 'registered' || reg.teamId?.status === 'registered' || reg.teamDetails?.teamStatus === 'pending'))
+                        ) && (
+                          <button
+                            onClick={() => openRescheduleModal(reg)}
+                            className="px-4 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300 flex items-center gap-1.5"
+                          >
+                            <span>⏰</span>
+                            <span>Change Slot</span>
+                          </button>
+                        )}
                         {(() => {
                           const isConfirmedReg = reg.status === 'registered' || reg.teamId?.status === 'registered' || reg.teamDetails?.teamStatus === 'registered';
                           const currentCount = evt.confirmed_teams_count || evt.registered_count || 0;
@@ -2029,6 +2109,13 @@ const StudentRegistrations = () => {
               <div className="text-center">
                 <h3 className="font-display font-bold text-lg text-slate-800">{qrModalData.eventId?.title}</h3>
                 <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
+                {(qrModalData.slot || qrModalData.teamId?.slot) && (
+                  <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 rounded-xl border border-violet-200 text-xs font-bold text-violet-700">
+                    <span>⏰</span>
+                    <span>Slot: {(qrModalData.slot || qrModalData.teamId?.slot).slot_name} • {(qrModalData.slot || qrModalData.teamId?.slot).slot_date} ({(qrModalData.slot || qrModalData.teamId?.slot).start_time} - {(qrModalData.slot || qrModalData.teamId?.slot).end_time})</span>
+                    {(qrModalData.slot || qrModalData.teamId?.slot).venue_room && <span>📍 Room {(qrModalData.slot || qrModalData.teamId?.slot).venue_room}</span>}
+                  </div>
+                )}
               </div>
               <div className="bg-[#FFFFFF] dark:bg-[#FFFFFF] !bg-[#FFFFFF] p-4 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center">
                 <QRCodeSVG 
@@ -2119,6 +2206,133 @@ const StudentRegistrations = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Slot Reschedule Modal */}
+        {rescheduleReg && (
+          <Modal
+            isOpen={!!rescheduleReg}
+            onClose={() => {
+              if (rescheduling) return;
+              setRescheduleReg(null);
+            }}
+            title="Change Your Time Slot"
+          >
+            <div className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Select a new available time slot for <strong>{rescheduleReg.eventId?.title}</strong>. Your previous slot seat will be automatically released and assigned to your new selection.
+              </p>
+
+              {rescheduleFeedback && (
+                <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                  rescheduleFeedback.type === 'success' 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' 
+                    : 'bg-red-500/10 border-red-500/20 text-red-600'
+                }`}>
+                  <span>{rescheduleFeedback.type === 'success' ? '✓' : '⚠️'}</span>
+                  <span>{rescheduleFeedback.message}</span>
+                </div>
+              )}
+
+              {loadingSlots ? (
+                <div className="py-8 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                  <div className="animate-spin h-4 w-4 border-2 border-violet-600 border-t-transparent rounded-full" />
+                  <span>Loading available slots...</span>
+                </div>
+              ) : availableSlots.length === 0 ? (
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                  No other active time slots are configured for this event.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                  {availableSlots.map(s => {
+                    const currentSlotId = rescheduleReg.slot_id || rescheduleReg.slot?.id || rescheduleReg.teamId?.slot_id || rescheduleReg.teamId?.slot?.id;
+                    const isCurrent = s.id === currentSlotId;
+                    const isSelected = s.id === selectedNewSlotId;
+                    const remaining = s.remaining_capacity ?? (s.max_capacity - s.allocated_count);
+                    const isFull = !isCurrent && remaining <= 0;
+
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => {
+                          if (isFull) return;
+                          setSelectedNewSlotId(s.id);
+                        }}
+                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          isCurrent
+                            ? 'bg-amber-50/70 border-amber-300'
+                            : isSelected
+                            ? 'bg-violet-500/10 border-violet-600 shadow-sm'
+                            : isFull
+                            ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
+                            : 'bg-white border-slate-200 hover:border-violet-300'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-slate-800">{s.slot_name}</span>
+                            {isCurrent && (
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                                Current Slot
+                              </span>
+                            )}
+                            {isSelected && !isCurrent && (
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-violet-600 text-white">
+                                Selected
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-600 mt-1 flex flex-wrap items-center gap-2">
+                            <span>📅 {s.slot_date}</span>
+                            <span>•</span>
+                            <span>⏰ {s.start_time} - {s.end_time}</span>
+                            {s.venue_room && (
+                              <>
+                                <span>•</span>
+                                <span>📍 Room {s.venue_room}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          {isFull ? (
+                            <span className="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200">
+                              Full (0 left)
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              {remaining} / {s.max_capacity} Seats Left
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200/50">
+                <button
+                  type="button"
+                  onClick={() => setRescheduleReg(null)}
+                  disabled={rescheduling}
+                  className="px-4 py-2 text-xs font-bold rounded-xl btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRescheduleSubmit}
+                  disabled={rescheduling || !selectedNewSlotId || selectedNewSlotId === (rescheduleReg.slot_id || rescheduleReg.slot?.id || rescheduleReg.teamId?.slot_id || rescheduleReg.teamId?.slot?.id)}
+                  className="btn-primary px-5 py-2 text-xs font-bold rounded-xl text-white shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {rescheduling ? 'Switching Slot...' : 'Confirm Slot Change'}
+                </button>
+              </div>
+            </div>
+          </Modal>
         )}
 
       </div>

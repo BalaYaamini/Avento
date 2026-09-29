@@ -101,6 +101,25 @@ const Home = () => {
   const [confirmRegEvent, setConfirmRegEvent] = useState(null);
   const [isConfirmRegOpen, setIsConfirmRegOpen] = useState(false);
 
+  // Slot Selection States
+  const [eventSlots, setEventSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [selectedTeamSlotId, setSelectedTeamSlotId] = useState('');
+
+  const fetchSlotsForEvent = async (eventId) => {
+    try {
+      setLoadingSlots(true);
+      const res = await axios.get(`/api/slots/event/${eventId}`);
+      setEventSlots(res.data.slots || []);
+    } catch (err) {
+      console.error('Error fetching event slots:', err);
+      setEventSlots([]);
+    } finally {
+      setLoadingSlots(false);
+    }
+  };
+
   // Join Team Request States
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [joinEvent, setJoinEvent] = useState(null);
@@ -185,6 +204,12 @@ const Home = () => {
       return;
     }
 
+    if (event.has_slots) {
+      fetchSlotsForEvent(event._id || event.id);
+      setSelectedSlotId('');
+      setSelectedTeamSlotId('');
+    }
+
     if (event.registration_type === 'team') {
       setTeamRegEvent(event);
       setTeamName('');
@@ -218,8 +243,9 @@ const Home = () => {
 
   const handleConfirmRegister = async (eventId) => {
     setIsConfirmRegOpen(false);
+    const chosenSlot = selectedSlotId;
     setConfirmRegEvent(null);
-    await handleRegister(eventId);
+    await handleRegister(eventId, chosenSlot);
   };
 
   // Cancellation Confirmation Modal States
@@ -320,11 +346,13 @@ const Home = () => {
     }
   }, [events]);
 
-  const handleRegister = async (eventId) => {
+  const handleRegister = async (eventId, slotId) => {
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
-      await axios.post('/api/registrations', { eventId });
+      const payload = { eventId };
+      if (slotId) payload.slotId = slotId;
+      await axios.post('/api/registrations', payload);
       setFeedback({ type: 'success', message: 'Successfully registered for the event! Check My Registrations page.' });
       await Promise.all([fetchEvents(), fetchMyRegistrations()]);
     } catch (err) {
@@ -347,6 +375,12 @@ const Home = () => {
     e.preventDefault();
     const eventId = teamRegEvent._id || teamRegEvent.id;
     
+    if (teamRegEvent.has_slots && !selectedTeamSlotId) {
+      setFeedback({ type: 'error', message: 'Please select a time slot for your team registration.' });
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
     const leaderCount = teamRegEvent.team_leader_registration_required !== false ? 1 : 0;
     const totalMembers = externalInvites.length + leaderCount;
     const minSize = teamRegEvent.min_team_size || 1;
@@ -366,12 +400,17 @@ const Home = () => {
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
-      const teamRes = await axios.post('/api/registrations/team', {
+      const teamPayload = {
         eventId,
         teamName,
         memberIds: [],
         externalInvites
-      });
+      };
+      if (teamRegEvent.has_slots && selectedTeamSlotId) {
+        teamPayload.slotId = selectedTeamSlotId;
+      }
+
+      const teamRes = await axios.post('/api/registrations/team', teamPayload);
 
       const teamId = teamRes.data?.team?.id;
       if (teamId && externalInvites.length > 0) {
@@ -800,6 +839,59 @@ const Home = () => {
                 </div>
               </div>
 
+              {/* Slot Selection for Individual Registration */}
+              {confirmRegEvent.has_slots && (
+                <div className="space-y-2 pt-2 border-t border-slate-200/20">
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                    Choose Your Preferred Time Slot *
+                  </label>
+                  {loadingSlots ? (
+                    <div className="p-4 text-center text-xs text-slate-400 animate-pulse">Loading available time slots...</div>
+                  ) : eventSlots.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                      No time slots configured yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {eventSlots.map(slot => {
+                        const isSelected = selectedSlotId === slot.id;
+                        const isFull = slot.is_full;
+                        return (
+                          <div
+                            key={slot.id}
+                            onClick={() => !isFull && setSelectedSlotId(slot.id)}
+                            className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
+                              isFull
+                                ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                                : isSelected
+                                ? 'border-violet-500 bg-violet-50/90 dark:bg-violet-950/40 font-bold ring-2 ring-violet-500/20'
+                                : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                <span>{slot.slot_name}</span>
+                                <span className="text-[11px] font-semibold text-slate-500">
+                                  ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                                </span>
+                              </div>
+                              {slot.venue_room && (
+                                <div className="text-[10px] text-slate-400 mt-0.5">📍 {slot.venue_room}</div>
+                              )}
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
+                            }`}>
+                              {isFull ? 'Full' : `${slot.slots_remaining} Seats Left`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Student Details */}
               <div className="bg-slate-500/5 border border-slate-200/10 p-3 rounded-xl text-xs space-y-1">
                 <span className="block text-[9px] font-bold text-slate-600 uppercase tracking-wider mb-1">Registrant Details</span>
@@ -827,8 +919,9 @@ const Home = () => {
                 </button>
                 <button
                   type="button"
+                  disabled={confirmRegEvent.has_slots && !selectedSlotId}
                   onClick={() => handleConfirmRegister(confirmRegEvent._id || confirmRegEvent.id)}
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15 disabled:opacity-50"
                 >
                   Register Now
                 </button>
@@ -917,6 +1010,59 @@ const Home = () => {
                     </p>
                   )}
                 </div>
+
+                {/* Slot Selection for Team Registration */}
+                {teamRegEvent.has_slots && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
+                      Choose Team Time Slot *
+                    </label>
+                    {loadingSlots ? (
+                      <div className="p-4 text-center text-xs text-slate-400 animate-pulse">Loading available time slots...</div>
+                    ) : eventSlots.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                        No time slots configured yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                        {eventSlots.map(slot => {
+                          const isSelected = selectedTeamSlotId === slot.id;
+                          const isFull = slot.is_full;
+                          return (
+                            <div
+                              key={slot.id}
+                              onClick={() => !isFull && setSelectedTeamSlotId(slot.id)}
+                              className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
+                                isFull
+                                  ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                                  : isSelected
+                                  ? 'border-fuchsia-500 bg-fuchsia-50/90 dark:bg-fuchsia-950/40 font-bold ring-2 ring-fuchsia-500/20'
+                                  : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
+                              }`}
+                            >
+                              <div>
+                                <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                  <span>{slot.slot_name}</span>
+                                  <span className="text-[11px] font-semibold text-slate-500">
+                                    ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                                  </span>
+                                </div>
+                                {slot.venue_room && (
+                                  <div className="text-[10px] text-slate-400 mt-0.5">📍 {slot.venue_room}</div>
+                                )}
+                              </div>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
+                              }`}>
+                                {isFull ? 'Full' : `${slot.slots_remaining} Teams/Seats Left`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Invite Team Members by Email */}
                 <div>

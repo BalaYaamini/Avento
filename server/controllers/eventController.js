@@ -645,6 +645,7 @@ const createEvent = async (req, res) => {
       payment_instructions: isPaymentEnabled ? (paymentInstructions || null) : null,
       scoring_enabled: scoringEnabled === true || scoringEnabled === 'true',
       scoreboard_visible: (scoringEnabled === true || scoringEnabled === 'true') && (scoreboardVisible === true || scoreboardVisible === 'true'),
+      has_slots: req.body.hasSlots === true || req.body.hasSlots === 'true' || req.body.has_slots === true || req.body.has_slots === 'true',
     };
 
     if (proposedBy) newEvent.proposed_by = proposedBy;
@@ -652,6 +653,29 @@ const createEvent = async (req, res) => {
 
     const { data: event, error } = await supabase.from('events').insert(newEvent).select().single();
     if (error) throw error;
+
+    // Insert initial slots if provided
+    if (newEvent.has_slots && Array.isArray(req.body.slots) && req.body.slots.length > 0) {
+      try {
+        const initialSlots = req.body.slots.map(s => ({
+          event_id: event.id,
+          slot_name: (s.slot_name || s.name || `Slot ${s.start_time}`).trim(),
+          slot_date: s.slot_date ? s.slot_date : null,
+          start_time: (s.start_time || '').trim(),
+          end_time: (s.end_time || '').trim(),
+          venue_room: (s.venue_room || s.room || '').trim(),
+          max_capacity: Math.max(1, parseInt(s.max_capacity || s.capacity, 10) || 10),
+          allocated_count: 0,
+          status: 'active'
+        })).filter(s => s.slot_name && s.start_time && s.end_time);
+
+        if (initialSlots.length > 0) {
+          await supabase.from('event_slots').insert(initialSlots);
+        }
+      } catch (slotInsErr) {
+        console.warn('Non-fatal initial slot insertion error:', slotInsErr.message);
+      }
+    }
 
     // Log timeline event for new proposal
     try {
@@ -828,6 +852,10 @@ const editEvent = async (req, res) => {
       updates.scoreboard_visible = !!event.scoring_enabled && (scoreboardVisible === true || scoreboardVisible === 'true');
     }
 
+    if (req.body.hasSlots !== undefined || req.body.has_slots !== undefined) {
+      updates.has_slots = req.body.hasSlots !== undefined ? (req.body.hasSlots === true || req.body.hasSlots === 'true') : (req.body.has_slots === true || req.body.has_slots === 'true');
+    }
+
     if (paymentEnabled !== undefined || paymentAmount !== undefined || paymentUpiId !== undefined || paymentQrUrl !== undefined || paymentInstructions !== undefined) {
       const isPaymentEnabled = paymentEnabled !== undefined ? (paymentEnabled === true || paymentEnabled === 'true') : !!event.payment_enabled;
       if (isPaymentEnabled && (!paymentAmount && !event.payment_amount || Number(paymentAmount ?? event.payment_amount) <= 0 || !(paymentQrUrl || event.payment_qr_url))) {
@@ -865,6 +893,26 @@ const editEvent = async (req, res) => {
     const { error: updateErr } = await supabase
       .from('events').update(updates).eq('id', id);
     if (updateErr) throw updateErr;
+
+    // Synchronize/reset all slot dates to match the new event date if date was updated
+    if (updates.date) {
+      try {
+        const newEventDate = new Date(updates.date);
+        if (!isNaN(newEventDate.getTime())) {
+          const year = newEventDate.getFullYear();
+          const month = String(newEventDate.getMonth() + 1).padStart(2, '0');
+          const day = String(newEventDate.getDate()).padStart(2, '0');
+          const slotDateStr = `${year}-${month}-${day}`;
+
+          await supabase
+            .from('event_slots')
+            .update({ slot_date: slotDateStr })
+            .eq('event_id', id);
+        }
+      } catch (slotDateErr) {
+        console.warn('Non-fatal error updating slot dates on event date change:', slotDateErr.message);
+      }
+    }
 
     // Re-read to confirm
     const { data: updatedEvent, error: readErr } = await supabase

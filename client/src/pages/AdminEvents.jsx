@@ -40,6 +40,7 @@ const AdminEvents = () => {
   const [minTeamSize, setMinTeamSize] = useState('1');
   const [maxTeamSize, setMaxTeamSize] = useState('4');
   const [allowCrossDepartment, setAllowCrossDepartment] = useState(true);
+  const [hasSlots, setHasSlots] = useState(false);
   const [registrationDeadline, setRegistrationDeadline] = useState('');
   const [paymentEnabled, setPaymentEnabled] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -201,6 +202,7 @@ const AdminEvents = () => {
     setMinTeamSize('1');
     setMaxTeamSize('4');
     setAllowCrossDepartment(true);
+    setHasSlots(false);
     setRegistrationDeadline('');
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
@@ -230,6 +232,7 @@ const AdminEvents = () => {
     setMinTeamSize(event.min_team_size ? String(event.min_team_size) : '1');
     setMaxTeamSize(event.max_team_size ? String(event.max_team_size) : '4');
     setAllowCrossDepartment(event.allow_cross_department ?? true);
+    setHasSlots(Boolean(event.has_slots));
     setRegistrationDeadline(formatToDatetimeLocal(event.registration_deadline));
 
     setPaymentEnabled(!!event.payment_enabled);
@@ -336,6 +339,7 @@ const AdminEvents = () => {
         minTeamSize: registrationType === 'team' ? Number(minTeamSize) : undefined,
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : undefined,
         allowCrossDepartment: registrationType === 'team' ? allowCrossDepartment : undefined,
+        hasSlots,
         registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : null,
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
@@ -1044,6 +1048,22 @@ const AdminEvents = () => {
                   </div>
                 </div>
               )}
+              <div className="flex items-center justify-between p-3.5 bg-violet-500/5 border border-violet-500/10 rounded-xl mt-4">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Enable Slot-Wise Registration</h4>
+                  <p className="text-[10px] text-slate-500">Allow students/teams to choose their preferred time slot during registration</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={hasSlots} 
+                    onChange={(e) => setHasSlots(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+
               <div className="mt-4 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                 <div className="flex items-center justify-between"><div><h4 className="text-xs font-bold text-slate-800">Enable Payment</h4><p className="text-[10px] text-slate-600">Require UTR verification at team confirmation.</p></div><input type="checkbox" checked={paymentEnabled} onChange={(e) => setPaymentEnabled(e.target.checked)} /></div>
                 {paymentEnabled && <><input type="number" min="1" step="0.01" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="Payment amount (Rs.)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input value={paymentUpiId} onChange={(e) => setPaymentUpiId(e.target.value)} placeholder="UPI ID (optional)" className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" /><input type="file" accept="image/*" required={!paymentQrUrl} onChange={(e) => setPaymentQrFile(e.target.files[0] || null)} className="w-full text-sm" /><textarea value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Payment instructions (optional)" rows={2} className="w-full rounded-xl border border-slate-300/50 bg-white/60 px-4 py-2.5 text-sm" />{paymentQrUrl && <img src={paymentQrUrl} alt="Payment QR preview" className="h-24 w-24 rounded-lg object-contain" />}</>}
