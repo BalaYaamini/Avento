@@ -118,7 +118,7 @@ const SplashScreen = () => {
       </div>
 
       {/* ── Soft ambient glow behind logo ── */}
-      <div className="absolute w-96 h-96 rounded-full bg-gradient-to-tr from-[#B8A8FF]/30 via-[#F4978E]/20 to-[#FFF1A6]/35 blur-3xl animate-pulse pointer-events-none" />
+      <div className="absolute w-96 h-96 rounded-full bg-gradient-to-tr from-[#06b6d4]/25 via-[#A5F3FC]/20 to-[#38bdf8]/25 blur-3xl animate-pulse pointer-events-none" />
 
       {/* ── Main Content — Ultra-smooth entrance ── */}
       <div
@@ -128,11 +128,11 @@ const SplashScreen = () => {
       >
         {/* Logo — Noticeably bigger */}
         <div className="relative mb-8 flex items-center justify-center">
-          <div className="absolute -inset-6 bg-gradient-to-r from-[#B8A8FF]/20 to-[#F4978E]/20 rounded-3xl blur-xl" />
+          <div className="absolute -inset-6 bg-gradient-to-r from-[#06b6d4]/20 to-[#A5F3FC]/20 rounded-3xl blur-xl" />
           <img
             src="/logo.png?v=3"
             alt="Avento Logo"
-            className="relative h-36 md:h-44 lg:h-52 w-auto object-contain drop-shadow-lg"
+            className="relative h-36 md:h-44 lg:h-52 w-auto object-contain drop-shadow-lg logo-cyan-tint"
           />
         </div>
 
@@ -141,9 +141,9 @@ const SplashScreen = () => {
           University Event Management Platform
         </p>
 
-        {/* Progress bar — wider, tri-color gradient */}
+        {/* Progress bar — cyan gradient */}
         <div className="w-48 h-1.5 bg-slate-200/70 rounded-full overflow-hidden shadow-inner">
-          <div className="h-full bg-gradient-to-r from-[#B8A8FF] via-[#F4978E] to-[#FFF1A6] rounded-full animate-splash-progress" />
+          <div className="h-full bg-gradient-to-r from-[#06b6d4] via-[#38bdf8] to-[#A5F3FC] rounded-full animate-splash-progress" />
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { 
@@ -12,6 +13,20 @@ import {
 
 const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onViewScores, onCancelRegister }) => {
   const { user } = useAuth();
+  const [showPosterZoom, setShowPosterZoom] = useState(false);
+
+  useEffect(() => {
+    if (!showPosterZoom) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setShowPosterZoom(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [showPosterZoom]);
   
   const formatDate = (dateString) => {
     const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -48,30 +63,45 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
   const randomRotation = rotationClasses[index % rotationClasses.length];
 
   return (
-    <div 
-      className={`animate-fade-in-up polaroid scrapbook-panel-hover relative flex w-full min-w-0 flex-col h-full group ${randomRotation}`}
-      style={{ animationDelay: `${staggerDelay}ms` }}
-    >
-      {/* Decorative Tape/Pin */}
-      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
-        {index % 2 === 0 ? <div className="tape tape-1"></div> : <PinDoodle className="w-8 h-8 text-pastel-coral" />}
-      </div>
+    <>
+      <div 
+        className={`animate-fade-in-up polaroid relative flex w-full min-w-0 flex-col h-full group ${randomRotation}`}
+        style={{ animationDelay: `${staggerDelay}ms` }}
+      >
+        {/* Decorative Tape/Pin */}
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
+          {index % 2 === 0 ? <div className="tape tape-1"></div> : <PinDoodle className="w-8 h-8 text-pastel-coral" />}
+        </div>
 
-      {/* Decorative Category Doodle */}
-      <div className="absolute -right-2 -top-2 z-20 animate-float-slow">
-        {catStyle.doodle}
-      </div>
+        {/* Decorative Category Doodle */}
+        <div className="absolute -right-2 -top-2 z-20 animate-float-slow">
+          {catStyle.doodle}
+        </div>
 
-      {/* Event Banner */}
-      <div className="relative h-72 w-full overflow-hidden rounded-xl border-2 border-pastel-lavender/20 bg-slate-50 mb-4 sm:h-96">
-        <img
-          src={event.imageUrl}
-          alt={event.title}
-          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-700 ease-out-expo"
-          onError={(e) => {
-            e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800';
-          }}
-        />
+        {/* Event Banner (Click to Zoom) */}
+        <div 
+          onClick={() => setShowPosterZoom(true)}
+          className="relative h-48 sm:h-52 w-full overflow-hidden rounded-xl border-2 border-pastel-lavender/20 bg-slate-50 mb-3 cursor-pointer group/poster"
+          title="Click to zoom poster & view details"
+        >
+          <img
+            src={event.imageUrl}
+            alt={event.title}
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800';
+            }}
+          />
+
+          {/* Hover Zoom Badge */}
+          <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover/poster:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+            <span className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md text-text-primary text-[11px] font-bold px-3 py-1.5 rounded-xl border border-white/40 shadow-lg flex items-center gap-1.5 transform scale-95 group-hover/poster:scale-100 transition-transform">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+              </svg>
+              View Full Poster
+            </span>
+          </div>
 
         {/* Category Badge */}
         <span className={`absolute bottom-3 left-3 text-[10px] font-bold px-3 py-1 rounded-xl border-2 backdrop-blur-md shadow-sm bg-white/90 ${catStyle.text} ${catStyle.border} uppercase tracking-wider`}>
@@ -97,9 +127,9 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
       </div>
 
       {/* Card Content */}
-      <div className="flex flex-col flex-grow px-2">
+      <div className="flex flex-col flex-grow px-1">
         {/* Date & Time */}
-        <div className="flex items-center text-xs text-pastel-coral font-bold mb-2 tracking-wider uppercase font-quicksand">
+        <div className="flex items-center text-xs text-pastel-coral font-bold mb-1.5 tracking-wider uppercase font-quicksand">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
@@ -107,20 +137,20 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
         </div>
 
         {/* Title */}
-        <h3 className="text-xl font-heading font-bold text-text-primary mb-2">
+        <h3 className="text-lg font-heading font-bold text-text-primary mb-1.5 line-clamp-2" title={event.title}>
           {event.title}
         </h3>
 
         {/* Description */}
-        <p className="text-sm font-body text-text-secondary mb-4 flex-grow leading-relaxed whitespace-pre-wrap">
+        <p className="text-xs sm:text-sm font-body text-text-secondary mb-3 flex-grow leading-relaxed line-clamp-3 whitespace-pre-wrap">
           {event.description}
         </p>
 
         {/* Wavy divider */}
-        <div className="w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSI0Ij48cGF0aCBkPSJNMCAyUTUgMCAxMCAyVDE1IDBUMjAgMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQjhBOEZGIiBzdHJva2Utd2lkdGg9IjEiLz48L3N2Zz4=')] bg-repeat-x mb-4 opacity-50"></div>
+        <div className="w-full h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSI0Ij48cGF0aCBkPSJNMCAyUTUgMCAxMCAyVDE1IDBUMjAgMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQjhBOEZGIiBzdHJva2Utd2lkdGg9IjEiLz48L3N2Zz4=')] bg-repeat-x mb-3 opacity-50"></div>
 
         {/* Venue & Organizers Count */}
-        <div className="flex items-center justify-between text-xs text-text-secondary mb-4 font-bold font-quicksand">
+        <div className="flex items-center justify-between text-xs text-text-secondary mb-3 font-bold font-quicksand">
           <div className="flex items-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5 text-pastel-lavender" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -135,7 +165,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
 
         {/* Capacity Bar */}
         {event.registration_type !== 'team' && (
-          <div className="space-y-1.5 mb-5">
+          <div className="space-y-1.5 mb-3">
             <div className="flex items-center justify-between text-[10px] font-bold tracking-wide font-quicksand">
               <span className="text-text-secondary uppercase">Seats Filled</span>
               <span className={isFull ? 'text-pastel-coral' : 'text-pastel-lavender'}>
@@ -336,6 +366,161 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
         </div>
       </div>
     </div>
+
+    {/* ════════════ ZOOMED POSTER & DETAILS MODAL ════════════ */}
+    {showPosterZoom && (
+      <div 
+        className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-md animate-fade-in"
+        onClick={() => setShowPosterZoom(false)}
+      >
+        <div 
+          className="relative w-full max-w-4xl max-h-[90vh] bg-white dark:bg-slate-900 border-2 border-cyan-500/30 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-fade-in-scale"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-30">
+            <div className="flex items-center gap-2.5 min-w-0 pr-4">
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border uppercase tracking-wider ${catStyle.text} ${catStyle.border} bg-white/80 dark:bg-slate-800`}>
+                {event.category}
+              </span>
+              <h2 className="text-sm sm:text-lg font-heading font-bold text-text-primary truncate">{event.title}</h2>
+            </div>
+            <button
+              onClick={() => setShowPosterZoom(false)}
+              className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-colors flex-shrink-0"
+              title="Close (Esc)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Scrollable Modal Body */}
+          <div className="overflow-y-auto p-4 sm:p-6 space-y-6 flex-grow">
+            {/* Full Poster Image */}
+            <div className="relative w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950/5 dark:bg-slate-950 flex items-center justify-center p-2 sm:p-4 shadow-inner">
+              <img
+                src={event.imageUrl}
+                alt={event.title}
+                className="w-full max-h-[55vh] sm:max-h-[62vh] object-contain rounded-xl"
+                onError={(e) => {
+                  e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800';
+                }}
+              />
+            </div>
+
+            {/* Event Details Section */}
+            <div className="space-y-4">
+              {/* Badges */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-xs font-bold px-3 py-1 rounded-xl border-2 backdrop-blur-md shadow-sm bg-white/90 ${catStyle.text} ${catStyle.border} uppercase tracking-wider`}>
+                  {event.category}
+                </span>
+                {!isActive && (
+                  <span className="text-xs font-bold px-3 py-1 rounded-xl border-2 bg-red-50 text-red-500 border-red-200 uppercase tracking-wider">
+                    {event.status.toUpperCase()}
+                  </span>
+                )}
+                {event.registration_type === 'team' && (
+                  <span className="text-xs font-bold px-3 py-1 rounded-xl border-2 bg-cyan-500/10 text-cyan-600 border-cyan-500/30 uppercase tracking-wider flex items-center gap-1.5">
+                    👥 Team Event ({event.min_team_size || 1} - {event.max_team_size || 4} Members)
+                  </span>
+                )}
+              </div>
+
+              {/* Title */}
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold font-heading text-text-primary leading-tight">
+                {event.title}
+              </h1>
+
+              {/* 4-Card Info Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <div className="text-[10px] font-bold text-pastel-coral uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Date & Time
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-text-primary">{formatDate(event.date)}</div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <div className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Venue
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-text-primary">{event.venue || 'Campus Venue'}</div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <div className="text-[10px] font-bold text-yellow-600 dark:text-yellow-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    Organizers
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-text-primary">{event.organizersCount || 0} Team Members</div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Capacity
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-text-primary">
+                    {event.registration_type === 'team'
+                      ? `${currCount} / ${event.max_teams || '∞'} Teams`
+                      : `${currCount} / ${event.capacity || '∞'} Seats`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Full Description */}
+              <div className="pt-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary font-quicksand mb-2">Event Description</h4>
+                <p className="text-xs sm:text-sm font-body text-text-secondary leading-relaxed whitespace-pre-wrap bg-slate-50/70 dark:bg-slate-800/40 p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  {event.description}
+                </p>
+              </div>
+
+              {/* Action Buttons inside Modal */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap gap-2.5 items-center justify-end">
+                {isActive && (
+                  <button
+                    onClick={() => { setShowPosterZoom(false); onViewOrganizers(); }}
+                    className="px-4 py-2 text-xs font-bold rounded-xl bg-cyan-500/10 text-cyan-600 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all"
+                  >
+                    View Organizers
+                  </button>
+                )}
+                {isActive && event.scoring_enabled && event.scoreboard_visible && (
+                  <button
+                    onClick={() => { setShowPosterZoom(false); onViewScores(); }}
+                    className="px-4 py-2 text-xs font-bold rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 transition-all"
+                  >
+                    View Scoreboard
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowPosterZoom(false)}
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-gray-100 dark:bg-slate-800 text-text-primary hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Close Preview
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 };
 

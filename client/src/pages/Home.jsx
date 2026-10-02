@@ -641,13 +641,13 @@ const Home = () => {
 
         {/* ── Events Grid ── */}
         {loading ? (
-          <div className="grid w-full grid-cols-1 gap-8">
+          <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="polaroid h-[420px] animate-pulse overflow-hidden">
-                <div className="h-48 bg-gray-200 rounded-xl mb-4" />
-                <div className="space-y-3 px-2">
+              <div key={i} className="polaroid h-[380px] animate-pulse overflow-hidden">
+                <div className="h-44 bg-gray-200 rounded-xl mb-3" />
+                <div className="space-y-2.5 px-2">
                   <div className="h-3 w-24 bg-pastel-coral/50 rounded-full" />
-                  <div className="h-6 w-3/4 bg-gray-200 rounded-full" />
+                  <div className="h-5 w-3/4 bg-gray-200 rounded-full" />
                   <div className="h-3 w-full bg-gray-100 rounded-full" />
                   <div className="h-3 w-2/3 bg-gray-100 rounded-full" />
                 </div>
@@ -674,7 +674,7 @@ const Home = () => {
             <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">There are no events matching your search or filters at the moment.</p>
           </div>
         ) : (
-          <div className="grid w-full grid-cols-1 gap-8">
+          <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((evt, index) => (
               <EventCard
                 key={evt._id || evt.id}
