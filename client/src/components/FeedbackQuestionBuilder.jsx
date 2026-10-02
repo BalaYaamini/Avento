@@ -68,7 +68,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
         <div>
           <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <span>⚙️ Custom Feedback Form Questions</span>
-            <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 font-extrabold px-2 py-0.5 rounded-full">
+            <span className="text-[10px] bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 font-extrabold px-2 py-0.5 rounded-full">
               {currentQuestions.length} Questions
             </span>
           </h4>
@@ -80,7 +80,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
         <button
           type="button"
           onClick={handleResetToDefault}
-          className="text-xs font-semibold text-slate-500 hover:text-violet-600 dark:text-slate-400 transition-colors flex items-center gap-1"
+          className="text-xs font-semibold text-slate-500 hover:text-cyan-600 dark:text-slate-400 transition-colors flex items-center gap-1"
           title="Reset to default 5 star ratings + suggestions"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
@@ -94,7 +94,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
         {currentQuestions.map((q, idx) => (
           <div 
             key={q.id || idx}
-            className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 transition-all hover:border-violet-300 dark:hover:border-violet-700/50 shadow-sm"
+            className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 transition-all hover:border-cyan-300 dark:hover:border-cyan-700/50 shadow-sm"
           >
             <div className="flex items-center gap-3 mb-2.5">
               <span className="text-xs font-black text-slate-400 dark:text-slate-600 w-5">
@@ -107,7 +107,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
                   type="button"
                   disabled={idx === 0}
                   onClick={() => handleMove(idx, -1)}
-                  className="p-0.5 text-slate-400 hover:text-violet-600 disabled:opacity-20 text-[10px]"
+                  className="p-0.5 text-slate-400 hover:text-cyan-600 disabled:opacity-20 text-[10px]"
                 >
                   ▲
                 </button>
@@ -115,7 +115,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
                   type="button"
                   disabled={idx === currentQuestions.length - 1}
                   onClick={() => handleMove(idx, 1)}
-                  className="p-0.5 text-slate-400 hover:text-violet-600 disabled:opacity-20 text-[10px]"
+                  className="p-0.5 text-slate-400 hover:text-cyan-600 disabled:opacity-20 text-[10px]"
                 >
                   ▼
                 </button>
@@ -127,14 +127,14 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
                 value={q.label}
                 onChange={(e) => handleUpdateLabel(idx, e.target.value)}
                 placeholder="Enter question title..."
-                className="flex-grow bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                className="flex-grow bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400"
               />
 
               {/* Question Type Selector */}
               <select
                 value={q.type}
                 onChange={(e) => handleUpdateType(idx, e.target.value)}
-                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-400"
               >
                 <option value="rating">★ 1-5 Star Rating</option>
                 <option value="text">✍ Text Comment</option>
@@ -160,7 +160,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
                   type="checkbox"
                   checked={q.required !== false}
                   onChange={() => handleToggleRequired(idx)}
-                  className="rounded text-violet-600 focus:ring-violet-400 h-3.5 w-3.5"
+                  className="rounded text-cyan-600 focus:ring-cyan-400 h-3.5 w-3.5"
                 />
                 <span>Required field</span>
               </label>
@@ -178,7 +178,7 @@ const FeedbackQuestionBuilder = ({ questions, setQuestions }) => {
         <button
           type="button"
           onClick={() => handleAddQuestion('rating')}
-          className="flex-1 px-3 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:hover:bg-violet-900/50 dark:text-violet-300 border border-violet-200 dark:border-violet-800/50 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+          className="flex-1 px-3 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:hover:bg-cyan-900/50 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/50 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
         >
           <span>+ Add Star Rating Question</span>
         </button>

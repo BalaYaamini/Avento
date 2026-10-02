@@ -370,10 +370,10 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-heading text-xl font-bold text-text-primary">
-              Team <span className="text-violet-500">Allocation</span>
+              Team <span className="text-cyan-500">Allocation</span>
             </h2>
             {eventTitle && (
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-semibold border border-violet-500/20">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-semibold border border-cyan-500/20">
                 {eventTitle}
               </span>
             )}
@@ -401,7 +401,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
       {/* Upload Preview Modal/Card */}
       {previewData && (
-        <div className="bg-white/80 dark:bg-slate-900/80 border-2 border-violet-500/30 rounded-2xl p-6 shadow-xl space-y-4 animate-fade-in-scale">
+        <div className="bg-white/80 dark:bg-slate-900/80 border-2 border-cyan-500/30 rounded-2xl p-6 shadow-xl space-y-4 animate-fade-in-scale">
           <div className="flex justify-between items-center pb-3 border-b border-pastel-lavender/20">
             <div>
               <h3 className="font-heading font-bold text-lg text-text-primary flex items-center gap-2">
@@ -484,8 +484,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             onClick={() => setAllocationMethod('excel')}
             className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between space-y-4 ${
               allocationMethod === 'excel'
-                ? 'bg-violet-500/10 border-violet-500 shadow-md ring-2 ring-violet-500/20'
-                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-violet-500/40 opacity-75 hover:opacity-100'
+                ? 'bg-cyan-500/10 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
+                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-cyan-500/40 opacity-75 hover:opacity-100'
             }`}
           >
             <div className="space-y-2">
@@ -500,7 +500,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 </div>
                 <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
                   allocationMethod === 'excel'
-                    ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                    ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
                     : 'bg-slate-500/10 text-text-secondary border-slate-500/20'
                 }`}>
                   {allocationMethod === 'excel' ? '✓ Active Method' : 'Select'}
@@ -515,8 +515,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               type="button"
               className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition-all ${
                 allocationMethod === 'excel'
-                  ? 'bg-violet-600 text-white shadow-sm'
-                  : 'bg-slate-500/10 text-text-secondary hover:bg-violet-500/10 hover:text-violet-600'
+                  ? 'bg-cyan-600 text-white shadow-sm'
+                  : 'bg-slate-500/10 text-text-secondary hover:bg-cyan-500/10 hover:text-cyan-600'
               }`}
             >
               {allocationMethod === 'excel' ? 'Active Allocation Mode' : 'Use Bulk Excel Allocation'}
@@ -528,14 +528,14 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             onClick={() => setAllocationMethod('leader')}
             className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between space-y-4 ${
               allocationMethod === 'leader'
-                ? 'bg-violet-500/10 border-violet-500 shadow-md ring-2 ring-violet-500/20'
-                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-violet-500/40 opacity-75 hover:opacity-100'
+                ? 'bg-cyan-500/10 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
+                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-cyan-500/40 opacity-75 hover:opacity-100'
             }`}
           >
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <span className="w-9 h-9 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 flex items-center justify-center text-lg font-bold">
+                  <span className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 flex items-center justify-center text-lg font-bold">
                     🎯
                   </span>
                   <h4 className="font-heading font-bold text-sm text-text-primary">
@@ -544,7 +544,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 </div>
                 <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
                   allocationMethod === 'leader'
-                    ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                    ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
                     : 'bg-slate-500/10 text-text-secondary border-slate-500/20'
                 }`}>
                   {allocationMethod === 'leader' ? '✓ Active Method' : 'Select'}
@@ -559,8 +559,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               type="button"
               className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition-all ${
                 allocationMethod === 'leader'
-                  ? 'bg-violet-600 text-white shadow-sm'
-                  : 'bg-slate-500/10 text-text-secondary hover:bg-violet-500/10 hover:text-violet-600'
+                  ? 'bg-cyan-600 text-white shadow-sm'
+                  : 'bg-slate-500/10 text-text-secondary hover:bg-cyan-500/10 hover:text-cyan-600'
               }`}
             >
               {allocationMethod === 'leader' ? 'Active Allocation Mode' : 'Use Team Leader Selection'}
@@ -590,7 +590,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             <div className="bg-white/60 dark:bg-slate-900/60 p-5 rounded-xl border border-pastel-lavender/20 space-y-3 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
-                  <span className="w-6 h-6 rounded-full bg-violet-500 text-white flex items-center justify-center text-xs font-extrabold">1</span>
+                  <span className="w-6 h-6 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-extrabold">1</span>
                   <span>Download Template</span>
                 </div>
                 <p className="text-xs text-text-secondary mt-2 leading-relaxed">
@@ -609,7 +609,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             <div className="bg-white/60 dark:bg-slate-900/60 p-5 rounded-xl border border-pastel-lavender/20 space-y-3 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
-                  <span className="w-6 h-6 rounded-full bg-violet-500 text-white flex items-center justify-center text-xs font-extrabold">2</span>
+                  <span className="w-6 h-6 rounded-full bg-cyan-500 text-white flex items-center justify-center text-xs font-extrabold">2</span>
                   <span>Upload Filled Template</span>
                 </div>
                 <p className="text-xs text-text-secondary mt-2 leading-relaxed">
@@ -650,7 +650,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 <div className="text-2xl font-extrabold text-text-primary mt-1">{totalTeams}</div>
                 <span className="text-[11px] text-text-secondary">Confirmed registered teams</span>
               </div>
-              <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-500 flex items-center justify-center text-xl font-bold">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 flex items-center justify-center text-xl font-bold">
                 👥
               </div>
             </div>
@@ -680,7 +680,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={handleAddProblemStatement}
-                  className="px-3.5 py-2 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-xl text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-all flex items-center gap-1.5"
                 >
                   ➕ Add Problem Statement
                 </button>
@@ -702,7 +702,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                   type="button"
                   onClick={() => pdfFileInputRef.current?.click()}
                   disabled={uploadingPdf}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {uploadingPdf ? 'Uploading PDF...' : '📤 Upload Problem Statement PDF'}
                 </button>
@@ -717,13 +717,13 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             {/* Problem Statements Cards List */}
             <div className="space-y-4">
               {psList.map((ps, idx) => (
-                <div key={ps.id || idx} className="bg-white/60 dark:bg-slate-900/60 p-4 rounded-xl border border-pastel-lavender/20 space-y-3 relative group transition-all hover:border-violet-500/30 shadow-sm">
+                <div key={ps.id || idx} className="bg-white/60 dark:bg-slate-900/60 p-4 rounded-xl border border-pastel-lavender/20 space-y-3 relative group transition-all hover:border-cyan-500/30 shadow-sm">
                   <div className="flex justify-between items-center pb-2 border-b border-pastel-lavender/10">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                      <span className="text-xs font-extrabold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
                         Problem Statement #{idx + 1} ({ps.code || `PS${String(idx + 1).padStart(2, '0')}`})
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
                         {ps.allocatedCount || 0} / {ps.maxCapacity || 5} Slots Allocated
                       </span>
                     </div>
@@ -747,7 +747,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         value={ps.code || `PS${String(idx + 1).padStart(2, '0')}`}
                         onChange={(e) => handlePsChange(idx, 'code', e.target.value)}
                         placeholder="e.g. PS01"
-                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-bold focus:outline-none focus:border-violet-500"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-bold focus:outline-none focus:border-cyan-500"
                       />
                     </div>
 
@@ -760,7 +760,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         value={ps.title}
                         onChange={(e) => handlePsChange(idx, 'title', e.target.value)}
                         placeholder="e.g. AI-Based Traffic Optimization"
-                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-violet-500"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-semibold focus:outline-none focus:border-cyan-500"
                       />
                     </div>
 
@@ -775,7 +775,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         value={ps.maxCapacity ?? 5}
                         onChange={(e) => handlePsChange(idx, 'maxCapacity', Math.max(1, parseInt(e.target.value) || 1))}
                         placeholder="e.g. 5"
-                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-bold focus:outline-none focus:border-violet-500"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-bold focus:outline-none focus:border-cyan-500"
                       />
                     </div>
 
@@ -788,7 +788,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                         value={ps.description || ''}
                         onChange={(e) => handlePsChange(idx, 'description', e.target.value)}
                         placeholder="Enter problem statement guidelines, detailed description, or instructions..."
-                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-medium focus:outline-none focus:border-violet-500 resize-none"
+                        className="w-full bg-white dark:bg-slate-800 border border-pastel-lavender/30 rounded-xl px-3 py-2 text-xs text-text-primary font-medium focus:outline-none focus:border-cyan-500 resize-none"
                       />
                     </div>
 
@@ -822,7 +822,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               placeholder="Search teams, rooms, or problem statements..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full sm:w-72 bg-white/60 dark:bg-slate-900/60 text-text-primary placeholder-text-secondary border border-pastel-lavender/20 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-violet-500"
+              className="w-full sm:w-72 bg-white/60 dark:bg-slate-900/60 text-text-primary placeholder-text-secondary border border-pastel-lavender/20 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-cyan-500"
             />
             <span className="text-xs text-text-secondary font-semibold whitespace-nowrap">
               Total Teams: {allocations.length}
@@ -873,7 +873,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                             type="text"
                             value={editForm.venueRoom}
                             onChange={(e) => setEditForm({ ...editForm, venueRoom: e.target.value })}
-                            className="w-full bg-white dark:bg-slate-900 border border-violet-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                            className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
                             placeholder="e.g. Room 101"
                           />
                         </td>
@@ -890,7 +890,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                                   venueRoom: matchedPs?.venueRoom || editForm.venueRoom
                                 });
                               }}
-                              className="w-full bg-white dark:bg-slate-900 border border-violet-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                              className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
                             >
                               <option value="">-- Select Problem Statement --</option>
                               {psList.map((p, i) => (
@@ -902,7 +902,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                               type="text"
                               value={editForm.problemStatement}
                               onChange={(e) => setEditForm({ ...editForm, problemStatement: e.target.value })}
-                              className="w-full bg-white dark:bg-slate-900 border border-violet-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                              className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
                               placeholder="e.g. AI System Design"
                             />
                           )}
@@ -927,7 +927,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                       </>
                     ) : (
                       <>
-                        <td className="px-6 py-4 font-bold text-violet-600 dark:text-violet-400">
+                        <td className="px-6 py-4 font-bold text-cyan-600 dark:text-cyan-400">
                           {team.venueRoom && team.venueRoom.trim() ? `📍 ${team.venueRoom.trim()}` : <span className="text-amber-500 font-semibold">Yet to assign</span>}
                         </td>
                         <td className="px-6 py-4 text-text-primary max-w-sm truncate">
@@ -950,7 +950,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                               setEditingTeamId(team.teamId);
                               setEditForm({ venueRoom: team.venueRoom || '', problemStatement: team.problemStatement || '' });
                             }}
-                            className="px-3 py-1 bg-violet-500/10 text-violet-500 border border-violet-500/20 rounded-lg font-bold hover:bg-violet-500/20 transition text-[10px]"
+                            className="px-3 py-1 bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 rounded-lg font-bold hover:bg-cyan-500/20 transition text-[10px]"
                           >
                             Edit
                           </button>

@@ -95,7 +95,7 @@ const FeedbackModal = ({ isOpen, onClose, event, onSubmitSuccess }) => {
     <Modal isOpen={isOpen} onClose={onClose} title="Event Feedback">
       <form onSubmit={handleSubmit} className="space-y-4">
         
-        <div className="bg-violet-50/70 dark:bg-violet-950/30 p-4 rounded-xl border border-violet-100 dark:border-violet-800/40 mb-6">
+        <div className="bg-cyan-50/70 dark:bg-cyan-950/30 p-4 rounded-xl border border-cyan-100 dark:border-cyan-800/40 mb-6">
           <h3 className="font-display font-bold text-slate-800 dark:text-slate-100 text-lg mb-1">{event.title}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">We value your feedback. Please complete the questions below.</p>
         </div>
@@ -133,7 +133,7 @@ const FeedbackModal = ({ isOpen, onClose, event, onSubmitSuccess }) => {
                   onChange={(e) => handleAnswerChange(q.id, e.target.value)}
                   rows="3"
                   placeholder="Type your response here..."
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-sm focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 transition-all text-slate-800 dark:text-slate-100"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-sm focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 transition-all text-slate-800 dark:text-slate-100"
                 ></textarea>
               </div>
             ))}
@@ -151,7 +151,7 @@ const FeedbackModal = ({ isOpen, onClose, event, onSubmitSuccess }) => {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/20 disabled:opacity-50"
+            className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/20 disabled:opacity-50"
           >
             {isSubmitting ? 'Submitting...' : 'Submit Feedback'}
           </button>

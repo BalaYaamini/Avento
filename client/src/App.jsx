@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
+import Sidebar from './components/Sidebar';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 import SplashScreen from './components/SplashScreen';
@@ -55,10 +57,7 @@ const GlobalAlert = () => {
     window.alert = (message) => {
       setAlertConfig({ isOpen: true, message: String(message) });
     };
-
-    return () => {
-      window.alert = originalAlert;
-    };
+    return () => { window.alert = originalAlert; };
   }, []);
 
   if (!alertConfig.isOpen) return null;
@@ -90,16 +89,14 @@ const GlobalAlert = () => {
   );
 };
 
-/* Animated page wrapper — fades in content on route change */
+/* Animated page wrapper */
 const AnimatedRoutes = () => {
   const location = useLocation();
-
   return (
     <div key={location.pathname} className="animate-fade-in flex flex-col flex-grow">
       <Routes location={location}>
         {/* Public Paths */}
         <Route path="/" element={<Home />} />
-        {/* TODO: RE-ENABLE About page — <Route path="/about" element={<About />} /> */}
         <Route path="/contact" element={<Contact />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
@@ -111,183 +108,121 @@ const AnimatedRoutes = () => {
         <Route path="/verify/:certificateId" element={<VerifyCertificate />} />
         <Route path="/verify-certificate/:certificateId" element={<VerifyCertificate />} />
 
-        {/* Student Paths — accessible to both student and student_organizer */}
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute allowedRoles={['student', 'student_organizer', 'faculty', 'faculty_organizer', 'admin']}>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
+        {/* Student Paths */}
+        <Route path="/profile" element={<ProtectedRoute allowedRoles={['student', 'student_organizer', 'faculty', 'faculty_organizer', 'admin']}><Profile /></ProtectedRoute>} />
         <Route path="/registrations" element={<Navigate to="/my-registrations" replace />} />
-        <Route
-          path="/my-registrations"
-          element={
-            <ProtectedRoute allowedRoles={['student', 'faculty', 'student_organizer', 'faculty_organizer']}>
-              <StudentRegistrations />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/my-certificates"
-          element={
-            <ProtectedRoute allowedRoles={['student']}>
-              <StudentCertificates />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/scoring-events"
-          element={
-            <ProtectedRoute allowedRoles={['student', 'student_organizer', 'faculty', 'faculty_organizer']}>
-              <StudentScoringEvents />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/announcements"
-          element={
-            <ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'student_organizer', 'admin']}>
-              <Announcements />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/announcements/:announcementId"
-          element={
-            <ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'student_organizer', 'admin']}>
-              <Announcements />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/my-registrations" element={<ProtectedRoute allowedRoles={['student', 'faculty', 'student_organizer', 'faculty_organizer']}><StudentRegistrations /></ProtectedRoute>} />
+        <Route path="/my-certificates" element={<ProtectedRoute allowedRoles={['student']}><StudentCertificates /></ProtectedRoute>} />
+        <Route path="/scoring-events" element={<ProtectedRoute allowedRoles={['student', 'student_organizer', 'faculty', 'faculty_organizer']}><StudentScoringEvents /></ProtectedRoute>} />
+        <Route path="/announcements" element={<ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'student_organizer', 'admin']}><Announcements /></ProtectedRoute>} />
+        <Route path="/announcements/:announcementId" element={<ProtectedRoute allowedRoles={['student', 'faculty', 'faculty_organizer', 'student_organizer', 'admin']}><Announcements /></ProtectedRoute>} />
 
-        {/* Administrator Only Paths */}
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/events"
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminEvents />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/registrations"
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminRegistrations />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/users"
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminUsers />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/announcements"
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminAnnouncements />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/permissions"
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminPermissions />
-            </ProtectedRoute>
-          }
-        />
+        {/* Admin Paths */}
+        <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/admin/events" element={<ProtectedRoute allowedRoles={['admin']}><AdminEvents /></ProtectedRoute>} />
+        <Route path="/admin/registrations" element={<ProtectedRoute allowedRoles={['admin']}><AdminRegistrations /></ProtectedRoute>} />
+        <Route path="/admin/users" element={<ProtectedRoute allowedRoles={['admin']}><AdminUsers /></ProtectedRoute>} />
+        <Route path="/admin/announcements" element={<ProtectedRoute allowedRoles={['admin']}><AdminAnnouncements /></ProtectedRoute>} />
+        <Route path="/admin/permissions" element={<ProtectedRoute allowedRoles={['admin']}><AdminPermissions /></ProtectedRoute>} />
 
-        {/* Faculty Organizer Only Paths */}
-        <Route
-          path="/faculty-organizer"
-          element={
-            <ProtectedRoute allowedRoles={['faculty', 'faculty_organizer']}>
-              <FacultyOrgDashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/faculty-organizer/events"
-          element={
-            <ProtectedRoute allowedRoles={['faculty', 'faculty_organizer']}>
-              <FacultyOrgEvents />
-            </ProtectedRoute>
-          }
-        />
+        {/* Faculty Organizer Paths */}
+        <Route path="/faculty-organizer" element={<ProtectedRoute allowedRoles={['faculty', 'faculty_organizer']}><FacultyOrgDashboard /></ProtectedRoute>} />
+        <Route path="/faculty-organizer/events" element={<ProtectedRoute allowedRoles={['faculty', 'faculty_organizer']}><FacultyOrgEvents /></ProtectedRoute>} />
 
-        {/* Student Organizer & Proposal Paths */}
-        <Route
-          path="/student-organizer/events"
-          element={
-            <ProtectedRoute allowedRoles={['student', 'student_organizer']}>
-              <StudentOrgEvents />
-            </ProtectedRoute>
-          }
-        />
+        {/* Student Organizer Paths */}
+        <Route path="/student-organizer" element={<ProtectedRoute allowedRoles={['student', 'student_organizer']}><StudentOrgDashboard /></ProtectedRoute>} />
+        <Route path="/student-organizer/events" element={<ProtectedRoute allowedRoles={['student', 'student_organizer']}><StudentOrgEvents /></ProtectedRoute>} />
 
-        {/* Workspace Path - Protected for roles that can be organizers or faculty */}
-        <Route
-          path="/workspace/:eventId"
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
-              <Workspace />
-            </ProtectedRoute>
-          }
-        />
+        {/* Workspace */}
+        <Route path="/workspace/:eventId" element={<ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}><Workspace /></ProtectedRoute>} />
+        <Route path="/proposals/:proposalId" element={<ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}><ProposalWorkspace /></ProtectedRoute>} />
 
-        {/* Proposal Workspace Path */}
-        <Route
-          path="/proposals/:proposalId"
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}>
-              <ProposalWorkspace />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Catch-all fallback */}
         <Route path="*" element={<Home />} />
       </Routes>
     </div>
   );
 };
 
-const AppLayout = () => {
+/* App Layout — decides between public (Navbar+Footer) and authenticated (Sidebar) layouts */
+const AppLayoutInner = () => {
   const location = useLocation();
+  const { user } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const isVerifyPage = location.pathname.startsWith('/verify');
+  const isSidebarPage = location.pathname === '/' || location.pathname === '/contact';
+  const isPublicPage = !user || ['/', '/login', '/register', '/contact', '/forgot-password', '/change-password'].includes(location.pathname) || location.pathname.startsWith('/accept-invite') || isVerifyPage;
 
-  return (
-    <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
-      {/* ── Animated Background Orbs ── */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute top-[-200px] left-[-200px] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-[#FFB6C1]/20 via-[#C8A2C8]/15 to-[#E6E6FA]/20 blur-[150px] animate-orb-1" />
-        <div className="absolute bottom-[-250px] right-[-250px] w-[900px] h-[900px] rounded-full bg-gradient-to-br from-[#98FF98]/15 via-[#ADD8E6]/20 to-[#E6E6FA]/15 blur-[180px] animate-orb-2" />
-        <div className="absolute top-[30%] right-[5%] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-[#FFDAB9]/20 via-[#FFFACD]/15 to-[#F08080]/10 blur-[130px] animate-orb-3" />
-        <div className="absolute inset-0 dot-pattern opacity-20" />
-      </div>
-
-      <div className="relative z-10 flex flex-col min-h-screen w-full">
-        {!isVerifyPage && <Navbar />}
-        <main className="flex-grow flex flex-col relative">
+  // Home & Contact: sidebar + landing content (both logged in and logged out)
+  if (isSidebarPage) {
+    return (
+      <div className="flex min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
+        {/* Background orbs */}
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
+          <div className="absolute top-[-200px] left-[-200px] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-[#FFB6C1]/20 via-[#C8A2C8]/15 to-[#E6E6FA]/20 blur-[150px] animate-orb-1" />
+          <div className="absolute bottom-[-250px] right-[-250px] w-[900px] h-[900px] rounded-full bg-gradient-to-br from-[#98FF98]/15 via-[#ADD8E6]/20 to-[#E6E6FA]/15 blur-[180px] animate-orb-2" />
+          <div className="absolute top-[30%] right-[5%] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-[#FFDAB9]/20 via-[#FFFACD]/15 to-[#F08080]/10 blur-[130px] animate-orb-3" />
+          <div className="absolute inset-0 dot-pattern opacity-20" />
+        </div>
+        {/* Sidebar */}
+        <Sidebar isMobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+        {/* Main content */}
+        <div className="app-main relative z-10">
+          <div className="md:hidden app-topbar">
+            <button onClick={() => setMobileMenuOpen(true)} className="app-icon-btn">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="app-topbar-title">Avento</div>
+            <div className="w-9" />
+          </div>
           <AnimatedRoutes />
-        </main>
-        {!isVerifyPage && <Footer />}
+        </div>
       </div>
+    );
+  }
+
+  // Other public pages: navbar + footer (light theme)
+  if (isPublicPage) {
+    return (
+      <div className="flex flex-col min-h-screen bg-background text-text-primary relative overflow-hidden transition-colors duration-300">
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
+          <div className="absolute top-[-200px] left-[-200px] w-[700px] h-[700px] rounded-full bg-gradient-to-tr from-[#FFB6C1]/20 via-[#C8A2C8]/15 to-[#E6E6FA]/20 blur-[150px] animate-orb-1" />
+          <div className="absolute bottom-[-250px] right-[-250px] w-[900px] h-[900px] rounded-full bg-gradient-to-br from-[#98FF98]/15 via-[#ADD8E6]/20 to-[#E6E6FA]/15 blur-[180px] animate-orb-2" />
+          <div className="absolute top-[30%] right-[5%] w-[500px] h-[500px] rounded-full bg-gradient-to-bl from-[#FFDAB9]/20 via-[#FFFACD]/15 to-[#F08080]/10 blur-[130px] animate-orb-3" />
+          <div className="absolute inset-0 dot-pattern opacity-20" />
+        </div>
+        <div className="relative z-10 flex flex-col min-h-screen w-full">
+          {!isVerifyPage && <Navbar />}
+          <main className="flex-grow flex flex-col relative">
+            <AnimatedRoutes />
+          </main>
+          {!isVerifyPage && <Footer />}
+        </div>
+      </div>
+    );
+  }
+
+  // Authenticated layout with sidebar
+  return (
+    <div className="min-h-screen bg-background text-text-primary">
+      <Sidebar isMobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+      <main className="app-main">
+        <div className="md:hidden app-topbar">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="app-icon-btn"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="app-topbar-title">Avento</div>
+          <div className="w-9" />
+        </div>
+        <AnimatedRoutes />
+      </main>
     </div>
   );
 };
@@ -296,9 +231,11 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <SplashScreen />
-        <GlobalAlert />
-        <AppLayout />
+        <ThemeProvider>
+          <SplashScreen />
+          <GlobalAlert />
+          <AppLayoutInner />
+        </ThemeProvider>
       </AuthProvider>
     </Router>
   );

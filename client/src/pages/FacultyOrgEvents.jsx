@@ -143,7 +143,7 @@ const FacultyOrgEvents = () => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10 animate-fade-in-up">
           <div>
             <h1 className="font-display text-3xl font-black text-text-primary">Assigned <span className="heading-gradient">Proposals</span></h1>
-            <p className="font-body text-text-secondary text-sm mt-1.5">Review and coordinate event proposals for the <span className="text-violet-400 font-bold">{user?.department}</span> department</p>
+            <p className="font-body text-text-secondary text-sm mt-1.5">Review and coordinate event proposals for the <span className="text-cyan-400 font-bold">{user?.department}</span> department</p>
           </div>
         </div>
 
@@ -173,7 +173,7 @@ const FacultyOrgEvents = () => {
           </div>
         ) : (
           /* Event Table */
-          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
+          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-cyan-500/3">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -365,7 +365,7 @@ const FacultyOrgEvents = () => {
                 </div>
               </div>
               
-              {selectedEvent.status === 'needs_revision' ? (
+{selectedEvent.status === 'needs_revision' ? (
                 <div className="space-y-4">
                   <div className="p-4 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-xs flex items-start gap-3">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -395,7 +395,7 @@ const FacultyOrgEvents = () => {
                     </button>
                     <Link
                       to={`/proposals/${selectedEvent._id || selectedEvent.id}`}
-                      className="px-4 py-2 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-md shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                      className="px-4 py-2 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white shadow-md shadow-cyan-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       Open Discussion & Review
                     </Link>
@@ -410,7 +410,7 @@ const FacultyOrgEvents = () => {
                       value={approvalRemarks}
                       onChange={(e) => setApprovalRemarks(e.target.value)}
                       placeholder="Feedback or revision instructions for the student organizer..."
-                      className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 resize-none"
+                      className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 resize-none"
                     />
                   </div>
 
@@ -450,7 +450,7 @@ const FacultyOrgEvents = () => {
                       type="button"
                       onClick={() => handleReviewAction('approve')}
                       disabled={submitting}
-                      className="btn-primary px-5 py-2 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15 disabled:opacity-50 cursor-pointer"
+                      className="btn-primary px-5 py-2 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50 cursor-pointer"
                     >
                       {submitting ? 'Processing...' : 'Approve Proposal'}
                     </button>

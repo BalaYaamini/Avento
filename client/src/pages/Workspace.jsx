@@ -544,7 +544,7 @@ const Workspace = () => {
                 setScanFeedback(null);
                 setIsScannerOpen(true);
               }}
-              className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-purple-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-cyan-700 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-cyan-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
             >
               <svg className="h-4 w-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
@@ -555,12 +555,11 @@ const Workspace = () => {
               <span>Scan QR</span>
             </button>
           )}
-
           <div className="relative inline-block text-left" ref={dropdownRef}>
             <button
               type="button"
               onClick={() => setIsActionsDropdownOpen(prev => !prev)}
-              className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-fuchsia-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
+              className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 via-cyan-600 to-cyan-600 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-cyan-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
             >
               <span>Actions</span>
               <svg className={`h-4 w-4 transition-transform duration-200 ${isActionsDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -579,7 +578,7 @@ const Workspace = () => {
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <svg className="h-4 w-4 text-fuchsia-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V4a2 2 0 012-2h2a2 2 0 012 2v2m-4 0h4" />
                     </svg>
                     <span>Import Photos & ID Cards</span>
@@ -594,7 +593,7 @@ const Workspace = () => {
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <svg className="h-4 w-4 text-fuchsia-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     <span>Customize Confirmation Email</span>
@@ -611,7 +610,7 @@ const Workspace = () => {
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <svg className="h-4 w-4 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span>Customize Feedback Questions</span>
@@ -634,25 +633,24 @@ const Workspace = () => {
                   </button>
                 )}
 
-                {isModuleAllowed('periodic_attendance') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsActionsDropdownOpen(false);
-                      setScanFeedback(null);
-                      setIsScannerOpen(true);
-                    }}
-                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
-                  >
-                    <svg className="h-4 w-4 text-purple-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
-                      <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
-                      <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
-                      <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
-                    </svg>
-                    <span>Scan QR</span>
-                  </button>
-                )}
+          {isModuleAllowed('periodic_attendance') && (
+            <button
+              type="button"
+              onClick={() => {
+                setScanFeedback(null);
+                setIsScannerOpen(true);
+              }}
+              className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-cyan-700 text-white font-heading font-bold text-sm rounded-xl hover:shadow-lg hover:shadow-cyan-500/25 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-2 border border-white/20 shadow-md cursor-pointer"
+            >
+              <svg className="h-4 w-4 text-white shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+              </svg>
+              <span>Scan QR</span>
+            </button>
+          )}
 
                 {(isSuperUser || isModuleAllowed('registrations')) && event?.registration_type === 'team' && (
                   <button
@@ -663,7 +661,7 @@ const Workspace = () => {
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <svg className="h-4 w-4 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
                     <span>Create Team Manually</span>
@@ -679,7 +677,7 @@ const Workspace = () => {
                     }}
                     className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
                   >
-                    <svg className="h-4 w-4 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
                     <span>Create Task</span>
@@ -759,7 +757,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('tasks')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'tasks'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -783,7 +781,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('discussion')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'discussion'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -802,7 +800,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('team')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'team'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -828,7 +826,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('registrations', 'registrations')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'registrations' || activeTab === 'confirmed_teams'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -847,7 +845,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('slots')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'slots'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -866,7 +864,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('allocation')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'allocation'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -885,7 +883,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('scoring')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'scoring'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -904,7 +902,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('periodic_attendance')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'periodic_attendance'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -923,7 +921,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('id_cards')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'id_cards'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -942,7 +940,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('certificates')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'certificates'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -961,7 +959,7 @@ const Workspace = () => {
                 onClick={() => handleTabChange('feedback')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                   activeTab === 'feedback'
-                    ? 'bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white shadow-sm shadow-fuchsia-500/25 font-extrabold'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
                 }`}
               >
@@ -1038,7 +1036,7 @@ const Workspace = () => {
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
                     (activeTab === 'registrations' && registrationSubTab === 'registrations') || (activeTab !== 'confirmed_teams' && registrationSubTab === 'registrations')
-                      ? 'bg-white dark:bg-slate-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm border border-slate-200/60 dark:border-slate-700'
+                      ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-sm border border-slate-200/60 dark:border-slate-700'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -1053,7 +1051,7 @@ const Workspace = () => {
                   }}
                   className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
                     activeTab === 'confirmed_teams' || (activeTab === 'registrations' && registrationSubTab === 'confirmed_teams')
-                      ? 'bg-white dark:bg-slate-900 text-fuchsia-600 dark:text-fuchsia-400 shadow-sm border border-slate-200/60 dark:border-slate-700'
+                      ? 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-sm border border-slate-200/60 dark:border-slate-700'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -1500,7 +1498,7 @@ const Workspace = () => {
                 required
                 value={editFormData.title}
                 onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
-                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/60"
               />
             </div>
 
@@ -1511,7 +1509,7 @@ const Workspace = () => {
                 required
                 value={editFormData.description}
                 onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60 resize-none"
+                className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/60 resize-none"
               />
             </div>
 
@@ -1521,7 +1519,7 @@ const Workspace = () => {
                 <select
                   value={editFormData.category}
                   onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
-                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/60"
                 >
                   {['General', 'Workshop', 'Cultural', 'Tech', 'Hackathon', 'Sports', 'Seminar', 'Web Development', 'Gaming', 'Competition'].map(cat => (
                     <option key={cat} value={cat} className="dark:bg-slate-900 text-text-primary">{cat}</option>
@@ -1536,7 +1534,7 @@ const Workspace = () => {
                   required
                   value={editFormData.venue}
                   onChange={(e) => setEditFormData({ ...editFormData, venue: e.target.value })}
-                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/60"
                 />
               </div>
             </div>
@@ -1549,7 +1547,7 @@ const Workspace = () => {
                   required
                   value={editFormData.date}
                   onChange={(e) => setEditFormData({ ...editFormData, date: e.target.value })}
-                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/60"
                 />
               </div>
 
@@ -1559,7 +1557,7 @@ const Workspace = () => {
                   type="datetime-local"
                   value={editFormData.registrationDeadline}
                   onChange={(e) => setEditFormData({ ...editFormData, registrationDeadline: e.target.value })}
-                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500/60"
+                  className="w-full bg-white/10 dark:bg-slate-800/40 text-text-primary border border-pastel-lavender/20 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-cyan-500/60"
                 />
               </div>
             </div>
@@ -1696,7 +1694,7 @@ const Workspace = () => {
               <button
                 type="button"
                 onClick={handleSaveFeedbackQuestions}
-                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/20"
+                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/20"
               >
                 Save Questions
               </button>

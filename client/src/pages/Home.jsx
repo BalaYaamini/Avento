@@ -654,7 +654,7 @@ const Home = () => {
               placeholder="Search events..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white text-text-primary placeholder-text-secondary border-2 border-gray-200 rounded-2xl py-3 pl-12 pr-4 text-sm font-quicksand font-bold focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300"
+              className="w-full bg-white text-text-primary placeholder-text-secondary border-2 border-gray-200 rounded-2xl py-3 pl-12 pr-4 text-sm font-quicksand font-bold focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all duration-300"
             />
           </div>
 
@@ -666,8 +666,8 @@ const Home = () => {
                 onClick={() => setCategory(cat === 'All' ? '' : cat)}
                 className={`text-xs font-bold px-5 py-2.5 rounded-2xl transition-all duration-300 border-2 whitespace-nowrap font-quicksand ${
                   (cat === 'All' && !category) || (cat === category)
-                    ? 'bg-pastel-lavender/20 text-pastel-lavender border-pastel-lavender shadow-sm scale-105'
-                    : 'bg-white text-text-secondary border-gray-200 hover:text-text-primary hover:border-pastel-lavender/50 hover:bg-pastel-lavender/5 hover:-translate-y-1'
+                    ? 'bg-cyan-50 text-cyan-700 border-cyan-500 shadow-sm scale-105'
+                    : 'bg-white text-text-secondary border-gray-200 hover:text-cyan-700 hover:border-cyan-400 hover:bg-cyan-50 hover:-translate-y-1'
                 }`}
               >
                 {cat}
@@ -681,7 +681,7 @@ const Home = () => {
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="bg-white text-text-primary border-2 border-gray-200 rounded-2xl px-4 py-2.5 text-xs font-bold font-quicksand focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300 cursor-pointer"
+              className="bg-white text-text-primary border-2 border-gray-200 rounded-2xl px-4 py-2.5 text-xs font-bold font-quicksand focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all duration-300 cursor-pointer"
             >
               <option value="published">Open for Reg</option>
               <option value="cancelled">Cancelled</option>
@@ -693,13 +693,13 @@ const Home = () => {
 
         {/* ── Events Grid ── */}
         {loading ? (
-          <div className="grid w-full grid-cols-1 gap-8">
+          <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="polaroid h-[420px] animate-pulse overflow-hidden">
-                <div className="h-48 bg-gray-200 rounded-xl mb-4" />
-                <div className="space-y-3 px-2">
+              <div key={i} className="polaroid h-[380px] animate-pulse overflow-hidden">
+                <div className="h-44 bg-gray-200 rounded-xl mb-3" />
+                <div className="space-y-2.5 px-2">
                   <div className="h-3 w-24 bg-pastel-coral/50 rounded-full" />
-                  <div className="h-6 w-3/4 bg-gray-200 rounded-full" />
+                  <div className="h-5 w-3/4 bg-gray-200 rounded-full" />
                   <div className="h-3 w-full bg-gray-100 rounded-full" />
                   <div className="h-3 w-2/3 bg-gray-100 rounded-full" />
                 </div>
@@ -726,7 +726,7 @@ const Home = () => {
             <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">There are no events matching your search or filters at the moment.</p>
           </div>
         ) : (
-          <div className="grid w-full grid-cols-1 gap-8">
+          <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((evt, index) => (
               <EventCard
                 key={evt._id || evt.id}
@@ -775,7 +775,7 @@ const Home = () => {
                       <h4 className="text-sm font-bold text-slate-800">{org.name}</h4>
                       <p className="text-[10px] text-slate-600 font-medium mt-0.5">{org.department} &bull; {org.email}</p>
                     </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-400 border border-violet-500/15">
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/15">
                       {org.category}
                     </span>
                   </div>
@@ -803,7 +803,7 @@ const Home = () => {
                   alt={confirmRegEvent.title}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-violet-500 text-white uppercase tracking-wider">
+                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-cyan-500 text-white uppercase tracking-wider">
                   {confirmRegEvent.category}
                 </span>
               </div>
@@ -921,7 +921,7 @@ const Home = () => {
                   type="button"
                   disabled={confirmRegEvent.has_slots && !selectedSlotId}
                   onClick={() => handleConfirmRegister(confirmRegEvent._id || confirmRegEvent.id)}
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15 disabled:opacity-50"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
                   Register Now
                 </button>
@@ -949,7 +949,7 @@ const Home = () => {
                   alt={teamRegEvent.title}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-fuchsia-500 text-white uppercase tracking-wider">
+                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-cyan-500 text-white uppercase tracking-wider">
                   {teamRegEvent.category}
                 </span>
               </div>
@@ -965,10 +965,10 @@ const Home = () => {
                   </div>
                 )}
                 <div className="flex gap-2 mt-1">
-                  <p className="text-[10px] text-teal-600 font-bold uppercase tracking-wider border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 rounded inline-block">
+                  <p className="text-[10px] text-cyan-600 font-bold uppercase tracking-wider border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 rounded inline-block">
                     Minimum Members: {teamRegEvent.min_team_size || 1}
                   </p>
-                  <p className="text-[10px] text-fuchsia-600 font-bold uppercase tracking-wider border border-fuchsia-500/20 bg-fuchsia-500/10 px-2 py-0.5 rounded inline-block">
+                  <p className="text-[10px] text-cyan-600 font-bold uppercase tracking-wider border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 rounded inline-block">
                     Maximum Members: {teamRegEvent.max_team_size} 
                   </p>
                 </div>
@@ -992,7 +992,7 @@ const Home = () => {
                       className={`w-full bg-white/60 text-slate-800 border rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none transition-all duration-300 ${
                         nameUnavailable
                           ? 'border-red-500/80 focus:border-red-500/80' 
-                          : 'border-slate-300/50 focus:border-fuchsia-500/60'
+                          : 'border-slate-300/50 focus:border-cyan-500/60'
                       }`}
                     />
                     {isCheckingName && (
@@ -1075,14 +1075,14 @@ const Home = () => {
                       placeholder="Full Name"
                       value={externalInviteName}
                       onChange={(e) => setExternalInviteName(e.target.value)}
-                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                     <input
                       type="email"
                       placeholder="Email"
                       value={externalInviteEmail}
                       onChange={(e) => setExternalInviteEmail(e.target.value)}
-                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                     <button
                       type="button"
@@ -1113,9 +1113,9 @@ const Home = () => {
                   </h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {teamRegEvent.team_leader_registration_required !== false && (
-                      <div className="flex items-center justify-between p-2.5 bg-fuchsia-500/5 rounded-lg border border-fuchsia-500/10">
+                      <div className="flex items-center justify-between p-2.5 bg-cyan-500/5 rounded-lg border border-cyan-500/10">
                         <div className="text-sm font-semibold text-slate-800">
-                          {user?.fullName || user?.name} <span className="text-[10px] ml-1 text-fuchsia-500 font-bold uppercase">(Leader)</span>
+                          {user?.fullName || user?.name} <span className="text-[10px] ml-1 text-cyan-500 font-bold uppercase">(Leader)</span>
                         </div>
                       </div>
                     )}
@@ -1136,8 +1136,8 @@ const Home = () => {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
-                    <p className="text-xs text-indigo-700 font-medium">
+                  <div className="mt-3 p-3 bg-cyan-50/50 border border-cyan-100 rounded-xl">
+                    <p className="text-xs text-cyan-700 font-medium">
                       <strong className="font-bold">Note:</strong> Upon creating the team, invited members will receive an email to join. They must sign up on Avento and accept the invitation. Once the minimum required members accept, you can confirm the team.
                     </p>
                   </div>
@@ -1167,7 +1167,7 @@ const Home = () => {
                 <button
                   type="submit"
                   disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable}
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
                   {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}
                 </button>
@@ -1236,7 +1236,7 @@ const Home = () => {
                   required
                   value={selectedJoinCategory}
                   onChange={(e) => setSelectedJoinCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 cursor-pointer text-slate-700"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer text-slate-700"
                 >
                   {[
                     'Technical Team',
@@ -1265,7 +1265,7 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15"
                 >
                   Submit Request
                 </button>
@@ -1330,7 +1330,7 @@ const Home = () => {
                       window.location.href = '/profile';
                     }
                   }}
-                  className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>Complete Profile Now</span>
                   <span>→</span>

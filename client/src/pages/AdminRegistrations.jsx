@@ -172,7 +172,7 @@ const AdminRegistrations = () => {
           </div>
           <button
             onClick={() => setIsCreateTeamOpen(true)}
-            className="btn-primary px-5 py-2.5 text-xs font-bold rounded-xl text-white flex items-center gap-2 shadow-lg shadow-violet-500/15"
+            className="btn-primary px-5 py-2.5 text-xs font-bold rounded-xl text-white flex items-center gap-2 shadow-lg shadow-cyan-500/15"
           >
             <span>+</span>
             <span>Create Team Manually</span>
@@ -190,7 +190,7 @@ const AdminRegistrations = () => {
         {selectedEventId && events.find(evt => String(evt.id || evt._id) === String(selectedEventId))?.payment_enabled && (() => {
           const eventRegs = registrations.filter(reg => String(reg.event_id || reg.eventId?.id) === String(selectedEventId));
           const counts = eventRegs.reduce((acc, reg) => { const status = reg.payment_status || 'pending'; acc[status] = (acc[status] || 0) + 1; return acc; }, {});
-          return <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl bg-amber-50 p-3 text-center"><b>{counts.pending || 0}</b><div className="text-[10px] uppercase">Pending</div></div><div className="rounded-xl bg-blue-50 p-3 text-center"><b>{counts.submitted || 0}</b><div className="text-[10px] uppercase">Submitted</div></div><div className="rounded-xl bg-emerald-50 p-3 text-center"><b>{counts.verified || 0}</b><div className="text-[10px] uppercase">Verified</div></div><div className="rounded-xl bg-red-50 p-3 text-center"><b>{counts.rejected || 0}</b><div className="text-[10px] uppercase">Rejected</div></div></div>;
+          return <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl bg-amber-50 p-3 text-center"><b>{counts.pending || 0}</b><div className="text-[10px] uppercase">Pending</div></div><div className="rounded-xl bg-blue-50 p-3 text-center"><b>{counts.submitted || 0}</b><div className="text-[10px] uppercase">Submitted</div></div><div className="rounded-xl bg-emerald-50 p-3 text-center"><b>{counts.verified || 0}</b><div className="text-[10px] uppercase">Verified</div></div><div className="rounded-xl bg-cyan-50 p-3 text-center"><b>{counts.rejected || 0}</b><div className="text-[10px] uppercase">Rejected</div></div></div>;
         })()}
 
         {/* Filters Panel */}
@@ -202,7 +202,7 @@ const AdminRegistrations = () => {
             <select
               value={selectedEventId}
               onChange={(e) => setSelectedEventId(e.target.value)}
-              className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-violet-500/60 transition-all duration-300 w-full md:w-64 cursor-pointer"
+              className="bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:border-cyan-500/60 transition-all duration-300 w-full md:w-64 cursor-pointer"
             >
               <option value="">All Events</option>
               {events.map(evt => (
@@ -213,7 +213,7 @@ const AdminRegistrations = () => {
 
           {/* Student Search */}
           <div className="relative w-full md:w-80 group">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-600 group-focus-within:text-violet-400 transition-colors duration-300">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-600 group-focus-within:text-cyan-400 transition-colors duration-300">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -223,7 +223,7 @@ const AdminRegistrations = () => {
               placeholder="Search student or event..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/60 text-slate-800 placeholder-slate-600 border border-slate-300/50 rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+              className="w-full bg-white/60 text-slate-800 placeholder-slate-600 border border-slate-300/50 rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
             />
           </div>
 
@@ -240,7 +240,7 @@ const AdminRegistrations = () => {
           </div>
         ) : error ? (
           <div className="text-center py-20 animate-fade-in-up">
-            <p className="text-red-400 font-bold mb-3">{error}</p>
+            <p className="text-cyan-400 font-bold mb-3">{error}</p>
             <button onClick={fetchData} className="btn-primary px-6 py-2.5 text-sm font-bold rounded-xl text-white">Retry</button>
           </div>
         ) : filteredRegistrations.length === 0 ? (
@@ -254,7 +254,7 @@ const AdminRegistrations = () => {
             <p className="text-sm font-body text-slate-600">There are no student registrations matching your search filters.</p>
           </div>
         ) : (
-          <div className="animate-fade-in-up delay-200 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
+          <div className="animate-fade-in-up delay-200 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-cyan-500/3">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -336,7 +336,7 @@ const AdminRegistrations = () => {
                         <button
                           onClick={() => handleCancelRegistration(reg.id || reg._id, reg.userId.name || reg.userId.fullName, reg.eventId.title)}
                           disabled={cancellingId === (reg.id || reg._id)}
-                          className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-500/8 text-red-400 border border-red-500/15 hover:bg-red-500/15 transition-all duration-300 disabled:opacity-50"
+                          className="px-3 py-1.5 text-xs font-bold rounded-lg bg-cyan-500/8 text-cyan-400 border border-cyan-500/15 hover:bg-cyan-500/15 transition-all duration-300 disabled:opacity-50"
                         >
                           {cancellingId === (reg.id || reg._id) ? 'Revoking...' : 'Revoke Booking'}
                         </button>

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Navigation Masonry — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--surface3:#222222;--red:#dc2626;--red-light:#ef4444;--text:#e5e5e5;--text-dim:#737373;--text-muted:#525252;--radius:14px}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+/* TOP NAV */
+.topnav{height:64px;background:var(--surface);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 32px;gap:32px;flex-shrink:0}
+.topnav .logo{font-size:20px;font-weight:800;color:var(--red);flex-shrink:0;letter-spacing:-.5px}
+.topnav .nav-links{display:flex;gap:4px;margin-left:auto}
+.topnav .nav-links a{font-size:13px;font-weight:500;color:var(--text-dim);text-decoration:none;padding:8px 16px;border-radius:8px;transition:all .2s}
+.topnav .nav-links a:hover{color:var(--text);background:var(--surface2)}
+.topnav .nav-links a.active{color:var(--text);background:var(--surface2)}
+.topnav .right{display:flex;align-items:center;gap:16px;margin-left:auto}
+.topnav .search{display:flex;align-items:center;gap:8px;background:var(--surface2);border-radius:8px;padding:8px 14px;width:240px}
+.topnav .search svg{width:16px;height:16px;stroke:var(--text-muted);fill:none;stroke-width:2;flex-shrink:0}
+.topnav .search input{background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;width:100%}
+.topnav .search input::placeholder{color:var(--text-muted)}
+.topnav .notif{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;position:relative;transition:background .2s}
+.topnav .notif:hover{background:var(--surface2)}
+.topnav .notif svg{width:18px;height:18px;stroke:var(--text-dim);fill:none;stroke-width:1.8}
+.topnav .notif .dot{position:absolute;top:8px;right:8px;width:6px;height:6px;background:var(--red);border-radius:50%}
+.topnav .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:pointer}
+
+/* MAIN */
+.main{flex:1;overflow-y:auto;padding:28px 32px;display:flex;flex-direction:column;gap:28px}
+.main::-webkit-scrollbar{width:6px}
+.main::-webkit-scrollbar-track{background:transparent}
+.main::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+/* STAT ROW */
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.stat-card{background:var(--surface);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden;transition:transform .2s}
+.stat-card:hover{transform:translateY(-2px);background:linear-gradient(135deg,var(--surface),var(--surface2))}
+.stat-card .icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.stat-card .icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8}
+.stat-card .icon.red{background:rgba(220,38,38,.12);color:var(--red-light)}
+.stat-card .icon.blue{background:rgba(59,130,246,.12);color:#3b82f6}
+.stat-card .icon.green{background:rgba(34,197,94,.12);color:#22c55e}
+.stat-card .icon.amber{background:rgba(245,158,11,.12);color:#f59e0b}
+.stat-card .value{font-size:32px;font-weight:800;letter-spacing:-1.5px}
+.stat-card .label{font-size:13px;color:var(--text-dim);font-weight:500}
+.stat-card .change{font-size:12px;font-weight:500;display:flex;align-items:center;gap:4px}
+.stat-card .change .up{color:#22c55e}
+.stat-card .change .down{color:var(--red-light)}
+
+/* MASONRY */
+.masonry{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;flex:1}
+.masonry-col{display:flex;flex-direction:column;gap:20px}
+
+/* CARD */
+.card{background:var(--surface);border-radius:var(--radius);padding:24px;transition:all .25s}
+.card:hover{background:linear-gradient(145deg,var(--surface),var(--surface2))}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.card-header h3{font-size:15px;font-weight:600;letter-spacing:-.3px}
+.card-header a{font-size:12px;color:var(--red-light);text-decoration:none;font-weight:500}
+
+/* EVENT LIST */
+.event-item{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.04);align-items:center}
+.event-item:last-child{border-bottom:none}
+.event-item .thumb{width:56px;height:56px;border-radius:10px;flex-shrink:0;overflow:hidden}
+.event-item .thumb div{width:100%;height:100%}
+.event-item .info{flex:1;min-width:0}
+.event-item .title{font-size:14px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.event-item .meta{font-size:12px;color:var(--text-dim);display:flex;gap:12px;align-items:center}
+.event-item .attendees{display:flex;align-items:center;gap:4px}
+.event-item .attendees .dot{width:6px;height:6px;border-radius:50%}
+.dot-live{background:#22c55e}
+.dot-pending{background:#f59e0b}
+.dot-ended{background:var(--text-muted)}
+
+/* DONUT CHART */
+.donut-wrap{display:flex;align-items:center;gap:24px}
+.donut{width:120px;height:120px;position:relative;flex-shrink:0}
+.donut svg{width:100%;height:100%;transform:rotate(-90deg)}
+.donut circle{fill:none;stroke-width:12;stroke-linecap:round}
+.donut .bg{stroke:var(--surface3)}
+.donut .fill1{stroke:var(--red);stroke-dasharray:157 283}
+.donut .fill2{stroke:#3b82f6;stroke-dasharray:90 283;stroke-dashoffset:-157}
+.donut .fill3{stroke:#22c55e;stroke-dasharray:56 283;stroke-dashoffset:-247}
+.donut .center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.donut .center .num{font-size:24px;font-weight:800}
+.donut .center .txt{font-size:11px;color:var(--text-dim)}
+.donut-legend{display:flex;flex-direction:column;gap:10px}
+.donut-legend .item{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim)}
+.donut-legend .item .color{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+
+/* FEED */
+.feed-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.feed-item:last-child{border-bottom:none}
+.feed-item .avatar-sm{width:28px;height:28px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+.feed-item .content{flex:1;min-width:0}
+.feed-item .text{font-size:13px;line-height:1.4;color:var(--text-dim)}
+.feed-item .text strong{color:var(--text);font-weight:600}
+.feed-item .time{font-size:11px;color:var(--text-muted);margin-top:3px}
+
+/* DEADLINES */
+.deadline-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.deadline-item:last-child{border-bottom:none}
+.deadline-item .bar{width:4px;height:36px;border-radius:2px;flex-shrink:0}
+.deadline-item .info{flex:1}
+.deadline-item .name{font-size:13px;font-weight:600}
+.deadline-item .date{font-size:12px;color:var(--text-dim)}
+.deadline-item .days{font-size:12px;font-weight:600;color:var(--red-light);flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<div class="topnav">
+  <div class="logo">Avento</div>
+  <div class="nav-links">
+    <a href="#" class="active">Dashboard</a>
+    <a href="#">Events</a>
+    <a href="#">Users</a>
+    <a href="#">Reports</a>
+    <a href="#">Settings</a>
+  </div>
+  <div class="right">
+    <div class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search events, users...">
+    </div>
+    <div class="notif">
+      <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      <div class="dot"></div>
+    </div>
+    <div class="avatar">R</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- STAT ROW -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="icon red"><svg viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg></div>
+      <div class="value">1,247</div>
+      <div class="label">Total Events</div>
+      <div class="change"><span class="up">↑ 12.5%</span> from last month</div>
+    </div>
+    <div class="stat-card">
+      <div class="icon blue"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
+      <div class="value">8,432</div>
+      <div class="label">Active Users</div>
+      <div class="change"><span class="up">↑ 8.3%</span> from last month</div>
+    </div>
+    <div class="stat-card">
+      <div class="icon green"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div class="value">$284K</div>
+      <div class="label">Revenue</div>
+      <div class="change"><span class="up">↑ 24.1%</span> from last month</div>
+    </div>
+    <div class="stat-card">
+      <div class="icon amber"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+      <div class="value">34.2%</div>
+      <div class="label">Conversion Rate</div>
+      <div class="change"><span class="down">↓ 2.1%</span> from last month</div>
+    </div>
+  </div>
+
+  <!-- MASONRY -->
+  <div class="masonry">
+    <!-- LEFT COL -->
+    <div class="masonry-col">
+      <div class="card">
+        <div class="card-header"><h3>Recent Events</h3><a href="#">View All</a></div>
+        <div class="event-item">
+          <div class="thumb"><div style="background:linear-gradient(135deg,#1a0505,#dc2626)"></div></div>
+          <div class="info">
+            <div class="title">HackFusion 2.0 — Annual Hackathon</div>
+            <div class="meta"><span class="attendees"><span class="dot dot-live"></span> Live</span><span>342 registered</span><span>Sep 10</span></div>
+          </div>
+        </div>
+        <div class="event-item">
+          <div class="thumb"><div style="background:linear-gradient(135deg,#0a1628,#3b82f6)"></div></div>
+          <div class="info">
+            <div class="title">AI Workshop Series — Deep Learning</div>
+            <div class="meta"><span class="attendees"><span class="dot dot-live"></span> Live</span><span>189 registered</span><span>Sep 8</span></div>
+          </div>
+        </div>
+        <div class="event-item">
+          <div class="thumb"><div style="background:linear-gradient(135deg,#0a1a0a,#22c55e)"></div></div>
+          <div class="info">
+            <div class="title">Cultural Fest '26 — Ensemble</div>
+            <div class="meta"><span class="attendees"><span class="dot dot-pending"></span> Upcoming</span><span>567 registered</span><span>Sep 15</span></div>
+          </div>
+        </div>
+        <div class="event-item">
+          <div class="thumb"><div style="background:linear-gradient(135deg,#1a1005,#f59e0b)"></div></div>
+          <div class="info">
+            <div class="title">Startup Pitch Night — Demo Day</div>
+            <div class="meta"><span class="attendees"><span class="dot dot-live"></span> Live</span><span>96 registered</span><span>Sep 5</span></div>
+          </div>
+        </div>
+        <div class="event-item">
+          <div class="thumb"><div style="background:linear-gradient(135deg,#150a1a,#a855f7)"></div></div>
+          <div class="info">
+            <div class="title">Design Thinking Workshop</div>
+            <div class="meta"><span class="attendees"><span class="dot dot-ended"></span> Ended</span><span>78 registered</span><span>Sep 1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COL -->
+    <div class="masonry-col">
+      <!-- DONUT -->
+      <div class="card">
+        <div class="card-header"><h3>Quick Stats</h3></div>
+        <div class="donut-wrap">
+          <div class="donut">
+            <svg viewBox="0 0 100 100">
+              <circle class="bg" cx="50" cy="50" r="45"/>
+              <circle class="fill1" cx="50" cy="50" r="45"/>
+              <circle class="fill2" cx="50" cy="50" r="45"/>
+              <circle class="fill3" cx="50" cy="50" r="45"/>
+            </svg>
+            <div class="center"><span class="num">1,247</span><span class="txt">Events</span></div>
+          </div>
+          <div class="donut-legend">
+            <div class="item"><span class="color" style="background:#dc2626"></span> Live — 356</div>
+            <div class="item"><span class="color" style="background:#3b82f6"></span> Upcoming — 489</div>
+            <div class="item"><span class="color" style="background:#22c55e"></span> Completed — 402</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FEED -->
+      <div class="card">
+        <div class="card-header"><h3>Team Activity</h3></div>
+        <div class="feed-item">
+          <div class="avatar-sm">A</div>
+          <div class="content">
+            <div class="text"><strong>Arjun</strong> approved 12 event registrations for HackFusion</div>
+            <div class="time">2 minutes ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="avatar-sm">S</div>
+          <div class="content">
+            <div class="text"><strong>Sneha</strong> created a new event: "Blockchain Hackathon"</div>
+            <div class="time">18 minutes ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="avatar-sm">M</div>
+          <div class="content">
+            <div class="text"><strong>Meera</strong> updated the venue details for Cultural Fest '26</div>
+            <div class="time">1 hour ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="avatar-sm">V</div>
+          <div class="content">
+            <div class="text"><strong>Vikram</strong> exported the Q3 attendance report</div>
+            <div class="time">3 hours ago</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DEADLINES -->
+      <div class="card">
+        <div class="card-header"><h3>Upcoming Deadlines</h3></div>
+        <div class="deadline-item">
+          <div class="bar" style="background:#dc2626"></div>
+          <div class="info"><div class="name">HackFusion Submissions</div><div class="date">Sep 12, 2026</div></div>
+          <div class="days">1 day</div>
+        </div>
+        <div class="deadline-item">
+          <div class="bar" style="background:#f59e0b"></div>
+          <div class="info"><div class="name">Cultural Fest Registration</div><div class="date">Sep 14, 2026</div></div>
+          <div class="days">3 days</div>
+        </div>
+        <div class="deadline-item">
+          <div class="bar" style="background:#3b82f6"></div>
+          <div class="info"><div class="name">AI Workshop — Assignment</div><div class="date">Sep 18, 2026</div></div>
+          <div class="days">7 days</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
