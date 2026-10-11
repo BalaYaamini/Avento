@@ -21,8 +21,8 @@ const Footer = () => {
           <div className="space-y-5 col-span-1 md:col-span-2 relative">
             <StarDoodle className="absolute -top-6 -left-4 w-6 h-6 text-pastel-yellow opacity-40 animate-pulse" />
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 flex items-center justify-center p-1 transition-all duration-300">
-                <img src="/logo.png?v=3" alt="Avento Logo" className="h-[52px] w-auto object-contain drop-shadow-sm logo-cyan-tint" />
+              <div className="h-9 w-9 flex items-center justify-center transition-all duration-300">
+                <img src="/logo-mark.png?v=4" alt="Avento Logo" className="h-8 w-auto object-contain drop-shadow-sm logo-cyan-tint" />
               </div>
               <span className="font-display font-extrabold text-xl tracking-wider footer-logo-text">AVENTO</span>
             </div>

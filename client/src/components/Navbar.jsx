@@ -43,8 +43,8 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           <div className="flex-shrink-0">
             <Link to="/" className="flex items-center gap-2.5 group">
-              <img src="/logo.png?v=3" alt="Avento Logo" className="h-10 w-auto object-contain logo-cyan-tint" />
-              <span className="font-display font-extrabold text-2xl tracking-wider navbar-logo-text transition-colors duration-300">AVENTO</span>
+              <img src="/logo-mark.png?v=4" alt="Avento Logo" className="h-10 w-auto object-contain logo-cyan-tint" />
+              <span className="font-display font-black text-2xl tracking-tight navbar-logo-text transition-all duration-300">AVENTO</span>
             </Link>
           </div>
 

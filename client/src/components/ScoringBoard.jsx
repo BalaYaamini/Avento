@@ -23,9 +23,22 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     try {
       setLoading(true);
       const response = await axios.get(`/api/events/${eventId}/scoring`);
-      setData(response.data);
+      const resData = response.data || {};
+      setData({
+        enabled: Boolean(resData.enabled),
+        visible: Boolean(resData.visible),
+        rounds: Array.isArray(resData.rounds) ? resData.rounds : [],
+        teams: Array.isArray(resData.teams) ? resData.teams : [],
+        scores: Array.isArray(resData.scores) ? resData.scores : []
+      });
     } catch (err) {
       if (err.response?.status !== 403) console.error(err);
+      setData(prev => ({
+        ...prev,
+        rounds: prev.rounds || [],
+        teams: prev.teams || [],
+        scores: prev.scores || []
+      }));
     } finally {
       setLoading(false);
     }
@@ -42,7 +55,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     });
     try {
       const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
-      setData(previous => ({ ...previous, scores: response.data.scores }));
+      const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
+      setData(previous => ({ ...previous, scores: newScores }));
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to save scores.');
     }
@@ -79,15 +93,15 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     return next;
   });
 
-  const addRound = () => update(['rounds'], [...data.rounds, {
-    name: `Round ${data.rounds.length + 1}`,
+  const addRound = () => update(['rounds'], [...(data.rounds || []), {
+    name: `Round ${(data.rounds || []).length + 1}`,
     subrounds: [{ name: 'Criteria 1', max_score: 100 }]
   }]);
 
-  const removeRound = index => update(['rounds'], data.rounds.filter((_, roundIndex) => roundIndex !== index));
+  const removeRound = index => update(['rounds'], (data.rounds || []).filter((_, roundIndex) => roundIndex !== index));
 
   const addSubround = roundIndex => {
-    const rounds = JSON.parse(JSON.stringify(data.rounds));
+    const rounds = JSON.parse(JSON.stringify(data.rounds || []));
     rounds[roundIndex].subrounds = [...(rounds[roundIndex].subrounds || []), {
       name: `Criteria ${(rounds[roundIndex].subrounds || []).length + 1}`,
       max_score: 100
@@ -95,7 +109,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     update(['rounds'], rounds);
   };
 
-  const removeSubround = (roundIndex, subroundIndex) => update(['rounds'], data.rounds.map((round, index) => (
+  const removeSubround = (roundIndex, subroundIndex) => update(['rounds'], (data.rounds || []).map((round, index) => (
     index === roundIndex
       ? { ...round, subrounds: (round.subrounds || []).filter((_, subIndex) => subIndex !== subroundIndex) }
       : round
@@ -107,7 +121,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       await axios.put(`/api/events/${eventId}/scoring`, {
         enabled: data.enabled,
         visible: data.visible,
-        rounds: data.rounds
+        rounds: data.rounds || []
       });
       await load();
     } catch (err) {
@@ -119,16 +133,24 @@ const ScoringBoard = ({ eventId, canEdit }) => {
 
   const scoresMap = useMemo(() => {
     const map = {};
-    data.scores.forEach(score => { map[`${score.team_id}:${score.subround_id}`] = score.score; });
+    (data.scores || []).forEach(score => {
+      if (score && score.team_id && score.subround_id) {
+        map[`${score.team_id}:${score.subround_id}`] = score.score;
+      }
+    });
     return map;
   }, [data.scores]);
 
-  const subrounds = useMemo(() => data.rounds.flatMap(round => round.subrounds || []), [data.rounds]);
+  const subrounds = useMemo(() => (data.rounds || []).flatMap(round => round?.subrounds || []), [data.rounds]);
 
   const leaderboard = useMemo(() => {
-    const sorted = data.teams
-      .map(team => ({ ...team, total: subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0) }))
-      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const teams = Array.isArray(data.teams) ? data.teams : [];
+    const sorted = teams
+      .map(team => ({
+        ...team,
+        total: subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0)
+      }))
+      .sort((a, b) => (b.total || 0) - (a.total || 0) || (a.name || '').localeCompare(b.name || ''));
     let currentRank = 0;
     return sorted.map((team, index) => {
       if (index === 0 || team.total !== sorted[index - 1].total) currentRank += 1;
@@ -136,10 +158,24 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     });
   }, [data.teams, subrounds, scoresMap]);
 
-  const detailTeams = canEdit ? data.teams : data.teams.filter(t => String(t.id) === String(myTeamId));
+  const detailTeams = canEdit ? (data.teams || []) : (data.teams || []).filter(t => String(t.id) === String(myTeamId));
 
-  if (loading) return <div className="glass-panel rounded-2xl p-6 text-sm text-slate-500">Loading scoring module...</div>;
-  if (!canEdit && !data.visible) return null;
+  if (loading) {
+    return (
+      <div className="glass-panel rounded-2xl p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+        <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent mb-2" />
+        <p>Loading scoring module...</p>
+      </div>
+    );
+  }
+
+  if (!canEdit && !data.visible) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+        The live scoreboard has not been published for this event yet.
+      </div>
+    );
+  }
 
   return (
     <>
@@ -159,7 +195,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       <div className="space-y-8 p-5 sm:p-8">
         {canEdit && <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-5 dark:border-cyan-900/60 dark:bg-cyan-950/30">
           <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="font-display text-base font-bold text-slate-800 dark:text-slate-100">Evaluation Setup</h3><p className="text-xs text-slate-500 dark:text-slate-400">Create rounds and scoring criteria for judges.</p></div><label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300"><input type="checkbox" checked={data.enabled} onChange={event => update(['enabled'], event.target.checked)} /> Enabled</label></div>
-          {data.enabled && <div className="space-y-3">{data.rounds.map((round, roundIndex) => <div key={round.id || roundIndex} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex flex-col gap-2 sm:flex-row"><input value={round.name} onChange={event => { const rounds = JSON.parse(JSON.stringify(data.rounds)); rounds[roundIndex].name = event.target.value; update(['rounds'], rounds); }} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700" /><button onClick={() => addSubround(roundIndex)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200">+ Criterion</button><button onClick={() => removeRound(roundIndex)} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100">Delete Round</button></div>{(round.subrounds || []).map((subround, subroundIndex) => <div key={subround.id || subroundIndex} className="mt-2 flex gap-2"><input value={subround.name} onChange={event => { const rounds = JSON.parse(JSON.stringify(data.rounds)); rounds[roundIndex].subrounds[subroundIndex].name = event.target.value; update(['rounds'], rounds); }} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700" /><input type="number" min="0" value={subround.max_score} onChange={event => { const rounds = JSON.parse(JSON.stringify(data.rounds)); rounds[roundIndex].subrounds[subroundIndex].max_score = event.target.value; update(['rounds'], rounds); }} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700" placeholder="Max" /><button onClick={() => removeSubround(roundIndex, subroundIndex)} className="rounded-lg bg-red-50 px-3 py-2 text-[10px] font-bold text-red-600 hover:bg-red-100">Delete</button></div>)}</div>)}<button onClick={addRound} className="rounded-xl bg-fuchsia-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-fuchsia-500/20 hover:bg-fuchsia-700">+ Add Evaluation Round</button></div>}
+          {data.enabled && <div className="space-y-3">{(data.rounds || []).map((round, roundIndex) => <div key={round.id || roundIndex} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="flex flex-col gap-2 sm:flex-row"><input value={round.name} onChange={event => { const rounds = JSON.parse(JSON.stringify(data.rounds)); rounds[roundIndex].name = event.target.value; update(['rounds'], rounds); }} className="min-w-0 flex-1 rounded-lg border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm font-bold text-slate-700" /><button onClick={() => addSubround(roundIndex)} className="rounded-lg bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200">+ Criterion</button><button onClick={() => removeRound(roundIndex)} className="rounded-lg bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-100">Delete Round</button></div>{(round.subrounds || []).map((subround, subroundIndex) => <div key={subround.id || subroundIndex} className="mt-2 flex gap-2"><input value={subround.name} onChange={event => { const rounds = JSON.parse(JSON.stringify(data.rounds)); rounds[roundIndex].subrounds[subroundIndex].name = event.target.value; update(['rounds'], rounds); }} className="min-w-0 flex-1 rounded-lg border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-xs text-slate-700" /><input type="number" min="0" value={subround.max_score} onChange={event => { const rounds = JSON.parse(JSON.stringify(data.rounds)); rounds[roundIndex].subrounds[subroundIndex].max_score = event.target.value; update(['rounds'], rounds); }} className="w-24 rounded-lg border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-xs text-slate-700" placeholder="Max" /><button onClick={() => removeSubround(roundIndex, subroundIndex)} className="rounded-lg bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[10px] font-bold text-red-600 dark:text-red-400 hover:bg-red-100">Delete</button></div>)}</div>)}<button onClick={addRound} className="rounded-xl bg-fuchsia-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-fuchsia-500/20 hover:bg-fuchsia-700">+ Add Evaluation Round</button></div>}
         </div>}
 
         {data.enabled && <>
@@ -169,11 +205,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
             {leaderboard.length > 3 && <div className="mt-3 space-y-2">{leaderboard.slice(3).map(team => <div key={team.id} className="flex items-center gap-4 rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900"><span className="min-w-[2rem] text-center text-sm font-black text-slate-400">#{team.rank}</span><span className="flex-1 text-sm font-bold text-slate-700 dark:text-slate-200">{team.name}</span><span className="font-black text-cyan-700 dark:text-cyan-300">{team.total}</span><span className="text-[10px] font-bold uppercase text-slate-400">points</span></div>)}</div>}
           </div>
 
-          <div><div className="mb-4"><h3 className="font-display text-xl font-black text-slate-800">Score Details</h3><p className="text-xs text-slate-500">{canEdit ? 'Enter scores directly in the evaluation grid.' : 'Showing scores for your team only.'}</p></div><div className="overflow-x-auto rounded-2xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><th className="sticky left-0 bg-slate-50 p-4">Team</th>{data.rounds.map(round => <th key={round.id || round.name} colSpan={(round.subrounds || []).length} className="border-l border-slate-200 p-3 text-center">{round.name}</th>)}<th className="border-l border-slate-200 p-4 text-center">Total</th></tr><tr className="border-t border-slate-200 bg-white text-[10px] text-slate-400"><th className="sticky left-0 bg-white p-3" />{subrounds.map(subround => <th key={subround.id || subround.name} className="p-3 text-center">{subround.name}<span className="mt-1 block text-[9px]">/{subround.max_score}</span></th>)}<th className="p-3" /></tr></thead><tbody>{detailTeams.map(team => { const total = subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0); return <tr key={team.id} className="border-t border-slate-100 hover:bg-cyan-50/30"><td className="sticky left-0 bg-white p-4 font-bold text-slate-700">{team.name}</td>{subrounds.map(subround => <td key={subround.id} className="p-2 text-center">{canEdit ? <input type="number" min="0" max={subround.max_score} defaultValue={scoresMap[`${team.id}:${subround.id}`] ?? ''} onBlur={event => saveScore(team.id, subround.id, event.target.value)} onKeyDown={event => { if (event.key === 'Tab' || event.key === 'Enter') { saveScore(team.id, subround.id, event.target.value); if (event.key === 'Enter') { event.preventDefault(); const inputs = Array.from(event.target.closest('table').querySelectorAll('input[type=number]')); const idx = inputs.indexOf(event.target); if (idx < inputs.length - 1) inputs[idx + 1].focus(); } } }} className="w-20 rounded-lg border border-slate-200 px-2 py-2 text-center font-bold text-slate-700 focus:border-cyan-500 focus:outline-none" /> : <span className="font-semibold text-slate-600">{scoresMap[`${team.id}:${subround.id}`] || '-'}</span>}</td>)}<td className="border-l border-slate-100 p-4 text-center text-base font-black text-cyan-700">{total}</td></tr>})}</tbody></table></div></div>
+          <div><div className="mb-4"><h3 className="font-display text-xl font-black text-slate-800 dark:text-slate-100">Score Details</h3><p className="text-xs text-slate-500 dark:text-slate-400">{canEdit ? 'Enter scores directly in the evaluation grid.' : 'Showing scores for your team only.'}</p></div><div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="bg-slate-50 dark:bg-slate-900 text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400"><th className="sticky left-0 bg-slate-50 dark:bg-slate-900 p-4">Team</th>{(data.rounds || []).map(round => <th key={round.id || round.name} colSpan={(round.subrounds || []).length} className="border-l border-slate-200 dark:border-slate-700 p-3 text-center">{round.name}</th>)}<th className="border-l border-slate-200 dark:border-slate-700 p-4 text-center">Total</th></tr><tr className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-[10px] text-slate-400"><th className="sticky left-0 bg-white dark:bg-slate-950 p-3" />{subrounds.map(subround => <th key={subround.id || subround.name} className="p-3 text-center">{subround.name}<span className="mt-1 block text-[9px]">/{subround.max_score}</span></th>)}<th className="p-3" /></tr></thead><tbody>{detailTeams.map(team => { const total = subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0); return <tr key={team.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-cyan-50/30 dark:hover:bg-cyan-950/30"><td className="sticky left-0 bg-white dark:bg-slate-950 p-4 font-bold text-slate-700 dark:text-slate-200">{team.name}</td>{subrounds.map(subround => <td key={subround.id} className="p-2 text-center">{canEdit ? <input type="number" min="0" max={subround.max_score} defaultValue={scoresMap[`${team.id}:${subround.id}`] ?? ''} onBlur={event => saveScore(team.id, subround.id, event.target.value)} onKeyDown={event => { if (event.key === 'Tab' || event.key === 'Enter') { saveScore(team.id, subround.id, event.target.value); if (event.key === 'Enter') { event.preventDefault(); const inputs = Array.from(event.target.closest('table').querySelectorAll('input[type=number]')); const idx = inputs.indexOf(event.target); if (idx < inputs.length - 1) inputs[idx + 1].focus(); } } }} className="w-20 rounded-lg border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 px-2 py-2 text-center font-bold text-slate-700 focus:border-cyan-500 focus:outline-none" /> : <span className="font-semibold text-slate-600 dark:text-slate-300">{scoresMap[`${team.id}:${subround.id}`] || '-'}</span>}</td>)}<td className="border-l border-slate-100 dark:border-slate-800 p-4 text-center text-base font-black text-cyan-700 dark:text-cyan-400">{total}</td></tr>})}</tbody></table></div></div>
         </>}
       </div>
     </section>
-    {showImportModal && <ImportScoresModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} eventId={eventId} rounds={data.rounds} teams={data.teams} scores={data.scores} onImportSuccess={() => { setShowImportModal(false); load(); }} />}
+    {showImportModal && <ImportScoresModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} eventId={eventId} rounds={data.rounds || []} teams={data.teams || []} scores={data.scores || []} onImportSuccess={() => { setShowImportModal(false); load(); }} />}
     </>
   );
 };

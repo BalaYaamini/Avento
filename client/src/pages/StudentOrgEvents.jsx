@@ -746,16 +746,16 @@ const StudentOrgEvents = () => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-fade-in-up">
           <div className="relative">
             <StickyNoteDoodle className="absolute -top-6 -left-10 w-10 h-10 text-pastel-yellow opacity-80 animate-wobble hidden md:block" />
-            <h1 className="font-display text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
-              My <span className="heading-gradient text-fuchsia-500">Proposals</span>
+            <h1 className="font-display text-3xl sm:text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+              My <span className="text-cyan-500 dark:text-cyan-400">Proposals</span>
             </h1>
-            <p className="font-body text-slate-500 text-sm mt-1">
+            <p className="font-body text-slate-500 dark:text-slate-400 text-sm mt-1">
               Track event proposals, collaborate with faculty coordinators, and launch approved events
             </p>
           </div>
           <button
             onClick={openCreateModal}
-            className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md shadow-fuchsia-500/20 flex items-center justify-center gap-2 self-start sm:self-auto text-white cursor-pointer hover:opacity-95 transition-transform active:scale-95"
+            className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md shadow-cyan-500/20 flex items-center justify-center gap-2 self-start sm:self-auto text-white cursor-pointer hover:opacity-95 transition-transform active:scale-95"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -805,7 +805,7 @@ const StudentOrgEvents = () => {
                   activeTab === tab.id
                     ? tab.isAlert 
                       ? 'bg-amber-500 text-white shadow-sm'
-                      : 'bg-white dark:bg-slate-900 text-fuchsia-700 dark:text-fuchsia-400 shadow-sm border border-slate-200/50 dark:border-slate-700'
+                      : 'bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 shadow-sm border border-slate-200/50 dark:border-slate-700'
                     : tab.isAlert
                       ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 border border-amber-300/60'
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
@@ -815,7 +815,7 @@ const StudentOrgEvents = () => {
                 <span>{tab.label}</span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                   activeTab === tab.id
-                    ? tab.isAlert ? 'bg-white/20 text-white' : 'bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-400'
+                    ? tab.isAlert ? 'bg-white/20 text-white' : 'bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400'
                     : tab.isAlert ? 'bg-amber-200 text-amber-900' : 'bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                 }`}>
                   {tab.count}
@@ -843,18 +843,18 @@ const StudentOrgEvents = () => {
           <>
             {myProposals.length === 0 ? (
               <div className="text-center py-20 bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/70 shadow-xs p-8 animate-fade-in-scale">
-                <div className="h-16 w-16 bg-fuchsia-50 text-fuchsia-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <div className="h-16 w-16 bg-cyan-50 dark:bg-cyan-950 text-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-display font-bold text-slate-800 mb-1.5">No Proposals Yet</h3>
-                <p className="text-sm font-body text-slate-500 max-w-md mx-auto mb-6">
+                <h3 className="text-xl font-display font-bold text-slate-800 dark:text-white mb-1.5">No Proposals Yet</h3>
+                <p className="text-sm font-body text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">
                   You haven't submitted any event proposals. Create one and assign it to a faculty coordinator for approval.
                 </p>
                 <button
                   onClick={openCreateModal}
-                  className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md shadow-fuchsia-500/20 inline-flex items-center gap-2 text-white cursor-pointer"
+                  className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold shadow-md shadow-cyan-500/20 inline-flex items-center gap-2 text-white cursor-pointer"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -1276,7 +1276,7 @@ const StudentOrgEvents = () => {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Annual Hackathon 2026"
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
               />
             </div>
 
@@ -1286,7 +1286,7 @@ const StudentOrgEvents = () => {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer"
                 >
                   {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -1302,7 +1302,7 @@ const StudentOrgEvents = () => {
                   value={venue}
                   onChange={(e) => setVenue(e.target.value)}
                   placeholder="e.g. Seminar Hall A"
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                 />
               </div>
             </div>
@@ -1327,7 +1327,7 @@ const StudentOrgEvents = () => {
                       }
                     }
                   }}
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                 />
               </div>
 
@@ -1340,9 +1340,9 @@ const StudentOrgEvents = () => {
                   max={getMaxDeadlineISO()}
                   value={registrationDeadline}
                   onChange={(e) => setRegistrationDeadline(e.target.value)}
-                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
-                {!date && <p className="text-[10px] text-fuchsia-500 mt-1 font-semibold">Please select the event date first.</p>}
+                {!date && <p className="text-[10px] text-cyan-600 mt-1 font-semibold">Please select the event date first.</p>}
               </div>
 
               <div className="col-span-1 sm:col-span-2">
@@ -1351,14 +1351,14 @@ const StudentOrgEvents = () => {
                   <button
                     type="button"
                     onClick={() => setPosterOption('upload')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'upload' ? 'bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'upload' ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
                   >
                     Upload Poster
                   </button>
                   <button
                     type="button"
                     onClick={() => setPosterOption('url')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'url' ? 'bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors ${posterOption === 'url' ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'}`}
                   >
                     Poster URL
                   </button>
@@ -1376,7 +1376,7 @@ const StudentOrgEvents = () => {
                           setPosterPreview(URL.createObjectURL(file));
                         }
                       }}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-fuchsia-50 file:text-fuchsia-700 hover:file:bg-fuchsia-100"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100"
                     />
                     {(posterPreview || imageUrl) && (
                       <div className="mt-2 h-20 w-32 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
@@ -1392,7 +1392,7 @@ const StudentOrgEvents = () => {
                       value={imageUrl}
                       onChange={(e) => setImageUrl(e.target.value)}
                       placeholder="https://example.com/poster.jpg"
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                     {imageUrl && (
                       <div className="mt-2 h-20 w-32 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
@@ -1413,7 +1413,7 @@ const StudentOrgEvents = () => {
                   <select
                     value={registrationType}
                     onChange={(e) => setRegistrationType(e.target.value)}
-                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer"
+                    className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer"
                   >
                     <option value="individual">Individual Registration</option>
                     <option value="team">Team Registration</option>
@@ -1431,7 +1431,7 @@ const StudentOrgEvents = () => {
                       min="1"
                       value={capacity}
                       onChange={(e) => setCapacity(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
                 </div>
@@ -1447,7 +1447,7 @@ const StudentOrgEvents = () => {
                       min="1"
                       value={maxTeams}
                       onChange={(e) => setMaxTeams(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
                   <div>
@@ -1458,7 +1458,7 @@ const StudentOrgEvents = () => {
                       min="1"
                       value={minTeamSize}
                       onChange={(e) => setMinTeamSize(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
                   <div>
@@ -1469,7 +1469,7 @@ const StudentOrgEvents = () => {
                       min="1"
                       value={maxTeamSize}
                       onChange={(e) => setMaxTeamSize(e.target.value)}
-                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300"
+                      className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                   </div>
 
@@ -1482,12 +1482,12 @@ const StudentOrgEvents = () => {
                         onChange={(e) => setAllowCrossDepartment(e.target.checked)}
                         className="sr-only peer" 
                       />
-                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
                     </label>
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-between p-3.5 bg-fuchsia-500/5 border border-fuchsia-500/10 rounded-xl mt-4">
+              <div className="flex items-center justify-between p-3.5 bg-cyan-500/5 border border-cyan-500/10 rounded-xl mt-4">
                 <div>
                   <h4 className="text-xs font-bold text-slate-800">Enable Slot-Wise Registration</h4>
                   <p className="text-[10px] text-slate-500">Allow participants to select their convenient time slot</p>
@@ -1499,7 +1499,7 @@ const StudentOrgEvents = () => {
                     onChange={(e) => setHasSlots(e.target.checked)}
                     className="sr-only peer" 
                   />
-                  <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                  <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
                 </label>
               </div>
 
@@ -1518,7 +1518,7 @@ const StudentOrgEvents = () => {
                 <button
                   type="button"
                   onClick={() => fetchFaculty()}
-                  className="text-[10px] font-semibold text-fuchsia-600 hover:text-fuchsia-700 flex items-center gap-1 transition-colors"
+                  className="text-[10px] font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1 transition-colors"
                   title="Reload faculty coordinators"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1535,7 +1535,7 @@ const StudentOrgEvents = () => {
                     placeholder="Filter faculty list by name, department, or ID..."
                     value={facultySearchTerm}
                     onChange={(e) => setFacultySearchTerm(e.target.value)}
-                    className="w-full bg-white/60 text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-fuchsia-500 transition-all"
+                    className="w-full bg-white/60 text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-500 transition-all"
                   />
                 </div>
               )}
@@ -1544,7 +1544,7 @@ const StudentOrgEvents = () => {
                 required
                 value={assignedFaculty}
                 onChange={(e) => setAssignedFaculty(e.target.value)}
-                className="w-full bg-white/80 text-slate-800 border border-slate-300/60 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-fuchsia-500/20 focus:border-fuchsia-500 transition-all duration-200 cursor-pointer shadow-sm"
+                className="w-full bg-white/80 text-slate-800 border border-slate-300/60 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 transition-all duration-200 cursor-pointer shadow-sm"
               >
                 <option value="" disabled>-- Select Faculty Coordinator Reviewer --</option>
                 {(() => {
@@ -1598,9 +1598,9 @@ const StudentOrgEvents = () => {
                 const selectedFac = facultyList.find(f => f.id === assignedFaculty);
                 if (!selectedFac) return null;
                 return (
-                  <div className="mt-2.5 p-3 bg-gradient-to-r from-fuchsia-50/80 via-purple-50/50 to-indigo-50/50 border border-fuchsia-200/80 rounded-xl flex items-center justify-between shadow-sm">
+                  <div className="mt-2.5 p-3 bg-gradient-to-r from-cyan-50/80 via-sky-50/50 to-indigo-50/50 border border-cyan-200/80 rounded-xl flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-fuchsia-600 to-purple-600 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs uppercase shadow-sm">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500 to-cyan-600 flex-shrink-0 flex items-center justify-center text-white font-bold text-xs uppercase shadow-sm">
                         {(selectedFac.fullName || selectedFac.name || 'F').charAt(0)}
                       </div>
                       <div className="min-w-0">
@@ -1626,7 +1626,7 @@ const StudentOrgEvents = () => {
                         </div>
                       </div>
                     </div>
-                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-lg bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200 flex-shrink-0">
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-lg bg-cyan-100 text-cyan-800 border border-cyan-200 flex-shrink-0">
                       Selected
                     </span>
                   </div>
@@ -1642,7 +1642,7 @@ const StudentOrgEvents = () => {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Explain the purpose, target audience, and activities of this event..."
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 resize-none"
+                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 resize-none"
               />
             </div>
 
@@ -1657,7 +1657,7 @@ const StudentOrgEvents = () => {
               <button
                 type="submit"
                 disabled={submitting}
-                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
+                className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
               >
                 {submitting ? 'Saving...' : 'Save Draft'}
               </button>
@@ -1681,7 +1681,7 @@ const StudentOrgEvents = () => {
                 </svg>
               ) : (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               )}
               <span>{teamFeedback.message}</span>
@@ -1698,7 +1698,7 @@ const StudentOrgEvents = () => {
                   required
                   value={selectedStudent}
                   onChange={(e) => setSelectedStudent(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer text-slate-700"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer text-slate-700"
                 >
                   <option value="" className="text-slate-700">-- Select Student --</option>
                   {studentsList.map(std => (
@@ -1715,7 +1715,7 @@ const StudentOrgEvents = () => {
                   required
                   value={memberResponsibility}
                   onChange={(e) => setMemberResponsibility(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-fuchsia-500/60 transition-all duration-300 cursor-pointer text-slate-700"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer text-slate-700"
                 >
                   {['Coordinator', 'Volunteer', 'Media Team', 'Registration Team', 'Logistics Team', 'Technical Team'].map(resp => (
                     <option key={resp} value={resp} className="text-slate-700">{resp}</option>
@@ -1726,7 +1726,7 @@ const StudentOrgEvents = () => {
 
             <button
               type="submit"
-              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-fuchsia-500/15"
+              className="btn-primary w-full py-2.5 rounded-xl text-xs font-bold text-white shadow-lg shadow-cyan-500/15"
             >
               + Add Member
             </button>
@@ -1779,7 +1779,7 @@ const StudentOrgEvents = () => {
                 </svg>
               ) : (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               )}
               <span>{orgFeedback.message}</span>
@@ -1799,7 +1799,7 @@ const StudentOrgEvents = () => {
                 onChange={(e) => handleToggleJoinTeam(e.target.checked)}
                 className="sr-only peer" 
               />
-              <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+              <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
             </label>
           </div>
 
@@ -1824,7 +1824,7 @@ const StudentOrgEvents = () => {
                         {member.email} &bull; {member.department}
                       </div>
                       <div className="flex items-center gap-1.5 mt-1.5">
-                        <div className="text-[9px] font-bold text-fuchsia-600 uppercase tracking-wider px-2 py-0.5 rounded bg-fuchsia-500/10 border border-fuchsia-500/15">
+                        <div className="text-[9px] font-bold text-cyan-600 uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/15">
                           {member.category}
                         </div>
                         <div className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200">

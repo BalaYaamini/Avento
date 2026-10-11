@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { SidebarProvider, useSidebar } from './context/SidebarContext';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import Footer from './components/Footer';
@@ -147,7 +148,7 @@ const AnimatedRoutes = () => {
 const AppLayoutInner = () => {
   const location = useLocation();
   const { user } = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { isCollapsed, openMobile } = useSidebar();
 
   const isVerifyPage = location.pathname.startsWith('/verify');
   const isSidebarPage = location.pathname === '/' || location.pathname === '/contact';
@@ -165,16 +166,19 @@ const AppLayoutInner = () => {
           <div className="absolute inset-0 dot-pattern opacity-20" />
         </div>
         {/* Sidebar */}
-        <Sidebar isMobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
+        <Sidebar />
         {/* Main content */}
-        <div className="app-main relative z-10">
+        <div className={`app-main ${isCollapsed ? 'sidebar-collapsed' : ''} relative z-10 transition-all duration-300`}>
           <div className="md:hidden app-topbar">
-            <button onClick={() => setMobileMenuOpen(true)} className="app-icon-btn">
+            <button onClick={openMobile} className="app-icon-btn">
               <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="app-topbar-title">Avento</div>
+            <div className="flex items-center gap-2">
+              <img src="/logo-mark.png?v=4" alt="Avento" className="h-6 w-auto logo-cyan-tint" />
+              <div className="app-topbar-title">Avento</div>
+            </div>
             <div className="w-9" />
           </div>
           <AnimatedRoutes />
@@ -207,18 +211,21 @@ const AppLayoutInner = () => {
   // Authenticated layout with sidebar
   return (
     <div className="min-h-screen bg-background text-text-primary">
-      <Sidebar isMobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
-      <main className="app-main">
+      <Sidebar />
+      <main className={`app-main ${isCollapsed ? 'sidebar-collapsed' : ''} transition-all duration-300`}>
         <div className="md:hidden app-topbar">
           <button
-            onClick={() => setMobileMenuOpen(true)}
+            onClick={openMobile}
             className="app-icon-btn"
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div className="app-topbar-title">Avento</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo-mark.png?v=4" alt="Avento" className="h-6 w-auto logo-cyan-tint" />
+            <div className="app-topbar-title">Avento</div>
+          </div>
           <div className="w-9" />
         </div>
         <AnimatedRoutes />
@@ -232,9 +239,11 @@ function App() {
     <Router>
       <AuthProvider>
         <ThemeProvider>
-          <SplashScreen />
-          <GlobalAlert />
-          <AppLayoutInner />
+          <SidebarProvider>
+            <SplashScreen />
+            <GlobalAlert />
+            <AppLayoutInner />
+          </SidebarProvider>
         </ThemeProvider>
       </AuthProvider>
     </Router>

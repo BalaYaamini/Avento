@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -12,7 +12,10 @@ import {
   PinDoodle,
   CloudDoodle,
   PaperPlaneDoodle,
-  GeometricBlobDoodle
+  GeometricBlobDoodle,
+  RocketDoodle,
+  PaletteDoodle,
+  CoffeeDoodle
 } from '../components/Doodles';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import ScoringBoard from '../components/ScoringBoard';
@@ -272,15 +275,36 @@ const Home = () => {
     }
   };
 
-  const categories = ['All', 'Technical', 'Cultural', 'Sports', 'Workshop', 'Seminar'];
+  const searchInputRef = useRef(null);
 
-  const categoryIcons = {
-    All: null,
-    Technical: null,
-    Cultural: null,
-    Sports: null,
-    Workshop: null,
-    Seminar: null
+  // Keyboard shortcut listener: press '/' or 'Ctrl+K' / 'Cmd+K' to focus search input
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if ((e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) &&
+          document.activeElement.tagName !== 'INPUT' &&
+          document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const categoriesList = [
+    { id: 'All', label: 'All Events', icon: <SparkleDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Technical', label: 'Technical', icon: <RocketDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Cultural', label: 'Cultural', icon: <PaletteDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Sports', label: 'Sports', icon: <StarDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Workshop', label: 'Workshop', icon: <ArrowDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Seminar', label: 'Seminar', icon: <CoffeeDoodle className="w-3.5 h-3.5" /> }
+  ];
+
+  const isFiltering = !!search || !!category || status !== 'published';
+  const handleClearFilters = () => {
+    setSearch('');
+    setCategory('');
+    setStatus('published');
   };
 
   const fetchEvents = async () => {
@@ -638,56 +662,139 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Filter Controls ── */}
-        <div className="animate-fade-in-up delay-300 polaroid p-4 sm:p-6 mb-10 flex flex-col lg:flex-row items-center justify-between gap-5 relative z-20 mx-auto max-w-5xl -mt-8 rotate-1">
-          <div className="absolute -top-3 left-10 tape tape-2 !w-24"></div>
-          
-          {/* Search Input */}
-          <div className="relative w-full lg:w-80 group">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-text-secondary group-focus-within:text-pastel-lavender transition-colors duration-300">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </span>
-            <input
-              type="text"
-              placeholder="Search events..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white text-text-primary placeholder-text-secondary border-2 border-gray-200 rounded-2xl py-3 pl-12 pr-4 text-sm font-quicksand font-bold focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all duration-300"
-            />
+        {/* ── Enhanced Search & Filter Command Deck ── */}
+        <div className="animate-fade-in-up delay-300 polaroid p-4 sm:p-6 mb-10 relative z-20 mx-auto max-w-5xl -mt-8 shadow-xl hover:shadow-2xl transition-all duration-300">
+          {/* Scrapbook Decorative Tape & Doodles */}
+          <div className="absolute -top-3.5 left-10 tape tape-1 !w-28 shadow-xs"></div>
+          <div className="absolute -top-3 -right-2 z-10 hidden sm:block animate-bounce-gentle">
+            <SparkleDoodle className="w-8 h-8 text-pastel-coral" />
           </div>
 
-          {/* Category Chips */}
-          <div className="flex flex-wrap gap-2 w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat === 'All' ? '' : cat)}
-                className={`text-xs font-bold px-5 py-2.5 rounded-2xl transition-all duration-300 border-2 whitespace-nowrap font-quicksand ${
-                  (cat === 'All' && !category) || (cat === category)
-                    ? 'bg-cyan-50 text-cyan-700 border-cyan-500 shadow-sm scale-105'
-                    : 'bg-white text-text-secondary border-gray-200 hover:text-cyan-700 hover:border-cyan-400 hover:bg-cyan-50 hover:-translate-y-1'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          <div className="flex flex-col gap-4">
+            {/* Top Tier: Search Box + Status Filter + Quick Reset */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Search Box with icon and shortcut */}
+              <div className="relative flex-1 group">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors duration-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search events by title, keyword, venue..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full bg-slate-50/90 hover:bg-white focus:bg-white text-text-primary placeholder-slate-400 border-2 border-slate-200/90 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 rounded-2xl py-3 pl-11 pr-20 text-sm font-quicksand font-bold transition-all duration-200 shadow-xs"
+                />
+                
+                {/* Clear search or shortcut key badge */}
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 gap-1.5">
+                  {search ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                      title="Clear search"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <span className="hidden md:inline-flex items-center px-2 py-0.5 text-[10px] font-mono font-bold text-slate-400 bg-white border border-slate-200 rounded-md shadow-2xs pointer-events-none">
+                      /
+                    </span>
+                  )}
+                </div>
+              </div>
 
-          {/* Status Dropdown */}
-          <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
-            <label className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] font-quicksand">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="bg-white text-text-primary border-2 border-gray-200 rounded-2xl px-4 py-2.5 text-xs font-bold font-quicksand focus:outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/20 transition-all duration-300 cursor-pointer"
-            >
-              <option value="published">Open for Reg</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="completed">Completed</option>
-              <option value="">All Events</option>
-            </select>
+              {/* Status Selector & Clear Filter Pill */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="relative flex-1 sm:flex-initial">
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full sm:w-auto appearance-none bg-slate-50/90 hover:bg-white text-text-primary border-2 border-slate-200/90 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 rounded-2xl py-3 pl-4 pr-10 text-xs font-bold font-quicksand transition-all duration-200 cursor-pointer shadow-xs"
+                  >
+                    <option value="published">🟢 Open for Reg</option>
+                    <option value="">⚡ All Statuses</option>
+                    <option value="completed">🏁 Completed</option>
+                    <option value="cancelled">🔴 Cancelled</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {isFiltering && (
+                  <button
+                    onClick={handleClearFilters}
+                    className="shrink-0 px-3.5 py-3 rounded-2xl text-xs font-bold font-quicksand bg-rose-50 text-rose-700 hover:bg-rose-100 border-2 border-rose-200 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    title="Reset all filters"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    <span>Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Tier: Category Pills + Live Result Counter */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+              {/* Category Pills */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none -mx-1 px-1">
+                {categoriesList.map((cat) => {
+                  const isSelected = (cat.id === 'All' && !category) || (cat.id === category);
+                  
+                  const activeClassMap = {
+                    All: 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-md scale-[1.03]',
+                    Technical: 'bg-cyan-600 text-white border-cyan-600 shadow-md shadow-cyan-600/25 scale-[1.03]',
+                    Cultural: 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/25 scale-[1.03]',
+                    Sports: 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/25 scale-[1.03]',
+                    Workshop: 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/25 scale-[1.03]',
+                    Seminar: 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/25 scale-[1.03]',
+                  };
+
+                  const inactiveClassMap = {
+                    All: 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300',
+                    Technical: 'bg-white hover:bg-cyan-50/60 text-cyan-800 border-cyan-200 hover:border-cyan-400',
+                    Cultural: 'bg-white hover:bg-rose-50/60 text-rose-800 border-rose-200 hover:border-rose-400',
+                    Sports: 'bg-white hover:bg-emerald-50/60 text-emerald-800 border-emerald-200 hover:border-emerald-400',
+                    Workshop: 'bg-white hover:bg-amber-50/60 text-amber-800 border-amber-200 hover:border-amber-400',
+                    Seminar: 'bg-white hover:bg-indigo-50/60 text-indigo-800 border-indigo-200 hover:border-indigo-400',
+                  };
+
+                  const currentClass = isSelected
+                    ? (activeClassMap[cat.id] || 'bg-cyan-600 text-white border-cyan-600')
+                    : (inactiveClassMap[cat.id] || 'bg-white text-slate-700 border-slate-200');
+
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCategory(cat.id === 'All' ? '' : cat.id)}
+                      className={`text-xs font-bold px-3.5 sm:px-4 py-2 rounded-xl transition-all duration-200 border-2 whitespace-nowrap font-quicksand flex items-center gap-1.5 shrink-0 cursor-pointer ${currentClass} hover:-translate-y-0.5`}
+                    >
+                      <span className="shrink-0">{cat.icon}</span>
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Event count indicator */}
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500 font-quicksand shrink-0 self-end md:self-center">
+                <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                <span>
+                  {loading ? 'Searching events...' : `${events.length} event${events.length === 1 ? '' : 's'} found`}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -723,7 +830,19 @@ const Home = () => {
               <SparkleDoodle className="h-10 w-10 text-pastel-yellow" />
             </div>
             <h3 className="text-2xl font-bold text-text-primary mb-2 font-heading">No Events Found</h3>
-            <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">There are no events matching your search or filters at the moment.</p>
+            <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">
+              {isFiltering 
+                ? 'No events match your current search criteria. Try adjusting or clearing your filters.' 
+                : 'There are no events matching your search or filters at the moment.'}
+            </p>
+            {isFiltering && (
+              <button
+                onClick={handleClearFilters}
+                className="mt-5 btn-primary px-6 py-2.5 text-xs font-bold rounded-2xl shadow-pastel-glow cursor-pointer"
+              >
+                Clear All Filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -775,7 +894,7 @@ const Home = () => {
                       <h4 className="text-sm font-bold text-slate-800">{org.name}</h4>
                       <p className="text-[10px] text-slate-600 font-medium mt-0.5">{org.department} &bull; {org.email}</p>
                     </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 border border-cyan-500/15">
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-800 border border-cyan-200">
                       {org.category}
                     </span>
                   </div>
@@ -803,7 +922,7 @@ const Home = () => {
                   alt={confirmRegEvent.title}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-cyan-500 text-white uppercase tracking-wider">
+                <span className="absolute top-3 left-3 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-slate-900/85 text-white border border-white/20 uppercase tracking-wider shadow-md">
                   {confirmRegEvent.category}
                 </span>
               </div>
@@ -949,7 +1068,7 @@ const Home = () => {
                   alt={teamRegEvent.title}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-cyan-500 text-white uppercase tracking-wider">
+                <span className="absolute top-3 left-3 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-slate-900/85 text-white border border-white/20 uppercase tracking-wider shadow-md">
                   {teamRegEvent.category}
                 </span>
               </div>
@@ -964,11 +1083,11 @@ const Home = () => {
                     />
                   </div>
                 )}
-                <div className="flex gap-2 mt-1">
-                  <p className="text-[10px] text-cyan-600 font-bold uppercase tracking-wider border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 rounded inline-block">
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <p className="text-[10px] text-cyan-800 font-bold uppercase tracking-wider border border-cyan-300 bg-cyan-50 px-2 py-0.5 rounded inline-block">
                     Minimum Members: {teamRegEvent.min_team_size || 1}
                   </p>
-                  <p className="text-[10px] text-cyan-600 font-bold uppercase tracking-wider border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 rounded inline-block">
+                  <p className="text-[10px] text-cyan-800 font-bold uppercase tracking-wider border border-cyan-300 bg-cyan-50 px-2 py-0.5 rounded inline-block">
                     Maximum Members: {teamRegEvent.max_team_size} 
                   </p>
                 </div>

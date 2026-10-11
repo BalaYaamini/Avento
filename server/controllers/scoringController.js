@@ -3,12 +3,19 @@ const supabase = require('../config/supabaseClient');
 const eventAccess = async (eventId, user) => {
   const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
   if (!event) return { event: null, allowed: false };
-  if (user?.roles?.includes('admin')) return { event, allowed: true };
-  const direct = [event.organizer_id, event.student_organizer_id, event.proposed_by, event.faculty_id, event.created_by]
-    .some(id => String(id || '') === String(user?.id || ''));
+  const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+  if (userRoles.includes('admin') || user?.is_admin === true) return { event, allowed: true };
+  const userIdStr = String(user?.id || '');
+  const direct = [
+    event.organizer_id,
+    event.student_organizer_id,
+    event.proposed_by,
+    event.faculty_id,
+    event.created_by
+  ].some(id => id && String(id) === userIdStr);
   if (direct) return { event, allowed: true };
-  const { data: org } = await supabase.from('event_organizers').select('id').eq('event_id', eventId).eq('student_id', user.id).maybeSingle();
-  const { data: member } = await supabase.from('event_members').select('id').eq('event_id', eventId).eq('user_id', user.id).maybeSingle();
+  const { data: org } = await supabase.from('event_organizers').select('id').eq('event_id', eventId).eq('student_id', user?.id).maybeSingle();
+  const { data: member } = await supabase.from('event_members').select('id').eq('event_id', eventId).eq('user_id', user?.id).maybeSingle();
   return { event, allowed: !!org || !!member };
 };
 
@@ -17,17 +24,61 @@ const getScoring = async (req, res) => {
     const { eventId } = req.params;
     const { event, allowed } = await eventAccess(eventId, req.user);
     if (!event) return res.status(404).json({ message: 'Event not found.' });
-    if (!event.scoring_enabled) return res.json({ enabled: false, visible: false, rounds: [], teams: [] });
-    if (!allowed && !event.scoreboard_visible) return res.status(403).json({ message: 'Scoreboard is not visible.' });
+    if (!event.scoring_enabled) {
+      return res.json({
+        enabled: false,
+        visible: false,
+        canEdit: allowed,
+        rounds: [],
+        teams: [],
+        scores: []
+      });
+    }
+    if (!allowed && !event.scoreboard_visible) {
+      return res.json({
+        enabled: true,
+        visible: false,
+        canEdit: false,
+        rounds: [],
+        teams: [],
+        scores: []
+      });
+    }
 
-    const { data: rounds, error: roundsErr } = await supabase.from('scoring_rounds').select('*, subrounds:scoring_subrounds(*)').eq('event_id', eventId).order('display_order');
+    const { data: rounds, error: roundsErr } = await supabase
+      .from('scoring_rounds')
+      .select('*, subrounds:scoring_subrounds(*)')
+      .eq('event_id', eventId)
+      .order('display_order');
     if (roundsErr) throw roundsErr;
-    const { data: teams, error: teamsErr } = await supabase.from('event_teams').select('id, name, status').eq('event_id', eventId).eq('status', 'registered').order('name');
+
+    const { data: teams, error: teamsErr } = await supabase
+      .from('event_teams')
+      .select('id, name, status')
+      .eq('event_id', eventId)
+      .eq('status', 'registered')
+      .order('name');
     if (teamsErr) throw teamsErr;
-    const { data: scores, error: scoresErr } = await supabase.from('scoring_scores').select('*').eq('event_id', eventId);
+
+    const { data: scores, error: scoresErr } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId);
     if (scoresErr) throw scoresErr;
-    res.json({ enabled: true, visible: !!event.scoreboard_visible, canEdit: allowed, rounds: (rounds || []).map(round => ({ ...round, subrounds: (round.subrounds || []).sort((a, b) => a.display_order - b.display_order) })), teams: teams || [], scores: scores || [] });
+
+    res.json({
+      enabled: true,
+      visible: !!event.scoreboard_visible,
+      canEdit: allowed,
+      rounds: (rounds || []).map(round => ({
+        ...round,
+        subrounds: (round.subrounds || []).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      })),
+      teams: teams || [],
+      scores: scores || []
+    });
   } catch (err) {
+    console.error('getScoring error:', err);
     res.status(500).json({ message: 'Server error fetching scoring data.', error: err.message });
   }
 };
