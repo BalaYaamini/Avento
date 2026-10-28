@@ -269,7 +269,11 @@ const getEvents = async (req, res) => {
 
     res.json(mappedEvents);
   } catch (err) {
-    res.status(500).json({ message: 'Server error fetching events.', error: err.message });
+    const isConnErr = err.message && (err.message.includes('fetch failed') || err.message.includes('ENOTFOUND'));
+    const message = isConnErr
+      ? 'Database connection failed: Supabase project is unreachable or paused. Please restore it in your Supabase dashboard.'
+      : 'Server error fetching events.';
+    res.status(500).json({ message, error: err.message });
   }
 };
 

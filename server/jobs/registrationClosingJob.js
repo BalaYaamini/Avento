@@ -17,7 +17,11 @@ const startRegistrationClosingJob = () => {
         .lt('registration_deadline', now);
 
       if (eventErr) {
-        console.error('[RegistrationClosingJob] Error fetching eligible events:', eventErr.message);
+        if (eventErr.message && (eventErr.message.includes('fetch failed') || eventErr.message.includes('ENOTFOUND'))) {
+          console.warn('[RegistrationClosingJob] Database unreachable (fetch failed). Please check your Supabase project status in dashboard.');
+        } else {
+          console.error('[RegistrationClosingJob] Error fetching eligible events:', eventErr.message);
+        }
         return;
       }
 

@@ -1,6 +1,34 @@
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
+// Configure public DNS servers fallback to prevent local ISP/router DNS failures
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch (e) {}
+
+const originalDnsLookup = dns.lookup;
+dns.lookup = (hostname, options, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  originalDnsLookup(hostname, options, (err, address, family) => {
+    if (!err) return callback(null, address, family);
+    if (err && (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN')) {
+      return dns.resolve4(hostname, (resErr, addresses) => {
+        if (!resErr && addresses && addresses.length > 0) {
+          if (options && options.all) {
+            return callback(null, addresses.map(a => ({ address: a, family: 4 })));
+          }
+          return callback(null, addresses[0], 4);
+        }
+        return callback(err, address, family);
+      });
+    }
+    return callback(err, address, family);
+  });
+};
+
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -21,6 +49,28 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
   const keyPreview = process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 12) + '...';
   console.log('✅ SUPABASE_SERVICE_ROLE_KEY loaded. Key prefix:', keyPreview);
 }
+
+// Check database connectivity on startup
+const supabase = require('./config/supabaseClient');
+(async () => {
+  try {
+    const { error } = await supabase.from('events').select('id').limit(1);
+    if (error) {
+      if (error.message && (error.message.includes('fetch failed') || error.message.includes('ENOTFOUND'))) {
+        console.error('\n🔴 [Supabase Connection FAILED]');
+        console.error('   Could not connect to Supabase database:', process.env.SUPABASE_URL);
+        console.error('   👉 If using a free-tier project, it is likely PAUSED due to inactivity.');
+        console.error('   👉 Please go to https://supabase.com/dashboard and click "Restore project".\n');
+      } else {
+        console.warn('⚠️ [Supabase Status]:', error.message);
+      }
+    } else {
+      console.log('✅ Supabase database connection verified successfully.');
+    }
+  } catch (err) {
+    console.error('\n🔴 [Supabase Connection Check Exception]:', err.message);
+  }
+})();
 
 // Initialize Background Jobs
 const startEventCompletionJob = require('./jobs/eventCompletionJob');

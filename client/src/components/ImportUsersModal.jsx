@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import axios from 'axios';
 
@@ -13,6 +14,18 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
   const [message, setMessage] = useState('');
   const [summary, setSummary] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Lock background scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -263,9 +276,17 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[90vw] lg:max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
+  return createPortal(
+    <div 
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleClose();
+      }}
+    >
+      <div 
+        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-[90vw] lg:max-w-6xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100 dark:border-slate-800"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header */}
         <div className="px-6 py-5 border-b border-pastel-lavender/20 flex justify-between items-center bg-pastel-lavender/5">
@@ -596,7 +617,8 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
