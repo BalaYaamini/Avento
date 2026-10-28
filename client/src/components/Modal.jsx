@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { SparkleDoodle } from './Doodles';
 
 const Modal = ({ isOpen, onClose, title, subtitle, children }) => {
@@ -16,7 +17,9 @@ const Modal = ({ isOpen, onClose, title, subtitle, children }) => {
 
   if (!isOpen) return null;
 
-  return (
+  // Portal to body so the fixed overlay is positioned against the viewport,
+  // not an ancestor with backdrop-blur/transform (which would clip/misalign it).
+  return createPortal(
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-pastel-lavender/10 backdrop-blur-md animate-fade-in"
       onClick={onClose}
@@ -48,7 +51,8 @@ const Modal = ({ isOpen, onClose, title, subtitle, children }) => {
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

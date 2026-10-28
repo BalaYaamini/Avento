@@ -649,7 +649,8 @@ const createEvent = async (req, res) => {
       payment_instructions: isPaymentEnabled ? (paymentInstructions || null) : null,
       scoring_enabled: scoringEnabled === true || scoringEnabled === 'true',
       scoreboard_visible: (scoringEnabled === true || scoringEnabled === 'true') && (scoreboardVisible === true || scoreboardVisible === 'true'),
-      has_slots: req.body.hasSlots === true || req.body.hasSlots === 'true' || req.body.has_slots === true || req.body.has_slots === 'true',
+      has_slots: req.body.hasSlots === true || req.body.hasSlots === 'true' || req.body.has_slots === true || req.body.has_slots === 'true' || registrationType === 'slot_wise',
+      duration_days: Math.min(30, Math.max(1, parseInt(req.body.durationDays ?? req.body.duration_days, 10) || 1)),
     };
 
     if (proposedBy) newEvent.proposed_by = proposedBy;
@@ -780,7 +781,7 @@ const editEvent = async (req, res) => {
       title, description, category, venue, date, capacity, imageUrl, status, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
       registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
-      , scoringEnabled, scoreboardVisible
+      , scoringEnabled, scoreboardVisible, hasSlots
     } = req.body;
 
     const { data: event, error: fetchErr } = await supabase
@@ -812,7 +813,7 @@ const editEvent = async (req, res) => {
     if (category !== undefined) updates.category = category;
     if (venue !== undefined) updates.venue = venue;
     if (date !== undefined) updates.date = date ? new Date(date).toISOString() : null;
-    if (capacity !== undefined && registrationType !== 'team') updates.capacity = Number(capacity);
+    if (capacity !== undefined && capacity !== '' && capacity !== null && registrationType !== 'team') updates.capacity = Number(capacity);
     if (registrationType === 'team') updates.capacity = null;
     if (imageUrl !== undefined) updates.image_url = imageUrl;
     if (registrationType !== undefined) updates.registration_type = registrationType;
@@ -821,6 +822,9 @@ const editEvent = async (req, res) => {
     if (maxTeamSize !== undefined) updates.max_team_size = Number(maxTeamSize);
     if (allowCrossDepartment !== undefined) updates.allow_cross_department = allowCrossDepartment;
     if (teamLeaderRegistrationRequired !== undefined) updates.team_leader_registration_required = teamLeaderRegistrationRequired;
+    if (hasSlots !== undefined) updates.has_slots = Boolean(hasSlots);
+    // Slot-wise registration always requires the slot schedule to be enabled
+    if (registrationType === 'slot_wise') updates.has_slots = true;
     if (registrationDeadline !== undefined) {
       if (registrationDeadline) {
         const deadlineDate = new Date(registrationDeadline);
@@ -858,6 +862,20 @@ const editEvent = async (req, res) => {
 
     if (req.body.hasSlots !== undefined || req.body.has_slots !== undefined) {
       updates.has_slots = req.body.hasSlots !== undefined ? (req.body.hasSlots === true || req.body.hasSlots === 'true') : (req.body.has_slots === true || req.body.has_slots === 'true');
+    }
+
+    // Slot-wise registration always requires the slot schedule to be enabled
+    if (registrationType === 'slot_wise') {
+      updates.has_slots = true;
+    }
+
+    // Multi-day event duration (1–30 days)
+    const durationDaysRaw = req.body.durationDays !== undefined ? req.body.durationDays : req.body.duration_days;
+    if (durationDaysRaw !== undefined && durationDaysRaw !== null && durationDaysRaw !== '') {
+      const parsedDays = parseInt(durationDaysRaw, 10);
+      if (!Number.isNaN(parsedDays) && parsedDays >= 1) {
+        updates.duration_days = Math.min(30, parsedDays);
+      }
     }
 
     if (paymentEnabled !== undefined || paymentAmount !== undefined || paymentUpiId !== undefined || paymentQrUrl !== undefined || paymentInstructions !== undefined) {
@@ -3433,7 +3451,8 @@ const updateProposalDescription = async (req, res) => {
     const { 
       title, description, category, venue, date, capacity, imageUrl, 
       registrationType, maxTeams, minTeamSize, maxTeamSize, 
-      allowCrossDepartment, teamLeaderRegistrationRequired, registrationDeadline 
+      allowCrossDepartment, teamLeaderRegistrationRequired, registrationDeadline,
+      hasSlots
     } = req.body;
     
     const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
@@ -3463,7 +3482,7 @@ const updateProposalDescription = async (req, res) => {
     if (category !== undefined) updates.category = category;
     if (venue !== undefined) updates.venue = venue;
     if (date !== undefined) updates.date = date ? new Date(date).toISOString() : null;
-    if (capacity !== undefined && registrationType !== 'team') updates.capacity = Number(capacity);
+    if (capacity !== undefined && capacity !== '' && capacity !== null && registrationType !== 'team') updates.capacity = Number(capacity);
     if (registrationType === 'team') updates.capacity = null;
     if (imageUrl !== undefined) updates.image_url = imageUrl;
     if (registrationType !== undefined) updates.registration_type = registrationType;
@@ -3472,6 +3491,9 @@ const updateProposalDescription = async (req, res) => {
     if (maxTeamSize !== undefined) updates.max_team_size = Number(maxTeamSize);
     if (allowCrossDepartment !== undefined) updates.allow_cross_department = allowCrossDepartment;
     if (teamLeaderRegistrationRequired !== undefined) updates.team_leader_registration_required = teamLeaderRegistrationRequired;
+    if (hasSlots !== undefined) updates.has_slots = Boolean(hasSlots);
+    // Slot-wise registration always requires the slot schedule to be enabled
+    if (registrationType === 'slot_wise') updates.has_slots = true;
     if (registrationDeadline !== undefined) {
       if (registrationDeadline) {
         const deadlineDate = new Date(registrationDeadline);
@@ -3498,6 +3520,15 @@ const updateProposalDescription = async (req, res) => {
         updates.registration_deadline = new Date(registrationDeadline).toISOString();
       } else {
         updates.registration_deadline = null;
+      }
+    }
+
+    // Multi-day event duration (1–30 days)
+    const durationDaysRaw = req.body.durationDays !== undefined ? req.body.durationDays : req.body.duration_days;
+    if (durationDaysRaw !== undefined && durationDaysRaw !== null && durationDaysRaw !== '') {
+      const parsedDays = parseInt(durationDaysRaw, 10);
+      if (!Number.isNaN(parsedDays) && parsedDays >= 1) {
+        updates.duration_days = Math.min(30, parsedDays);
       }
     }
     

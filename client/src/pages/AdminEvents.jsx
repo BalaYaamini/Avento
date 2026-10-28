@@ -41,6 +41,7 @@ const AdminEvents = () => {
   const [maxTeamSize, setMaxTeamSize] = useState('4');
   const [allowCrossDepartment, setAllowCrossDepartment] = useState(true);
   const [hasSlots, setHasSlots] = useState(false);
+  const [durationDays, setDurationDays] = useState('1');
   const [registrationDeadline, setRegistrationDeadline] = useState('');
   const [paymentEnabled, setPaymentEnabled] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -203,6 +204,7 @@ const AdminEvents = () => {
     setMaxTeamSize('4');
     setAllowCrossDepartment(true);
     setHasSlots(false);
+    setDurationDays('1');
     setRegistrationDeadline('');
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
@@ -233,6 +235,7 @@ const AdminEvents = () => {
     setMaxTeamSize(event.max_team_size ? String(event.max_team_size) : '4');
     setAllowCrossDepartment(event.allow_cross_department ?? true);
     setHasSlots(Boolean(event.has_slots));
+    setDurationDays(String(event.duration_days || 1));
     setRegistrationDeadline(formatToDatetimeLocal(event.registration_deadline));
 
     setPaymentEnabled(!!event.payment_enabled);
@@ -340,6 +343,7 @@ const AdminEvents = () => {
         maxTeamSize: registrationType === 'team' ? Number(maxTeamSize) : undefined,
         allowCrossDepartment: registrationType === 'team' ? allowCrossDepartment : undefined,
         hasSlots,
+        durationDays: Number(durationDays) || 1,
         registrationDeadline: registrationDeadline ? (registrationDeadline.includes('Z') || registrationDeadline.includes('+') ? registrationDeadline : new Date(registrationDeadline).toISOString()) : null,
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
@@ -904,6 +908,19 @@ const AdminEvents = () => {
                   className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 {!date && <p className="text-[10px] text-cyan-500 mt-1 font-semibold">Please select the event date first.</p>}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">Event Duration (Days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="7"
+                  value={durationDays}
+                  onChange={(e) => setDurationDays(e.target.value)}
+                  className="w-full sm:max-w-[160px] bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">For 2+ day events, slot management will ask for Day 1, Day 2… slots separately.</p>
               </div>
 
               <div className="col-span-1 sm:col-span-2">

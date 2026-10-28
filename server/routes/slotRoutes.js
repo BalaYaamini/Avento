@@ -21,6 +21,9 @@ router.put('/event/:eventId/slot/:slotId', authMiddleware, slotController.update
 // Organizer / Admin: Delete a slot
 router.delete('/event/:eventId/slot/:slotId', authMiddleware, slotController.deleteSlot);
 
+// Organizer / Admin: Delete all slots for an event
+router.delete('/event/:eventId/all', authMiddleware, slotController.deleteAllSlots);
+
 // Organizer / Admin: Reassign participant/team to a different slot
 router.put('/event/:eventId/reassign', authMiddleware, slotController.reassignParticipantSlot);
 

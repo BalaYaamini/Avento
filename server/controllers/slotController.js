@@ -617,8 +617,55 @@ const deleteSlot = async (req, res) => {
 };
 
 /**
+ * DELETE /api/events/:eventId/slots/all
+ * Organizer / Admin: Delete every time slot for an event at once
+ */
+const deleteAllSlots = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    if (!isUUID(eventId)) {
+      return res.status(400).json({ message: 'Invalid event ID' });
+    }
+
+    const { data: event, error: eventErr } = await supabase
+      .from('events')
+      .select('*')
+      .eq('id', eventId)
+      .single();
+
+    if (eventErr || !event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+
+    const isOrganizer = req.user.roles?.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+    if (!isOrganizer) {
+      return res.status(403).json({ message: 'Access denied: Core Organizer privileges required' });
+    }
+
+    // Unlink any registrations/teams from their slots (participants become unassigned)
+    await supabase.from('event_registrations').update({ slot_id: null }).eq('event_id', eventId);
+    await supabase.from('event_teams').update({ slot_id: null }).eq('event_id', eventId);
+
+    const { error: deleteErr } = await supabase
+      .from('event_slots')
+      .delete()
+      .eq('event_id', eventId);
+
+    if (deleteErr) {
+      return res.status(500).json({ message: 'Failed to delete slots', error: deleteErr.message });
+    }
+
+    return res.status(200).json({ message: 'All time slots deleted successfully.' });
+  } catch (err) {
+    console.error('Error in deleteAllSlots:', err);
+    return res.status(500).json({ message: 'Internal server error', error: err.message });
+  }
+};
+
+/**
  * PUT /api/events/:eventId/slots/reassign
- * Organizers / Admins: Reassign a student or team to a different slot
+ * Reassign a student or team to a different slot
  */
 const reassignParticipantSlot = async (req, res) => {
   try {
@@ -827,10 +874,18 @@ const rescheduleStudentSlot = async (req, res) => {
 
     // Update registration and team if applicable
     if (reg.team_id) {
-      await supabase.from('event_teams').update({ slot_id: targetSlotId }).eq('id', reg.team_id);
-      await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('team_id', reg.team_id);
+      const teamUpd = await supabase.from('event_teams').update({ slot_id: targetSlotId }).eq('id', reg.team_id);
+      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('team_id', reg.team_id);
+      if (teamUpd.error || regUpd.error) {
+        console.error('Reschedule update failed:', teamUpd.error || regUpd.error);
+        return res.status(500).json({ message: 'Failed to update your slot assignment. Please try again.' });
+      }
     } else {
-      await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('id', regId);
+      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('id', regId);
+      if (regUpd.error) {
+        console.error('Reschedule update failed:', regUpd.error);
+        return res.status(500).json({ message: 'Failed to update your slot assignment. Please try again.' });
+      }
     }
 
     return res.status(200).json({
@@ -850,6 +905,7 @@ module.exports = {
   bulkCreateSlots,
   updateSlot,
   deleteSlot,
+  deleteAllSlots,
   reassignParticipantSlot,
   rescheduleStudentSlot
 };

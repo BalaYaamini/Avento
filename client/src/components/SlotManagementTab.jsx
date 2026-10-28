@@ -25,7 +25,9 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
     start_time: '',
     end_time: '',
     venue_room: '',
-    max_capacity: 20
+    max_capacity: 20,
+    count: 1,
+    break_minutes: 0
   });
   const [slotFormSubmitting, setSlotFormSubmitting] = useState(false);
   const [slotFormError, setSlotFormError] = useState('');
@@ -55,6 +57,10 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
   const [slotToDelete, setSlotToDelete] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
+  // Delete All Slots State
+  const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
+  const [deleteAllSubmitting, setDeleteAllSubmitting] = useState(false);
+
   const fetchSlotOverview = async () => {
     try {
       setLoading(true);
@@ -78,6 +84,154 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
     }
   }, [eventId]);
 
+  // Multi-day event support: derive Day 1, Day 2, ... from event.date + duration_days
+  const eventDays = useMemo(() => {
+    const total = Math.max(1, parseInt(event?.duration_days, 10) || 1);
+    if (total < 2 || !event?.date) return [];
+    const base = new Date(event.date);
+    if (Number.isNaN(base.getTime())) return [];
+    return Array.from({ length: total }, (_, i) => {
+      const dateStr = new Date(base.getTime() + i * 86400000).toISOString().split('T')[0];
+      return {
+        index: i + 1,
+        dateStr,
+        label: new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      };
+    });
+  }, [event?.duration_days, event?.date]);
+
+  // Group slots by event day (only when multi-day)
+  const slotGroups = useMemo(() => {
+    if (eventDays.length < 2) return null;
+    const groups = eventDays.map(day => ({
+      key: day.dateStr,
+      title: `Day ${day.index} · ${day.label}`,
+      slots: []
+    }));
+    const extra = { key: 'unscheduled', title: 'Other / No Date', slots: [] };
+    slots.forEach(slot => {
+      const dstr = slot.slot_date ? new Date(slot.slot_date).toISOString().split('T')[0] : '';
+      const g = groups.find(gr => gr.key === dstr);
+      (g || extra).slots.push(slot);
+    });
+    return [...groups, ...(extra.slots.length ? [extra] : [])];
+  }, [eventDays, slots]);
+
+  const renderSlotCard = (slot) => {
+    const isSelected = selectedSlotFilter === slot.id;
+    const isFull = slot.is_full;
+    const slotRegs = registrationsBySlot[slot.id] || [];
+
+    return (
+      <div
+        key={slot.id}
+        onClick={() => setSelectedSlotFilter(isSelected ? 'all' : slot.id)}
+        className={`p-5 rounded-2xl border transition-all duration-200 cursor-pointer relative flex flex-col justify-between ${
+          isSelected
+            ? 'bg-gradient-to-br from-indigo-50/90 via-white to-fuchsia-50/70 dark:from-indigo-950/40 dark:via-slate-900/80 dark:to-fuchsia-950/30 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-2 ring-indigo-500/20'
+            : 'glass-panel bg-white/70 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm hover:shadow-md'
+        }`}
+      >
+        <div>
+          {/* Slot Header */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                  {slot.slot_name}
+                </span>
+                {isFull ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shrink-0">
+                    Full
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                    {slot.slots_remaining} Left
+                  </span>
+                )}
+              </div>
+
+              {/* Time Row */}
+              <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-1.5 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>
+                  {slot.start_time?.substring(0, 5)} – {slot.end_time?.substring(0, 5)}
+                </span>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            {hasFullAccess && (
+              <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditSlot(slot)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition"
+                  title="Edit Slot"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSlotToDelete(slot);
+                    setIsDeleteModalOpen(true);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+                  title="Delete Slot"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Slot Details Chips */}
+          <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600 dark:text-slate-400 mt-3">
+            {slot.slot_date && (
+              <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 px-2.5 py-1 rounded-lg font-medium border border-slate-200/50 dark:border-slate-700/50">
+                <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>{new Date(slot.slot_date).toLocaleDateString()}</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Capacity Bar */}
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60">
+          <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+            <span className="text-slate-500 dark:text-slate-400 text-[11px]">Enrollment</span>
+            <span className="text-slate-800 dark:text-white text-[11px]">
+              {slotRegs.length} / {slot.max_capacity} ({slot.fill_percentage}%)
+            </span>
+          </div>
+
+          <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                isFull
+                  ? 'bg-rose-500'
+                  : slot.fill_percentage >= 80
+                  ? 'bg-amber-500'
+                  : 'bg-gradient-to-r from-indigo-500 to-fuchsia-500'
+              }`}
+              style={{ width: `${Math.min(100, slot.fill_percentage)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const handleOpenAddSlot = () => {
     setEditingSlot(null);
     const defaultDate = event?.date ? new Date(event.date).toISOString().split('T')[0] : '';
@@ -87,7 +241,9 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
       start_time: '09:30',
       end_time: '11:00',
       venue_room: event?.venue || '',
-      max_capacity: 20
+      max_capacity: 20,
+      count: 1,
+      break_minutes: 0
     });
     setSlotFormError('');
     setIsSlotModalOpen(true);
@@ -95,14 +251,17 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
 
   const handleOpenEditSlot = (slot) => {
     setEditingSlot(slot);
+    const defaultDate = event?.date ? new Date(event.date).toISOString().split('T')[0] : '';
     setSlotFormData({
       slot_name: slot.slot_name || '',
-      slot_date: slot.slot_date ? new Date(slot.slot_date).toISOString().split('T')[0] : '',
+      slot_date: slot.slot_date ? new Date(slot.slot_date).toISOString().split('T')[0] : defaultDate,
       start_time: (slot.start_time || '').substring(0, 5),
       end_time: (slot.end_time || '').substring(0, 5),
       venue_room: slot.venue_room || '',
       max_capacity: slot.max_capacity || 20,
-      status: slot.status || 'active'
+      status: slot.status || 'active',
+      count: 1,
+      break_minutes: 0
     });
     setSlotFormError('');
     setIsSlotModalOpen(true);
@@ -128,8 +287,41 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
         await axios.put(`/api/slots/event/${eventId}/slot/${editingSlot.id}`, payload);
         setSuccessMessage(`Slot "${payload.slot_name}" updated successfully.`);
       } else {
-        await axios.post(`/api/slots/event/${eventId}`, payload);
-        setSuccessMessage(`Slot "${payload.slot_name}" created successfully.`);
+        const count = Math.max(1, parseInt(slotFormData.count, 10) || 1);
+        const breakMinutes = Math.max(0, parseInt(slotFormData.break_minutes, 10) || 0);
+
+        if (count === 1) {
+          await axios.post(`/api/slots/event/${eventId}`, payload);
+          setSuccessMessage(`Slot "${payload.slot_name}" created successfully.`);
+        } else {
+          const toMinutes = (t) => {
+            const [h, m] = String(t || '').split(':').map(Number);
+            return (h || 0) * 60 + (m || 0);
+          };
+          const formatTime = (mins) => `${String(Math.floor(mins / 60) % 24).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+
+          const duration = toMinutes(payload.end_time) - toMinutes(payload.start_time);
+          if (duration <= 0) {
+            setSlotFormError('End time must be after start time.');
+            setSlotFormSubmitting(false);
+            return;
+          }
+
+          const generated = [];
+          let cursor = toMinutes(payload.start_time);
+          for (let i = 0; i < count; i++) {
+            generated.push({
+              ...payload,
+              slot_name: `${payload.slot_name} ${i + 1}`,
+              start_time: formatTime(cursor),
+              end_time: formatTime(cursor + duration)
+            });
+            cursor += duration + breakMinutes;
+          }
+
+          await axios.post(`/api/slots/event/${eventId}/bulk`, { slots: generated });
+          setSuccessMessage(`Created ${generated.length} slots ("${payload.slot_name}" series) successfully.`);
+        }
       }
 
       setIsSlotModalOpen(false);
@@ -215,6 +407,21 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
     }
   };
 
+  const handleDeleteAllSlots = async () => {
+    setDeleteAllSubmitting(true);
+    try {
+      await axios.delete(`/api/slots/event/${eventId}/all`);
+      setSuccessMessage('All time slots deleted.');
+      setIsDeleteAllOpen(false);
+      fetchSlotOverview();
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete all slots.');
+    } finally {
+      setDeleteAllSubmitting(false);
+    }
+  };
+
   const handleOpenReassign = (reg) => {
     setReassignTarget(reg);
     const currentId = reg.slot_id || reg.event_teams?.slot_id || '';
@@ -261,7 +468,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
   // Export Slot Attendees to CSV
   const handleExportCSV = () => {
     let rows = [
-      ['Slot Name', 'Date', 'Timing', 'Venue / Room', 'Student Name', 'Email', 'Roll Number', 'Department', 'Team Name', 'Attendance Status']
+      ['Slot Name', 'Date', 'Timing', 'Student Name', 'Email', 'Roll Number', 'Department', 'Team Name', 'Attendance Status']
     ];
 
     slots.forEach(slot => {
@@ -270,7 +477,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
       const dateStr = slot.slot_date ? new Date(slot.slot_date).toLocaleDateString() : 'N/A';
 
       if (regs.length === 0) {
-        rows.push([slot.slot_name, dateStr, timing, slot.venue_room || 'N/A', '(No registrations yet)', '', '', '', '', '']);
+        rows.push([slot.slot_name, dateStr, timing, '(No registrations yet)', '', '', '', '', '']);
       } else {
         regs.forEach(r => {
           const profile = r.profiles || r.userId || {};
@@ -279,7 +486,6 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             slot.slot_name,
             dateStr,
             timing,
-            slot.venue_room || 'N/A',
             profile.name || profile.fullName || 'Unknown',
             profile.email || '',
             profile.roll_number || '',
@@ -453,6 +659,19 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                   </svg>
                   <span>Add New Slot</span>
                 </button>
+
+                {slots.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteAllOpen(true)}
+                    className="h-10 px-4 rounded-xl text-xs font-bold text-rose-700 dark:text-rose-300 bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-800/60 hover:bg-rose-100/90 dark:hover:bg-rose-900/50 transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                  >
+                    <svg className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span>Delete All</span>
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -580,136 +799,36 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
               </button>
             )}
           </div>
+        ) : slotGroups ? (
+          slotGroups.map(group => (
+            <div key={group.key} className="space-y-3">
+              <div className="flex items-center gap-2 px-1">
+                <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  {group.title}
+                </h4>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                  {group.slots.length}
+                </span>
+                {group.slots.length === 0 && (
+                  <span className="text-[10px] text-slate-400 font-medium">No slots yet for this day — use Add New Slot to create them.</span>
+                )}
+              </div>
+              {group.slots.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {group.slots.map(renderSlotCard)}
+                </div>
+              )}
+            </div>
+          ))
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {slots.map(slot => {
-              const isSelected = selectedSlotFilter === slot.id;
-              const isFull = slot.is_full;
-              const slotRegs = registrationsBySlot[slot.id] || [];
-
-              return (
-                <div
-                  key={slot.id}
-                  onClick={() => setSelectedSlotFilter(isSelected ? 'all' : slot.id)}
-                  className={`p-5 rounded-2xl border transition-all duration-200 cursor-pointer relative flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-gradient-to-br from-indigo-50/90 via-white to-fuchsia-50/70 dark:from-indigo-950/40 dark:via-slate-900/80 dark:to-fuchsia-950/30 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-2 ring-indigo-500/20'
-                      : 'glass-panel bg-white/70 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm hover:shadow-md'
-                  }`}
-                >
-                  <div>
-                    {/* Slot Header */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
-                            {slot.slot_name}
-                          </span>
-                          {isFull ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shrink-0">
-                              Full
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
-                              {slot.slots_remaining} Left
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Time Row */}
-                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-1.5 flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span>
-                            {slot.start_time?.substring(0, 5)} – {slot.end_time?.substring(0, 5)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      {hasFullAccess && (
-                        <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditSlot(slot)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 transition"
-                            title="Edit Slot"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSlotToDelete(slot);
-                              setIsDeleteModalOpen(true);
-                            }}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
-                            title="Delete Slot"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Slot Details Chips */}
-                    <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600 dark:text-slate-400 mt-3">
-                      {slot.venue_room && (
-                        <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 px-2.5 py-1 rounded-lg font-medium border border-slate-200/50 dark:border-slate-700/50">
-                          <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          </svg>
-                          <span className="truncate max-w-[120px]">{slot.venue_room}</span>
-                        </span>
-                      )}
-
-                      {slot.slot_date && (
-                        <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 px-2.5 py-1 rounded-lg font-medium border border-slate-200/50 dark:border-slate-700/50">
-                          <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <span>{new Date(slot.slot_date).toLocaleDateString()}</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Capacity Bar */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60">
-                    <div className="flex items-center justify-between text-xs font-bold mb-1.5">
-                      <span className="text-slate-500 dark:text-slate-400 text-[11px]">Enrollment</span>
-                      <span className="text-slate-800 dark:text-white text-[11px]">
-                        {slotRegs.length} / {slot.max_capacity} ({slot.fill_percentage}%)
-                      </span>
-                    </div>
-
-                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          isFull
-                            ? 'bg-rose-500'
-                            : slot.fill_percentage >= 80
-                            ? 'bg-amber-500'
-                            : 'bg-gradient-to-r from-indigo-500 to-fuchsia-500'
-                        }`}
-                        style={{ width: `${Math.min(100, slot.fill_percentage)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {slots.map(renderSlotCard)}
           </div>
         )}
       </div>
 
-      {/* Participants Table / Roster by Slot */}
+      {/* Participants Table / Roster by Slot — only visible once the event is published */}
+      {['published', 'active'].includes(event?.status) && (
       <div className="glass-panel p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm space-y-4 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
@@ -846,7 +965,6 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                             </span>
                             <div className="text-[11px] text-slate-400">
                               {currentSlot.start_time?.substring(0, 5)} - {currentSlot.end_time?.substring(0, 5)}
-                              {currentSlot.venue_room && ` • ${currentSlot.venue_room}`}
                             </div>
                           </div>
                         ) : (
@@ -889,6 +1007,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
           </table>
         </div>
       </div>
+      )}
 
       {/* Add / Edit Slot Modal */}
       <Modal
@@ -918,30 +1037,49 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {eventDays.length > 1 ? (
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Event Day *
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {eventDays.map(day => {
+                    const active = (slotFormData.slot_date || eventDays[0].dateStr) === day.dateStr;
+                    return (
+                      <button
+                        key={day.index}
+                        type="button"
+                        onClick={() => setSlotFormData(prev => ({ ...prev, slot_date: day.dateStr }))}
+                        className={`h-9 px-3 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                          active
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
+                        }`}
+                      >
+                        Day {day.index} · {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  Slots can only be allocated between {eventDays[0].label} and {eventDays[eventDays.length - 1].label}.
+                </p>
+              </div>
+            ) : (
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Date (Optional)
+                Date *
               </label>
               <input
                 type="date"
-                value={slotFormData.slot_date}
+                disabled
+                value={slotFormData.slot_date || (event?.date ? new Date(event.date).toISOString().split('T')[0] : '')}
                 onChange={(e) => setSlotFormData({ ...slotFormData, slot_date: e.target.value })}
-                className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
               />
+              <p className="text-[10px] text-slate-400 mt-1">Fixed to the event date — this event is a single-day event.</p>
             </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Room / Venue (Optional)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Lab 2, Hall B"
-                value={slotFormData.venue_room}
-                onChange={(e) => setSlotFormData({ ...slotFormData, venue_room: e.target.value })}
-                className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
-              />
-            </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3.5">
@@ -986,6 +1124,47 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             </div>
           </div>
 
+          {/* Multiple slots + break (create mode only) */}
+          {!editingSlot && (
+            <div className="p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-800/60 space-y-3.5">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Create Multiple Slots</h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Chained back-to-back using the start/end time above, with an optional break between each. Names are auto-numbered (e.g. "Batch 1", "Batch 2").
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Number of Slots
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={slotFormData.count}
+                    onChange={(e) => setSlotFormData({ ...slotFormData, count: e.target.value })}
+                    className="w-full h-10 px-3 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    Break Between Slots (min)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={slotFormData.break_minutes}
+                    onChange={(e) => setSlotFormData({ ...slotFormData, break_minutes: e.target.value })}
+                    placeholder="e.g. 10"
+                    className="w-full h-10 px-3 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
@@ -999,7 +1178,13 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
               disabled={slotFormSubmitting}
               className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50 shadow-sm shadow-indigo-500/20"
             >
-              {slotFormSubmitting ? 'Saving...' : editingSlot ? 'Save Changes' : 'Create Slot'}
+              {slotFormSubmitting
+                ? 'Saving...'
+                : editingSlot
+                  ? 'Save Changes'
+                  : (parseInt(slotFormData.count, 10) || 1) > 1
+                    ? `Create ${parseInt(slotFormData.count, 10) || 1} Slots`
+                    : 'Create Slot'}
             </button>
           </div>
         </form>
@@ -1030,18 +1215,52 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
               />
             </div>
 
+            {eventDays.length > 1 ? null : (
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Date
+                Date *
               </label>
               <input
                 type="date"
-                value={quickGenData.slot_date}
+                disabled
+                value={quickGenData.slot_date || (event?.date ? new Date(event.date).toISOString().split('T')[0] : '')}
                 onChange={(e) => setQuickGenData({ ...quickGenData, slot_date: e.target.value })}
-                className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
               />
+              <p className="text-[10px] text-slate-400 mt-1">Fixed to the event date — single-day event.</p>
             </div>
+            )}
           </div>
+
+          {eventDays.length > 1 && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Event Day *
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {eventDays.map(day => {
+                  const active = (quickGenData.slot_date || eventDays[0].dateStr) === day.dateStr;
+                  return (
+                    <button
+                      key={day.index}
+                      type="button"
+                      onClick={() => setQuickGenData(prev => ({ ...prev, slot_date: day.dateStr }))}
+                      className={`h-9 px-3 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                        active
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
+                      }`}
+                    >
+                      Day {day.index} · {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1.5">
+                Generated slots will be created for the selected day only. Allowed days: {eventDays[0].label} – {eventDays[eventDays.length - 1].label}.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3.5">
             <div>
@@ -1097,6 +1316,23 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                 min="1"
                 value={quickGenData.capacity_per_slot}
                 onChange={(e) => setQuickGenData({ ...quickGenData, capacity_per_slot: parseInt(e.target.value, 10) })}
+                className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                Break Between Slots (Minutes)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="5"
+                value={quickGenData.break_minutes}
+                onChange={(e) => setQuickGenData({ ...quickGenData, break_minutes: e.target.value })}
+                placeholder="e.g. 10"
                 className="w-full h-10 px-3.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
               />
             </div>
@@ -1178,7 +1414,6 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                     </div>
                     <div className="text-[11px] text-slate-500 mt-1">
                       {s.start_time?.substring(0, 5)} - {s.end_time?.substring(0, 5)}
-                      {s.venue_room && ` • ${s.venue_room}`}
                     </div>
                   </div>
                 );
@@ -1232,6 +1467,38 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
               className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-700 transition cursor-pointer disabled:opacity-50 shadow-sm shadow-rose-500/20"
             >
               {deleteSubmitting ? 'Deleting...' : 'Delete Slot'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete All Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteAllOpen}
+        onClose={() => setIsDeleteAllOpen(false)}
+        title="Delete All Time Slots"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            Are you sure you want to delete <strong className="text-slate-900 dark:text-white">all {slots.length} time slots</strong> for this event?
+            Any enrolled participants will be marked as unassigned. This cannot be undone.
+          </p>
+
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setIsDeleteAllOpen(false)}
+              className="h-10 px-4 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteAllSlots}
+              disabled={deleteAllSubmitting}
+              className="h-10 px-5 rounded-xl text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-700 transition cursor-pointer disabled:opacity-50 shadow-sm shadow-rose-500/20"
+            >
+              {deleteAllSubmitting ? 'Deleting...' : 'Delete All Slots'}
             </button>
           </div>
         </div>

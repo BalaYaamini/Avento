@@ -4,6 +4,7 @@ import { useAuth, supabase } from '../context/AuthContext';
 import axios from 'axios';
 import { GeometricBlobDoodle, StickyNoteDoodle, SparkleDoodle } from '../components/Doodles';
 import OrganizingTeamTab from '../components/OrganizingTeamTab';
+import SlotManagementTab from '../components/SlotManagementTab';
 
 // Helper to convert DB timestamp to local YYYY-MM-DDTHH:mm string for datetime-local input
 const formatToDatetimeLocal = (dateStr) => {
@@ -562,7 +563,8 @@ ${proposer}`
     { id: 'documents', label: 'Documents', count: documents?.length || 0 },
     { id: 'permissions', label: 'Higher Official Permissions', count: officialPermissions.length },
     { id: 'team', label: 'Organizing Team', count: team?.length || 0 },
-    { id: 'timeline', label: 'Timeline', count: timeline?.length || 0 }
+    { id: 'timeline', label: 'Timeline', count: timeline?.length || 0 },
+    ...((event.has_slots || event.registration_type === 'slot_wise') ? [{ id: 'slots', label: 'Slot Schedule' }] : [])
   ];
 
   const getFileUrl = (url) => {
@@ -1019,6 +1021,8 @@ ${proposer}`
                     return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
                   case 'timeline':
                     return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
+                  case 'slots':
+                    return <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
                   default:
                     return null;
                 }
@@ -1070,9 +1074,12 @@ ${proposer}`
                         category: event.category || '',
                         venue: event.venue || '',
                         registrationType: event.registration_type || 'individual',
+                        hasSlots: Boolean(event.has_slots),
+                        durationDays: event.duration_days || 1,
                         minTeamSize: event.min_team_size || 1,
                         maxTeamSize: event.max_team_size || 1,
                         maxTeams: event.max_teams || '',
+                        capacity: event.capacity || '',
                         imageUrl: event.image_url || event.imageUrl || ''
                       });
                       setPosterFile(null);
@@ -1133,10 +1140,18 @@ ${proposer}`
                       <select
                         className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none cursor-pointer"
                         value={editFormData.registrationType}
-                        onChange={(e) => setEditFormData({...editFormData, registrationType: e.target.value})}
+                        onChange={(e) => {
+                          const rt = e.target.value;
+                          setEditFormData({
+                            ...editFormData,
+                            registrationType: rt,
+                            hasSlots: rt === 'slot_wise' ? true : editFormData.hasSlots
+                          });
+                        }}
                       >
                         <option value="individual">Individual Registration</option>
                         <option value="team">Team Registration</option>
+                        <option value="slot_wise">Slot-Wise Registration</option>
                       </select>
                     </div>
                     <div>
@@ -1183,6 +1198,55 @@ ${proposer}`
                         </div>
                       </>
                     )}
+
+                    {editFormData.registrationType === 'individual' && (
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Capacity (Seats)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                          value={editFormData.capacity}
+                          onChange={(e) => setEditFormData({...editFormData, capacity: e.target.value})}
+                          placeholder="Total seats available"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Slot-Wise Registration Toggle */}
+                  <div className="flex items-center justify-between p-3.5 bg-cyan-50/60 border border-cyan-200/60 rounded-xl">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800">Enable Slot-Wise Registration</h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Allow participants to select their convenient time slot</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editFormData.hasSlots}
+                        onChange={(e) => setEditFormData({
+                          ...editFormData,
+                          hasSlots: e.target.checked,
+                          registrationType: (!e.target.checked && editFormData.registrationType === 'slot_wise') ? 'individual' : editFormData.registrationType
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Event Duration (Days) */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Event Duration (Days)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="7"
+                      className="w-full sm:max-w-[160px] p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                      value={editFormData.durationDays}
+                      onChange={(e) => setEditFormData({...editFormData, durationDays: e.target.value})}
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">For 2+ day events, the Slot Schedule tab will ask for Day 1, Day 2… when creating slots, and slots are listed day-wise.</p>
                   </div>
 
                   <div>
@@ -1277,7 +1341,7 @@ ${proposer}`
                       <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/60">
                         <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Registration Type</span>
                         <p className="font-semibold text-slate-800 text-sm capitalize">
-                          {event.registration_type === 'team' ? 'Team Event' : 'Individual Event'}
+                          {event.registration_type === 'team' ? 'Team Event' : event.registration_type === 'slot_wise' ? 'Slot-Wise Event' : 'Individual Event'}{event.has_slots && event.registration_type !== 'slot_wise' ? ' (Slot-Wise)' : ''}
                         </p>
                       </div>
 
@@ -1304,6 +1368,18 @@ ${proposer}`
                           <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block mb-1">Reg. Deadline</span>
                           <p className="font-semibold text-slate-800 text-sm">
                             {new Date(event.registration_deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      )}
+
+                      {event.has_slots && (
+                        <div className="p-3.5 bg-cyan-50/80 rounded-2xl border border-cyan-200/60">
+                          <span className="text-cyan-600 font-bold text-[10px] uppercase tracking-wider block mb-1">Slot-Wise Registration</span>
+                          <p className="font-semibold text-cyan-800 text-sm flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            Enabled
                           </p>
                         </div>
                       )}
@@ -1728,6 +1804,18 @@ ${proposer}`
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB: SLOT SCHEDULE & MANAGEMENT */}
+          {activeTab === 'slots' && (event.has_slots || event.registration_type === 'slot_wise') && (
+            <div className="animate-fade-in">
+              <SlotManagementTab
+                eventId={proposalId}
+                event={event}
+                user={user}
+                hasFullAccess={Boolean(isCreator || isFaculty || user?.roles?.includes('admin') || user?.role === 'admin')}
+              />
             </div>
           )}
 

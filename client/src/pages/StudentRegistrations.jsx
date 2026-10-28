@@ -134,7 +134,7 @@ const StudentRegistrations = () => {
     try {
       const eventId = reg.eventId?.id || reg.eventId?._id || reg.event_id;
       const res = await axios.get(`/api/slots/event/${eventId}`);
-      setAvailableSlots(res.data || []);
+      setAvailableSlots(res.data?.slots || []);
     } catch (err) {
       console.error('Failed to fetch event slots:', err);
       setRescheduleFeedback({ type: 'error', message: 'Failed to load available slots.' });
@@ -155,7 +155,7 @@ const StudentRegistrations = () => {
     setRescheduleFeedback(null);
     try {
       await axios.put(`/api/slots/reschedule/${rescheduleReg.id}`, {
-        newSlotId: selectedNewSlotId
+        targetSlotId: selectedNewSlotId
       });
       setRescheduleFeedback({ type: 'success', message: 'Time slot changed successfully!' });
       setTimeout(() => {
