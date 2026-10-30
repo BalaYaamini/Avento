@@ -7,7 +7,7 @@ export const WORKSPACE_MODULES = [
   { id: 'discussion', name: 'Review & Discussion', desc: 'Team review & discussion' },
   { id: 'team', name: 'Organizing Team', desc: 'Organizing committee roster' },
   { id: 'registrations', name: 'Registrations & Teams', desc: 'Registrations & confirmed teams' },
-  { id: 'allocation', name: 'Team Allocation', desc: 'Team & participant allocations' },
+  { id: 'allocation', name: 'Allocation', desc: 'Problem statement & venue allocations' },
   { id: 'scoring', name: 'Scoring Board', desc: 'Scoring & leaderboard' },
   { id: 'periodic_attendance', name: 'Attendance & QR', desc: 'Periodic attendance & QR' },
   { id: 'id_cards', name: 'ID Cards', desc: 'Participant ID card generation' },

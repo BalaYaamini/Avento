@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('../config/supabaseClient');
 const { notifyUser } = require('../services/notificationService');
+const { resyncEventSlotCounts } = require('./slotController');
 
 const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
 
@@ -261,6 +262,9 @@ exports.registerForEvent = async (req, res) => {
         return res.status(400).json({ message: 'Please select a time slot to complete your registration.' });
       }
 
+      // Heal stale stored counts so the capacity check matches live occupancy
+      await resyncEventSlotCounts(eventId);
+
       // Check and atomically allocate slot
       const { data: slotAllocRes, error: slotAllocErr } = await supabase.rpc('allocate_event_slot_atomic', {
         p_slot_id: slotId
@@ -288,6 +292,7 @@ exports.registerForEvent = async (req, res) => {
     if (regErr) {
       if (event.has_slots && slotId) {
         await supabase.rpc('release_event_slot_atomic', { p_slot_id: slotId });
+        await resyncEventSlotCounts(eventId);
       }
       throw regErr;
     }
@@ -522,6 +527,9 @@ const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, r
         }
       }
 
+      // Reconcile stored slot counts with live occupancy so no slot stays "booked" after cancelling
+      await resyncEventSlotCounts(registration.event_id);
+
       if (eventDetails && teamRegs && team.status === 'registered') {
         await supabase.from('events').update({
           registered_count: Math.max(0, eventDetails.registered_count - acceptedMembersCount)
@@ -589,6 +597,9 @@ const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, r
           console.warn('Error releasing individual slot on cancellation:', slotErr.message);
         }
       }
+
+      // Reconcile stored slot counts with live occupancy so no slot stays "booked" after cancelling
+      await resyncEventSlotCounts(registration.event_id);
 
       if (eventDetails) {
         await supabase.from('events').update({
@@ -1207,6 +1218,9 @@ exports.registerTeamForEvent = async (req, res) => {
         return res.status(400).json({ message: 'Please select a time slot for your team registration.' });
       }
 
+      // Heal stale stored counts so the capacity check matches live occupancy
+      await resyncEventSlotCounts(eventId);
+
       // Check and atomically allocate slot
       const { data: slotAllocRes, error: slotAllocErr } = await supabase.rpc('allocate_event_slot_atomic', {
         p_slot_id: slotId
@@ -1232,6 +1246,7 @@ exports.registerTeamForEvent = async (req, res) => {
     if (teamErr) {
       if (event.has_slots && slotId) {
         await supabase.rpc('release_event_slot_atomic', { p_slot_id: slotId });
+        await resyncEventSlotCounts(eventId);
       }
       if (teamErr.code === '23505') {
         return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
@@ -1256,6 +1271,7 @@ exports.registerTeamForEvent = async (req, res) => {
     if (regErr) {
       if (event.has_slots && slotId) {
         await supabase.rpc('release_event_slot_atomic', { p_slot_id: slotId });
+        await resyncEventSlotCounts(eventId);
       }
       throw regErr;
     }
@@ -2519,6 +2535,9 @@ exports.adminCancelTeamRegistration = async (req, res) => {
         console.warn('Error releasing team slot in admin cancellation:', slotErr.message);
       }
     }
+
+    // Reconcile stored slot counts with live occupancy after the team is removed
+    await resyncEventSlotCounts(eventId);
 
     if (team.status === 'registered') {
       const { data: event } = await supabase.from('events').select('registered_count').eq('id', eventId).single();

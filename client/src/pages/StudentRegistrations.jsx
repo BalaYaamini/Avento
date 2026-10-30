@@ -3,10 +3,26 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Modal from '../components/Modal';
 import FeedbackModal from '../components/FeedbackModal';
-import { QRCodeSVG } from 'qrcode.react';
+import EventPassTicket from '../components/EventPassTicket';
 import { supabase, useAuth } from '../context/AuthContext';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import PaymentSection, { isValidUtr } from '../components/PaymentSection';
+
+// Resolve the effective slot for a registration.
+// Team registrations treat the team's slot as the source of truth (keeps every view consistent after a change).
+const resolveRegSlotId = (reg) => {
+  if (!reg) return '';
+  const teamSlotId = reg.teamId?.slot_id || reg.teamId?.slot?.id || '';
+  const ownSlotId = reg.slot_id || reg.slot?.id || '';
+  return reg.teamId ? (teamSlotId || ownSlotId) : (ownSlotId || teamSlotId);
+};
+
+const resolveRegSlot = (reg) => {
+  if (!reg) return null;
+  const teamSlot = reg.teamId?.slot || null;
+  const ownSlot = reg.slot || null;
+  return reg.teamId ? (teamSlot || ownSlot) : (ownSlot || teamSlot);
+};
 
 const StudentRegistrations = () => {
   const { user } = useAuth();
@@ -94,6 +110,17 @@ const StudentRegistrations = () => {
     }
   }, [registrations, isEditTeamOpen]);
 
+  // Keep the open pass modal in sync with the latest registration data
+  // (slot reschedules, team changes, attendance, etc.)
+  useEffect(() => {
+    if (qrModalData) {
+      const updatedReg = registrations.find(r => r.id === qrModalData.id);
+      if (updatedReg && JSON.stringify(updatedReg) !== JSON.stringify(qrModalData)) {
+        setQrModalData(updatedReg);
+      }
+    }
+  }, [registrations]);
+
   // Feedback & Allocation states
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -125,27 +152,57 @@ const StudentRegistrations = () => {
     }
   };
 
-  const openRescheduleModal = async (reg) => {
-    setRescheduleReg(reg);
-    const currentSlotId = reg.slot_id || reg.slot?.id || reg.teamId?.slot_id || reg.teamId?.slot?.id || '';
-    setSelectedNewSlotId(currentSlotId);
-    setRescheduleFeedback(null);
-    setLoadingSlots(true);
+  const loadRescheduleSlots = async (eventId, { silent = false } = {}) => {
+    if (!eventId) return;
+    if (!silent) setLoadingSlots(true);
     try {
-      const eventId = reg.eventId?.id || reg.eventId?._id || reg.event_id;
       const res = await axios.get(`/api/slots/event/${eventId}`);
       setAvailableSlots(res.data?.slots || []);
     } catch (err) {
       console.error('Failed to fetch event slots:', err);
-      setRescheduleFeedback({ type: 'error', message: 'Failed to load available slots.' });
+      if (!silent) setRescheduleFeedback({ type: 'error', message: 'Failed to load available slots.' });
     } finally {
-      setLoadingSlots(false);
+      if (!silent) setLoadingSlots(false);
     }
   };
 
+  const openRescheduleModal = async (reg) => {
+    setRescheduleReg(reg);
+    setSelectedNewSlotId(resolveRegSlotId(reg));
+    setRescheduleFeedback(null);
+    const eventId = reg.eventId?.id || reg.eventId?._id || reg.event_id;
+    await loadRescheduleSlots(eventId);
+  };
+
+  // Keep the reschedule list live while the modal is open: bookings/changes made by
+  // anyone on this event refresh the available slots and seat counts in place
+  useEffect(() => {
+    if (!rescheduleReg) return undefined;
+    const eventId = rescheduleReg.eventId?.id || rescheduleReg.eventId?._id || rescheduleReg.event_id;
+    if (!eventId) return undefined;
+
+    const channel = supabase
+      .channel(`live-reschedule-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        () => loadRescheduleSlots(eventId, { silent: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        () => loadRescheduleSlots(eventId, { silent: true })
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [rescheduleReg?.id]);
+
   const handleRescheduleSubmit = async () => {
-    if (!rescheduleReg || !selectedNewSlotId) return;
-    const currentSlotId = rescheduleReg.slot_id || rescheduleReg.slot?.id || rescheduleReg.teamId?.slot_id || rescheduleReg.teamId?.slot?.id || '';
+    if (!rescheduleReg || !selectedNewSlotId || rescheduling) return;
+    const currentSlotId = resolveRegSlotId(rescheduleReg);
     if (selectedNewSlotId === currentSlotId) {
       setRescheduleFeedback({ type: 'error', message: 'Please select a different slot to switch to.' });
       return;
@@ -154,15 +211,51 @@ const StudentRegistrations = () => {
     setRescheduling(true);
     setRescheduleFeedback(null);
     try {
-      await axios.put(`/api/slots/reschedule/${rescheduleReg.id}`, {
+      const res = await axios.put(`/api/slots/reschedule/${rescheduleReg.id}`, {
         targetSlotId: selectedNewSlotId
       });
-      setRescheduleFeedback({ type: 'success', message: 'Time slot changed successfully!' });
+      const updatedSlot = res.data?.slot || availableSlots.find(s => s.id === selectedNewSlotId) || null;
+      const targetRegId = rescheduleReg.id;
+      const targetTeamId = rescheduleReg.team_id || rescheduleReg.teamId?.id || null;
+
+      // Immediately update local registration state so the card & pass show the new slot right away
+      if (updatedSlot) {
+        setRegistrations(prev =>
+          prev.map(r => {
+            const matchesReg = r.id === targetRegId;
+            const matchesTeam = targetTeamId && (r.team_id === targetTeamId || r.teamId?.id === targetTeamId);
+            if (!matchesReg && !matchesTeam) return r;
+            return {
+              ...r,
+              slot_id: updatedSlot.id,
+              slot: updatedSlot,
+              teamId: r.teamId
+                ? { ...r.teamId, slot_id: updatedSlot.id, slot: updatedSlot }
+                : r.teamId
+            };
+          })
+        );
+        setRescheduleReg(prev =>
+          prev
+            ? {
+                ...prev,
+                slot_id: updatedSlot.id,
+                slot: updatedSlot,
+                teamId: prev.teamId
+                  ? { ...prev.teamId, slot_id: updatedSlot.id, slot: updatedSlot }
+                  : prev.teamId
+              }
+            : null
+        );
+      }
+
+      setRescheduleFeedback({ type: 'success', message: res.data?.message || 'Time slot changed successfully!' });
+      await fetchRegistrations({ silent: true });
+
       setTimeout(() => {
         setRescheduleReg(null);
         setSelectedNewSlotId('');
-        fetchRegistrations();
-      }, 1200);
+      }, 900);
     } catch (err) {
       console.error('Failed to reschedule slot:', err);
       setRescheduleFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to reschedule time slot.' });
@@ -202,18 +295,18 @@ const StudentRegistrations = () => {
     setTeamAllocations(allocMap);
   };
 
-  const fetchRegistrations = async () => {
+  const fetchRegistrations = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const res = await axios.get('/api/registrations/my-registrations');
       setRegistrations(res.data);
       fetchAllocationsForRegistrations(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch registrations. Please reload.');
+      if (!silent) setError('Failed to fetch registrations. Please reload.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -242,14 +335,21 @@ const StudentRegistrations = () => {
     fetchRegistrations();
     fetchFeedbackStatuses();
 
-    // Set up realtime subscription for team membership & problem statement slot changes
+    // Set up realtime subscription for team membership, slot changes & problem statement changes
     const regSubscription = supabase
       .channel('public:event_registrations')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'event_registrations' },
         () => {
-          fetchRegistrations();
+          fetchRegistrations({ silent: true });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_teams' },
+        () => {
+          fetchRegistrations({ silent: true });
         }
       )
       .subscribe();
@@ -260,7 +360,7 @@ const StudentRegistrations = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'event_problem_statements' },
         () => {
-          fetchRegistrations();
+          fetchRegistrations({ silent: true });
         }
       )
       .subscribe();
@@ -696,6 +796,7 @@ const StudentRegistrations = () => {
                 {registrations.filter(r => r.status === 'registered' || (r.status === 'pending' && r.teamId && r.teamId.leader_id === user?.id)).map((reg, i) => {
                   const evt = reg.eventId;
                   if (!evt) return null; // safety if event was deleted
+                  const slotInfo = resolveRegSlot(reg);
 
                   return (
                     <div 
@@ -736,16 +837,16 @@ const StudentRegistrations = () => {
                                   </svg>
                                   {formatDate(evt.date)}
                                 </div>
-                                {(reg.slot || reg.teamId?.slot) && (
+                                {slotInfo && (
                                   <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-violet-700 bg-violet-50 px-3 py-1.5 rounded-xl border border-violet-200/80 mt-2 w-fit">
                                     <span>⏰</span>
-                                    <span>Slot: <strong>{(reg.slot || reg.teamId?.slot).slot_name}</strong></span>
+                                    <span>Slot: <strong>{slotInfo.slot_name}</strong></span>
                                     <span>•</span>
-                                    <span>{(reg.slot || reg.teamId?.slot).slot_date} ({(reg.slot || reg.teamId?.slot).start_time} - {(reg.slot || reg.teamId?.slot).end_time})</span>
-                                    {(reg.slot || reg.teamId?.slot).venue_room && (
+                                    <span>{slotInfo.slot_date} ({slotInfo.start_time} - {slotInfo.end_time})</span>
+                                    {slotInfo.venue_room && (
                                       <>
                                         <span>•</span>
-                                        <span>📍 Room {(reg.slot || reg.teamId?.slot).venue_room}</span>
+                                        <span>📍 Room {slotInfo.venue_room}</span>
                                       </>
                                     )}
                                   </div>
@@ -851,7 +952,7 @@ const StudentRegistrations = () => {
                             className="px-4 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300 flex items-center gap-1.5"
                           >
                             <span>⏰</span>
-                            <span>Change Slot</span>
+                            <span>{slotInfo ? 'Change Slot' : 'Select Slot'}</span>
                           </button>
                         )}
                         {(() => {
@@ -971,8 +1072,10 @@ const StudentRegistrations = () => {
                         const allocData = teamAllocations[eventId];
                         if (!allocData) return null;
 
-                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message, venueRoom } = allocData;
+                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message, venueRoom, allocationConfig } = allocData;
                         const displayVenue = (venueRoom && venueRoom.trim()) ? venueRoom.trim() : 'Yet to assign';
+                        const psActive = allocationConfig?.problemStatement?.enabled !== false;
+                        const venueActive = allocationConfig?.venue?.enabled !== false;
 
                         // Only show for confirmed teams or individual registrations
                         if (!teamConfirmed) return null;
@@ -994,6 +1097,7 @@ const StudentRegistrations = () => {
                               </div>
 
                               <div className="space-y-2 text-xs">
+                                {psActive && (
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 space-y-1">
                                   <div className="text-[10px] font-extrabold uppercase tracking-wider text-text-secondary">Problem Statement</div>
                                   <div className="font-bold text-sm text-text-primary">
@@ -1003,12 +1107,16 @@ const StudentRegistrations = () => {
                                     <p className="text-xs text-text-secondary mt-1 leading-relaxed">{allocation.description}</p>
                                   )}
                                 </div>
+                                )}
 
+                                {venueActive && (
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 flex items-center justify-between">
                                   <span className="text-text-secondary font-semibold text-xs">📍 Allocated Venue / Room</span>
                                   <span className="font-extrabold text-cyan-600 dark:text-cyan-400 text-xs">{allocVenue}</span>
                                 </div>
+                                )}
 
+                                {psActive && (
                                 <div className="pt-1 flex justify-end">
                                   <button
                                     onClick={async () => {
@@ -1034,36 +1142,40 @@ const StudentRegistrations = () => {
                                     📄 Download Problem Statement PDF
                                   </button>
                                 </div>
+                                )}
                               </div>
                             </div>
                           );
                         }
 
-                        // 2. If unallocated and student hasn't scanned QR / checked in yet
-                        if (!checkedIn) {
+                        // 1b. Problem statement allocation disabled — show venue-only card (if venue enabled)
+                        if (!psActive) {
+                          if (!venueActive) return null;
                           return (
-                            <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in space-y-2">
+                            <div className="mt-4 p-4 bg-white/60 dark:bg-slate-900/60 border border-pastel-lavender/20 rounded-2xl animate-fade-in space-y-2">
                               <div className="flex items-center justify-between">
-                                <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <span>🔒</span>
-                                  <span>Problem Statement Selection & PDF</span>
+                                <div className="text-[11px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                                  <span>📍</span>
+                                  <span>Your Venue Allocation</span>
                                 </div>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                                  Check-in Required
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                                  displayVenue !== 'Yet to assign'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                }`}>
+                                  {displayVenue !== 'Yet to assign' ? 'Venue Assigned' : 'Yet to assign'}
                                 </span>
                               </div>
-                              
-                              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                                Attendance check-in is required before accessing the problem statement document or making a selection.
-                              </p>
-
-                              {displayVenue !== 'Yet to assign' && (
-                                <div className="text-xs font-semibold text-text-primary pt-1">
-                                  📍 Assigned Venue / Room: <span className="font-extrabold text-cyan-600">{displayVenue}</span>
-                                </div>
-                              )}
+                              <div className="text-xs font-semibold text-text-primary">
+                                📍 Venue / Room: <span className="font-extrabold text-cyan-600 dark:text-cyan-400">{displayVenue}</span>
+                              </div>
                             </div>
                           );
+                        }
+
+                        // 2. Not checked in yet — hide the allocation card until attendance check-in
+                        if (!checkedIn) {
+                          return null;
                         }
 
                         // 3. If checked in, but problem statement not selected yet and user is not team leader
@@ -2103,46 +2215,18 @@ const StudentRegistrations = () => {
           <Modal
             isOpen={!!qrModalData}
             onClose={() => setQrModalData(null)}
-            title="Event Pass"
+            title="Event Entry Pass"
+            subtitle="Show this official digital ticket with QR code at the venue check-in desk."
+            maxWidth="max-w-[820px]"
           >
-            <div className="flex flex-col items-center justify-center py-6 space-y-6">
-              <div className="text-center">
-                <h3 className="font-display font-bold text-lg text-slate-800">{qrModalData.eventId?.title}</h3>
-                <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
-                {(qrModalData.slot || qrModalData.teamId?.slot) && (
-                  <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 rounded-xl border border-violet-200 text-xs font-bold text-violet-700">
-                    <span>⏰</span>
-                    <span>Slot: {(qrModalData.slot || qrModalData.teamId?.slot).slot_name} • {(qrModalData.slot || qrModalData.teamId?.slot).slot_date} ({(qrModalData.slot || qrModalData.teamId?.slot).start_time} - {(qrModalData.slot || qrModalData.teamId?.slot).end_time})</span>
-                    {(qrModalData.slot || qrModalData.teamId?.slot).venue_room && <span>📍 Room {(qrModalData.slot || qrModalData.teamId?.slot).venue_room}</span>}
-                  </div>
-                )}
-              </div>
-              <div className="bg-[#FFFFFF] dark:bg-[#FFFFFF] !bg-[#FFFFFF] p-4 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center">
-                <QRCodeSVG 
-                  value={String(qrModalData.id || qrModalData.registration_id || qrModalData.user_id || 'EVENT_PASS')} 
-                  size={200} 
-                  level="H" 
-                  bgColor="#FFFFFF"
-                  fgColor="#000000"
-                  includeMargin={false} 
-                />
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-slate-600 font-medium">Show this QR code at the venue for attendance verification.</p>
-                {qrModalData.attendance_status === 'Present' && (
-                  <div className="mt-4 px-4 py-2 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
-                    <span>✓</span> Attendance Verified
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setQrModalData(null)}
-                className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
-              >
-                Close
-              </button>
+            <div className="py-2">
+              <EventPassTicket
+                registration={qrModalData}
+                user={user}
+                allocation={teamAllocations[qrModalData.event_id || qrModalData.eventId?.id]}
+                onClose={() => setQrModalData(null)}
+                showDownloadButton={true}
+              />
             </div>
           </Modal>
         )}
@@ -2216,11 +2300,11 @@ const StudentRegistrations = () => {
               if (rescheduling) return;
               setRescheduleReg(null);
             }}
-            title="Change Your Time Slot"
+            title={resolveRegSlot(rescheduleReg) ? 'Change Your Time Slot' : 'Select Your Time Slot'}
           >
             <div className="space-y-4">
               <p className="text-xs text-slate-600">
-                Select a new available time slot for <strong>{rescheduleReg.eventId?.title}</strong>. Your previous slot seat will be automatically released and assigned to your new selection.
+                Select an available time slot for <strong>{rescheduleReg.eventId?.title}</strong>. {resolveRegSlot(rescheduleReg) ? 'Your previous slot seat will be automatically released and assigned to your new selection.' : 'Your registration will be assigned to the selected slot immediately.'}
               </p>
 
               {rescheduleFeedback && (
@@ -2245,12 +2329,14 @@ const StudentRegistrations = () => {
                 </div>
               ) : (
                 <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                  {availableSlots.map(s => {
-                    const currentSlotId = rescheduleReg.slot_id || rescheduleReg.slot?.id || rescheduleReg.teamId?.slot_id || rescheduleReg.teamId?.slot?.id;
+                  {availableSlots
+                    .filter(s => s.status !== 'inactive' || s.id === resolveRegSlotId(rescheduleReg))
+                    .map(s => {
+                    const currentSlotId = resolveRegSlotId(rescheduleReg);
                     const isCurrent = s.id === currentSlotId;
                     const isSelected = s.id === selectedNewSlotId;
-                    const remaining = s.remaining_capacity ?? (s.max_capacity - s.allocated_count);
-                    const isFull = !isCurrent && remaining <= 0;
+                    const remaining = s.slots_remaining ?? s.remaining_capacity ?? Math.max(0, (Number(s.max_capacity) || 0) - (Number(s.allocated_count) || 0));
+                    const isFull = !isCurrent && (remaining <= 0 || s.is_full);
 
                     return (
                       <div
@@ -2325,7 +2411,7 @@ const StudentRegistrations = () => {
                 <button
                   type="button"
                   onClick={handleRescheduleSubmit}
-                  disabled={rescheduling || !selectedNewSlotId || selectedNewSlotId === (rescheduleReg.slot_id || rescheduleReg.slot?.id || rescheduleReg.teamId?.slot_id || rescheduleReg.teamId?.slot?.id)}
+                  disabled={rescheduling || !selectedNewSlotId || selectedNewSlotId === resolveRegSlotId(rescheduleReg)}
                   className="btn-primary px-5 py-2 text-xs font-bold rounded-xl text-white shadow-sm disabled:opacity-50 flex items-center gap-1.5"
                 >
                   {rescheduling ? 'Switching Slot...' : 'Confirm Slot Change'}

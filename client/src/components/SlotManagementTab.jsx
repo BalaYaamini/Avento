@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import { supabase } from '../context/AuthContext';
 import Modal from './Modal';
 
 const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
@@ -61,10 +62,12 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [deleteAllSubmitting, setDeleteAllSubmitting] = useState(false);
 
-  const fetchSlotOverview = async () => {
+  const fetchSlotOverview = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
-      setError('');
+      if (!silent) {
+        setLoading(true);
+        setError('');
+      }
       const res = await axios.get(`/api/slots/event/${eventId}/overview`);
       setSlots(res.data.slots || []);
       setRegistrationsBySlot(res.data.registrationsBySlot || {});
@@ -72,9 +75,9 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
       setSummary(res.data.summary || null);
     } catch (err) {
       console.error('Error fetching slot overview:', err);
-      setError(err.response?.data?.message || 'Failed to load time slots overview.');
+      if (!silent) setError(err.response?.data?.message || 'Failed to load time slots overview.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -82,6 +85,35 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
     if (eventId) {
       fetchSlotOverview();
     }
+  }, [eventId]);
+
+  // Live updates: any booking, slot change, reschedule or team change on this event
+  // refreshes the overview so organizers always see current data without reloading
+  useEffect(() => {
+    if (!eventId) return undefined;
+
+    const channel = supabase
+      .channel(`live-slot-overview-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotOverview({ silent: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotOverview({ silent: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_teams', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotOverview({ silent: true })
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [eventId]);
 
   // Multi-day event support: derive Day 1, Day 2, ... from event.date + duration_days

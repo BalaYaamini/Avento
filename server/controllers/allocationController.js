@@ -6,6 +6,38 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (str) => typeof str === 'string' && UUID_REGEX.test(str.trim());
 
+const DEFAULT_ALLOCATION_CONFIG = {
+  problemStatement: { enabled: true, method: 'leader' },
+  venue: { enabled: true, method: 'bulk' }
+};
+
+function normalizeAllocationConfig(raw) {
+  const cfg = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+  const ps = (cfg.problemStatement && typeof cfg.problemStatement === 'object') ? cfg.problemStatement : {};
+  const venue = (cfg.venue && typeof cfg.venue === 'object') ? cfg.venue : {};
+  return {
+    problemStatement: {
+      enabled: ps.enabled === undefined ? DEFAULT_ALLOCATION_CONFIG.problemStatement.enabled : !!ps.enabled,
+      method: ps.method === 'bulk' ? 'bulk' : 'leader'
+    },
+    venue: {
+      enabled: venue.enabled === undefined ? DEFAULT_ALLOCATION_CONFIG.venue.enabled : !!venue.enabled,
+      method: venue.method === 'individual' ? 'individual' : 'bulk'
+    }
+  };
+}
+
+function extractAllocationConfig(event) {
+  let bag = event && event.certificate_fields_config;
+  if (typeof bag === 'string') {
+    try { bag = JSON.parse(bag); } catch (e) { bag = null; }
+  }
+  if (bag && typeof bag === 'object' && !Array.isArray(bag) && bag.allocation_config) {
+    return normalizeAllocationConfig(bag.allocation_config);
+  }
+  return normalizeAllocationConfig(null);
+}
+
 /**
  * Helper: Generate System Problem Statement PDF Document Buffer using pdf-lib
  */
@@ -418,11 +450,56 @@ exports.getProblemStatements = async (req, res) => {
       problemStatements,
       totalTeams,
       totalAllocated: totalCapacity,
-      pdfUrl: event.problem_statement_pdf_url || null
+      pdfUrl: event.problem_statement_pdf_url || null,
+      allocationConfig: extractAllocationConfig(event)
     });
   } catch (err) {
     console.error('getProblemStatements error:', err.message);
     res.status(500).json({ message: 'Failed to fetch problem statements.', error: err.message });
+  }
+};
+
+/**
+ * PUT /api/allocations/event/:eventId/config
+ * Save allocation settings (enable/disable problem statement & venue allocation + method) (Organizers)
+ */
+exports.saveAllocationConfig = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const incoming = (req.body && req.body.allocationConfig) ? req.body.allocationConfig : req.body;
+
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOrganizer = req.user.roles.includes('admin') || await checkCoreOrganizerAccess(eventId, event, req.user);
+    if (!isOrganizer) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const normalized = normalizeAllocationConfig(incoming);
+
+    let bag = event.certificate_fields_config;
+    if (typeof bag === 'string') {
+      try { bag = JSON.parse(bag); } catch (e) { bag = {}; }
+    }
+    if (!bag || typeof bag !== 'object' || Array.isArray(bag)) bag = {};
+    bag.allocation_config = normalized;
+
+    const { data: updatedEvent, error: updErr } = await supabase
+      .from('events')
+      .update({ certificate_fields_config: bag })
+      .eq('id', eventId)
+      .select('*')
+      .maybeSingle();
+    if (updErr) throw updErr;
+
+    res.json({
+      message: 'Allocation settings saved.',
+      allocationConfig: extractAllocationConfig(updatedEvent || { certificate_fields_config: bag })
+    });
+  } catch (err) {
+    console.error('saveAllocationConfig error:', err.message);
+    res.status(500).json({ message: 'Failed to save allocation settings.', error: err.message });
   }
 };
 
@@ -614,6 +691,16 @@ exports.selectProblemStatement = async (req, res) => {
 
     if (!problemStatementId) {
       return res.status(400).json({ message: 'Please select a valid problem statement.' });
+    }
+
+    const { data: gateEvent } = await supabase
+      .from('events')
+      .select('certificate_fields_config')
+      .eq('id', eventId)
+      .maybeSingle();
+    const gateConfig = extractAllocationConfig(gateEvent);
+    if (!gateConfig.problemStatement.enabled) {
+      return res.status(403).json({ message: 'Problem statement allocation is disabled for this event.' });
     }
 
     // Step 1: Find student's registration
@@ -966,7 +1053,8 @@ exports.getEventAllocations = async (req, res) => {
 
     res.json({
       allocations: combinedList,
-      problemStatements
+      problemStatements,
+      allocationConfig: extractAllocationConfig(event)
     });
   } catch (err) {
     console.error('getEventAllocations error:', err.message);
@@ -1022,26 +1110,30 @@ exports.getAllocationTemplateData = async (req, res) => {
     const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [String(a.team_id).trim(), a]));
     const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [String(a.user_id).trim(), a]));
 
+    const allocCfg = extractAllocationConfig(event);
+
     const teamRows = (teams || []).map(t => {
       const alloc = teamAllocMap.get(String(t.id).trim());
-      return {
+      const row = {
         'Team ID': t.id,
-        'Team Name': t.name || 'Unnamed Team',
-        'Venue / Room': alloc ? alloc.venue_room : '',
-        'Problem Statement': alloc ? alloc.problem_statement : ''
+        'Team Name': t.name || 'Unnamed Team'
       };
+      if (allocCfg.venue.enabled) row['Venue / Room'] = alloc ? alloc.venue_room : '';
+      if (allocCfg.problemStatement.enabled) row['Problem Statement'] = alloc ? alloc.problem_statement : '';
+      return row;
     });
 
     const indivRows = (indivRegs || []).map(r => {
       const alloc = userAllocMap.get(String(r.user_id).trim());
       const profile = indivProfileMap.get(r.user_id);
       const name = profile ? profile.name : 'Individual Participant';
-      return {
+      const row = {
         'Team ID': `user_${r.user_id}`,
-        'Team Name': `${name} (Individual)`,
-        'Venue / Room': alloc ? alloc.venue_room : '',
-        'Problem Statement': alloc ? alloc.problem_statement : ''
+        'Team Name': `${name} (Individual)`
       };
+      if (allocCfg.venue.enabled) row['Venue / Room'] = alloc ? alloc.venue_room : '';
+      if (allocCfg.problemStatement.enabled) row['Problem Statement'] = alloc ? alloc.problem_statement : '';
+      return row;
     });
 
     res.json([...teamRows, ...indivRows]);
@@ -1171,7 +1263,8 @@ exports.getEventAllocations = async (req, res) => {
 
     res.json({
       allocations: combinedList,
-      problemStatements
+      problemStatements,
+      allocationConfig: extractAllocationConfig(event)
     });
   } catch (err) {
     console.error('getEventAllocations error:', err.message);
@@ -1227,26 +1320,30 @@ exports.getAllocationTemplateData = async (req, res) => {
     const teamAllocMap = new Map(allocations.filter(a => a.team_id).map(a => [String(a.team_id).trim(), a]));
     const userAllocMap = new Map(allocations.filter(a => a.user_id).map(a => [String(a.user_id).trim(), a]));
 
+    const allocCfg = extractAllocationConfig(event);
+
     const teamRows = (teams || []).map(t => {
       const alloc = teamAllocMap.get(String(t.id).trim());
-      return {
+      const row = {
         'Team ID': t.id,
-        'Team Name': t.name || 'Unnamed Team',
-        'Venue / Room': alloc ? alloc.venue_room : '',
-        'Problem Statement': alloc ? alloc.problem_statement : ''
+        'Team Name': t.name || 'Unnamed Team'
       };
+      if (allocCfg.venue.enabled) row['Venue / Room'] = alloc ? alloc.venue_room : '';
+      if (allocCfg.problemStatement.enabled) row['Problem Statement'] = alloc ? alloc.problem_statement : '';
+      return row;
     });
 
     const indivRows = (indivRegs || []).map(r => {
       const alloc = userAllocMap.get(String(r.user_id).trim());
       const profile = indivProfileMap.get(r.user_id);
       const name = profile ? profile.name : 'Individual Participant';
-      return {
+      const row = {
         'Team ID': `user_${r.user_id}`,
-        'Team Name': `${name} (Individual)`,
-        'Venue / Room': alloc ? alloc.venue_room : '',
-        'Problem Statement': alloc ? alloc.problem_statement : ''
+        'Team Name': `${name} (Individual)`
       };
+      if (allocCfg.venue.enabled) row['Venue / Room'] = alloc ? alloc.venue_room : '';
+      if (allocCfg.problemStatement.enabled) row['Problem Statement'] = alloc ? alloc.problem_statement : '';
+      return row;
     });
 
     res.json([...teamRows, ...indivRows]);
@@ -1277,6 +1374,8 @@ exports.saveTeamAllocations = async (req, res) => {
     if (!isOrganizer) {
       return res.status(403).json({ message: 'Access denied.' });
     }
+
+    const allocationConfig = extractAllocationConfig(event);
 
     const { data: validTeams } = await supabase
       .from('event_teams')
@@ -1318,12 +1417,16 @@ exports.saveTeamAllocations = async (req, res) => {
       const item = allocations[i];
       let rawId = String(item.teamId || item['Team ID'] || '').trim();
       const teamName = String(item.teamName || item['Team Name'] || 'Row ' + (i + 1)).trim();
-      const inputVenueRoom = item.venueRoom !== undefined && item.venueRoom !== null
+      let inputVenueRoom = item.venueRoom !== undefined && item.venueRoom !== null
         ? String(item.venueRoom || item['Venue / Room'] || '').trim()
         : String(item['Venue / Room'] || item.venueRoom || '').trim();
-      const inputProblemStatement = item.problemStatement !== undefined && item.problemStatement !== null
+      let inputProblemStatement = item.problemStatement !== undefined && item.problemStatement !== null
         ? String(item.problemStatement || item['Problem Statement'] || '').trim()
         : String(item['Problem Statement'] || item.problemStatement || '').trim();
+
+      // Ignore inputs for disabled allocation types (preserve existing values instead)
+      if (!allocationConfig.venue.enabled) inputVenueRoom = '';
+      if (!allocationConfig.problemStatement.enabled) inputProblemStatement = '';
 
       let targetTeamId = null;
       let targetUserId = null;
@@ -1485,6 +1588,13 @@ exports.getMyTeamAllocation = async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user.id;
 
+    const { data: allocCfgEvent } = await supabase
+      .from('events')
+      .select('certificate_fields_config')
+      .eq('id', eventId)
+      .maybeSingle();
+    const allocationConfig = extractAllocationConfig(allocCfgEvent);
+
     // Check 1: Find student's registration
     const { data: registration } = await supabase
       .from('event_registrations')
@@ -1499,6 +1609,7 @@ exports.getMyTeamAllocation = async (req, res) => {
         teamConfirmed: false,
         checkedIn: false,
         isLeader: false,
+        allocationConfig,
         message: 'No active registration found for this event.'
       });
     }
@@ -1530,6 +1641,7 @@ exports.getMyTeamAllocation = async (req, res) => {
           checkedIn: isCheckedIn,
           isLeader,
           isIndividual: false,
+          allocationConfig,
           message: 'Team registration is not confirmed yet.'
         });
       }
@@ -1604,6 +1716,7 @@ exports.getMyTeamAllocation = async (req, res) => {
         isLeader,
         isIndividual: !isTeamReg,
         venueRoom: venueDisplay,
+        allocationConfig,
         availableProblemStatements: []
       });
     }
@@ -1617,7 +1730,11 @@ exports.getMyTeamAllocation = async (req, res) => {
         isLeader,
         isIndividual: !isTeamReg,
         venueRoom: venueDisplay,
-        message: 'Problem statement selection will be available after attendance check-in.'
+        allocationConfig,
+        availableProblemStatements: [],
+        message: allocationConfig.problemStatement.enabled
+          ? 'Problem statement selection will be available after attendance check-in.'
+          : 'No pending selections for this event.'
       });
     }
 
@@ -1650,10 +1767,13 @@ exports.getMyTeamAllocation = async (req, res) => {
       isLeader,
       isIndividual: !isTeamReg,
       venueRoom: venueDisplay,
-      availableProblemStatements,
-      message: isTeamReg 
-        ? (isLeader ? 'Please select a problem statement for your team.' : 'Waiting for your team leader to make a selection.')
-        : 'Please select a problem statement.'
+      allocationConfig,
+      availableProblemStatements: allocationConfig.problemStatement.enabled ? availableProblemStatements : [],
+      message: !allocationConfig.problemStatement.enabled
+        ? 'No pending selections for this event.'
+        : (isTeamReg
+          ? (isLeader ? 'Please select a problem statement for your team.' : 'Waiting for your team leader to make a selection.')
+          : 'Please select a problem statement.')
     });
   } catch (err) {
     console.error('getMyTeamAllocation error:', err.message);

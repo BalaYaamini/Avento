@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, supabase } from '../context/AuthContext';
 import EventCard from '../components/EventCard';
 import Modal from '../components/Modal';
 import { 
@@ -109,19 +109,88 @@ const Home = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState('');
   const [selectedTeamSlotId, setSelectedTeamSlotId] = useState('');
+  const [selectedSlotDate, setSelectedSlotDate] = useState('');
 
-  const fetchSlotsForEvent = async (eventId) => {
+  const getEventDateStr = (event) => {
+    if (!event?.date) return '';
+    const d = new Date(event.date);
+    return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+  };
+
+  const slotEvent = confirmRegEvent || teamRegEvent;
+  const slotDateFallback = getEventDateStr(slotEvent);
+
+  const slotDayKey = (slot) => slot.slot_date || slotDateFallback || 'undated';
+
+  const slotDayOptions = useMemo(() => {
+    const keys = new Set(eventSlots.map(slotDayKey));
+    return [...keys].sort();
+  }, [eventSlots, slotDateFallback]);
+
+  const activeSlotDate = slotDayOptions.includes(selectedSlotDate)
+    ? selectedSlotDate
+    : (slotDayOptions[0] || '');
+
+  const isMultiDaySlots = slotDayOptions.length > 1;
+
+  const slotsForActiveDate = eventSlots.filter(slot => slotDayKey(slot) === activeSlotDate);
+
+  // Guard against a selected slot filling up while the modal is open
+  const selectedSlotIsFull = !!eventSlots.find(s => s.id === selectedSlotId)?.is_full;
+  const selectedTeamSlotIsFull = !!eventSlots.find(s => s.id === selectedTeamSlotId)?.is_full;
+
+  const formatSlotDateLabel = (key) => {
+    if (!key || key === 'undated') return 'Date to be announced';
+    const d = new Date(`${key}T00:00:00`);
+    if (isNaN(d.getTime())) return key;
+    return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const handleSlotDateChange = (value) => {
+    setSelectedSlotDate(value);
+    setSelectedSlotId('');
+    setSelectedTeamSlotId('');
+  };
+
+  const fetchSlotsForEvent = async (eventId, { silent = false } = {}) => {
     try {
-      setLoadingSlots(true);
+      if (!silent) setLoadingSlots(true);
       const res = await axios.get(`/api/slots/event/${eventId}`);
       setEventSlots(res.data.slots || []);
     } catch (err) {
       console.error('Error fetching event slots:', err);
-      setEventSlots([]);
+      if (!silent) setEventSlots([]);
     } finally {
-      setLoadingSlots(false);
+      if (!silent) setLoadingSlots(false);
     }
   };
+
+  // Keep slot availability live while a registration modal is open: any booking,
+  // slot change or organizer edit on this event refreshes the list for every viewer
+  useEffect(() => {
+    const activeEvent = isConfirmRegOpen ? confirmRegEvent : (isTeamRegOpen ? teamRegEvent : null);
+    if (!activeEvent?.has_slots) return undefined;
+    const eventId = activeEvent._id || activeEvent.id;
+    if (!eventId) return undefined;
+
+    const channel = supabase
+      .channel(`live-slots-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotsForEvent(eventId, { silent: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotsForEvent(eventId, { silent: true })
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isConfirmRegOpen, isTeamRegOpen, confirmRegEvent?._id, confirmRegEvent?.id, teamRegEvent?._id, teamRegEvent?.id]);
 
   // Join Team Request States
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -211,6 +280,7 @@ const Home = () => {
       fetchSlotsForEvent(event._id || event.id);
       setSelectedSlotId('');
       setSelectedTeamSlotId('');
+      setSelectedSlotDate('');
     }
 
     if (event.registration_type === 'team') {
@@ -939,7 +1009,9 @@ const Home = () => {
                 <div>
                   <span className="block text-[9px] font-bold text-slate-600 uppercase tracking-wider">Date</span>
                   <span className="font-semibold text-slate-800">
-                    {new Date(confirmRegEvent.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    {isMultiDaySlots && confirmRegEvent.has_slots
+                      ? `${formatSlotDateLabel(slotDayOptions[0])} – ${formatSlotDateLabel(slotDayOptions[slotDayOptions.length - 1])}`
+                      : new Date(confirmRegEvent.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                   </span>
                 </div>
                 <div>
@@ -960,10 +1032,15 @@ const Home = () => {
 
               {/* Slot Selection for Individual Registration */}
               {confirmRegEvent.has_slots && (
-                <div className="space-y-2 pt-2 border-t border-slate-200/20">
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
-                    Choose Your Preferred Time Slot *
-                  </label>
+                <div className="space-y-3 pt-3 border-t border-slate-200/20">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                      Book a Slot in 2 Steps
+                    </label>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Pick a date first, then choose one of the available time slots below.
+                    </p>
+                  </div>
                   {loadingSlots ? (
                     <div className="p-4 text-center text-xs text-slate-400 animate-pulse">Loading available time slots...</div>
                   ) : eventSlots.length === 0 ? (
@@ -971,41 +1048,78 @@ const Home = () => {
                       No time slots configured yet.
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {eventSlots.map(slot => {
-                        const isSelected = selectedSlotId === slot.id;
-                        const isFull = slot.is_full;
-                        return (
-                          <div
-                            key={slot.id}
-                            onClick={() => !isFull && setSelectedSlotId(slot.id)}
-                            className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
-                              isFull
-                                ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
-                                : isSelected
-                                ? 'border-violet-500 bg-violet-50/90 dark:bg-violet-950/40 font-bold ring-2 ring-violet-500/20'
-                                : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
-                            }`}
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-violet-600 text-white text-[9px] font-extrabold">1</span>
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                            {isMultiDaySlots ? 'Select a Date *' : 'Event Date'}
+                          </span>
+                        </div>
+                        {isMultiDaySlots ? (
+                          <select
+                            value={activeSlotDate}
+                            onChange={(e) => handleSlotDateChange(e.target.value)}
+                            className="w-full bg-white text-slate-800 border-2 border-violet-400 rounded-xl px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-600 transition-all"
                           >
-                            <div>
-                              <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
-                                <span>{slot.slot_name}</span>
-                                <span className="text-[11px] font-semibold text-slate-500">
-                                  ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                            {slotDayOptions.map(dayKey => (
+                              <option key={dayKey} value={dayKey}>
+                                {formatSlotDateLabel(dayKey)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800">
+                            {formatSlotDateLabel(activeSlotDate)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-violet-600 text-white text-[9px] font-extrabold">2</span>
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Select a Time Slot *</span>
+                        </div>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {slotsForActiveDate.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                              No slots available on this date.
+                            </div>
+                          ) : slotsForActiveDate.map(slot => {
+                            const isSelected = selectedSlotId === slot.id;
+                            const isFull = slot.is_full;
+                            return (
+                              <div
+                                key={slot.id}
+                                onClick={() => !isFull && setSelectedSlotId(slot.id)}
+                                className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
+                                  isFull
+                                    ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'border-violet-500 bg-violet-50/90 dark:bg-violet-950/40 font-bold ring-2 ring-violet-500/20'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                    <span>{slot.slot_name}</span>
+                                    <span className="text-[11px] font-semibold text-slate-500">
+                                      ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                                    </span>
+                                  </div>
+                                  {slot.venue_room && (
+                                    <div className="text-[10px] text-slate-400 mt-0.5">{slot.venue_room}</div>
+                                  )}
+                                </div>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
+                                }`}>
+                                  {isFull ? 'Full' : `${slot.slots_remaining} Seats Left`}
                                 </span>
                               </div>
-                              {slot.venue_room && (
-                                <div className="text-[10px] text-slate-400 mt-0.5">📍 {slot.venue_room}</div>
-                              )}
-                            </div>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
-                            }`}>
-                              {isFull ? 'Full' : `${slot.slots_remaining} Seats Left`}
-                            </span>
-                          </div>
-                        );
-                      })}
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1038,7 +1152,7 @@ const Home = () => {
                 </button>
                 <button
                   type="button"
-                  disabled={confirmRegEvent.has_slots && !selectedSlotId}
+                  disabled={confirmRegEvent.has_slots && (!selectedSlotId || selectedSlotIsFull)}
                   onClick={() => handleConfirmRegister(confirmRegEvent._id || confirmRegEvent.id)}
                   className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
@@ -1132,10 +1246,15 @@ const Home = () => {
 
                 {/* Slot Selection for Team Registration */}
                 {teamRegEvent.has_slots && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
-                      Choose Team Time Slot *
-                    </label>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                        Book a Slot in 2 Steps
+                      </label>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Pick a date first, then choose one of the available time slots below.
+                      </p>
+                    </div>
                     {loadingSlots ? (
                       <div className="p-4 text-center text-xs text-slate-400 animate-pulse">Loading available time slots...</div>
                     ) : eventSlots.length === 0 ? (
@@ -1143,41 +1262,78 @@ const Home = () => {
                         No time slots configured yet.
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                        {eventSlots.map(slot => {
-                          const isSelected = selectedTeamSlotId === slot.id;
-                          const isFull = slot.is_full;
-                          return (
-                            <div
-                              key={slot.id}
-                              onClick={() => !isFull && setSelectedTeamSlotId(slot.id)}
-                              className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
-                                isFull
-                                  ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
-                                  : isSelected
-                                  ? 'border-fuchsia-500 bg-fuchsia-50/90 dark:bg-fuchsia-950/40 font-bold ring-2 ring-fuchsia-500/20'
-                                  : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
-                              }`}
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-fuchsia-600 text-white text-[9px] font-extrabold">1</span>
+                            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                              {isMultiDaySlots ? 'Select a Date *' : 'Event Date'}
+                            </span>
+                          </div>
+                          {isMultiDaySlots ? (
+                            <select
+                              value={activeSlotDate}
+                              onChange={(e) => handleSlotDateChange(e.target.value)}
+                              className="w-full bg-white text-slate-800 border-2 border-fuchsia-400 rounded-xl px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-fuchsia-600 transition-all"
                             >
-                              <div>
-                                <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
-                                  <span>{slot.slot_name}</span>
-                                  <span className="text-[11px] font-semibold text-slate-500">
-                                    ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                              {slotDayOptions.map(dayKey => (
+                                <option key={dayKey} value={dayKey}>
+                                  {formatSlotDateLabel(dayKey)}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800">
+                              {formatSlotDateLabel(activeSlotDate)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-fuchsia-600 text-white text-[9px] font-extrabold">2</span>
+                            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Select a Time Slot *</span>
+                          </div>
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {slotsForActiveDate.length === 0 ? (
+                              <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                                No slots available on this date.
+                              </div>
+                            ) : slotsForActiveDate.map(slot => {
+                              const isSelected = selectedTeamSlotId === slot.id;
+                              const isFull = slot.is_full;
+                              return (
+                                <div
+                                  key={slot.id}
+                                  onClick={() => !isFull && setSelectedTeamSlotId(slot.id)}
+                                  className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
+                                    isFull
+                                      ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                                      : isSelected
+                                      ? 'border-fuchsia-500 bg-fuchsia-50/90 dark:bg-fuchsia-950/40 font-bold ring-2 ring-fuchsia-500/20'
+                                      : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                      <span>{slot.slot_name}</span>
+                                      <span className="text-[11px] font-semibold text-slate-500">
+                                        ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                                      </span>
+                                    </div>
+                                    {slot.venue_room && (
+                                      <div className="text-[10px] text-slate-400 mt-0.5">{slot.venue_room}</div>
+                                    )}
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
+                                  }`}>
+                                    {isFull ? 'Full' : `${slot.slots_remaining} Teams/Seats Left`}
                                   </span>
                                 </div>
-                                {slot.venue_room && (
-                                  <div className="text-[10px] text-slate-400 mt-0.5">📍 {slot.venue_room}</div>
-                                )}
-                              </div>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
-                              }`}>
-                                {isFull ? 'Full' : `${slot.slots_remaining} Teams/Seats Left`}
-                              </span>
-                            </div>
-                          );
-                        })}
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1285,7 +1441,7 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable}
+                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable || (teamRegEvent.has_slots && (!selectedTeamSlotId || selectedTeamSlotIsFull))}
                   className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
                   {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}

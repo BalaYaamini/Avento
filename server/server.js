@@ -157,7 +157,19 @@ app.listen(PORT, async () => {
     } else {
       console.log('✅ Supabase READ test passed. Events table accessible.');
     }
+
+    // Self-heal: reconcile stored slot counts with live occupancy for every slot-enabled
+    // event so no slot shows as "booked" after a change and all accounts read the same data
+    const { data: slotRows } = await supabase.from('event_slots').select('event_id');
+    const slotEventIds = [...new Set((slotRows || []).map(s => s.event_id).filter(Boolean))];
+    if (slotEventIds.length > 0) {
+      const { resyncEventSlotCounts } = require('./controllers/slotController');
+      for (const id of slotEventIds) {
+        await resyncEventSlotCounts(id);
+      }
+      console.log(`✅ Slot counts reconciled with live registrations for ${slotEventIds.length} event(s).`);
+    }
   } catch (e) {
-    console.error('⚠️  Supabase connectivity test error:', e.message);
+    console.error('⚠️  Startup connectivity/reconciliation error:', e.message);
   }
 });

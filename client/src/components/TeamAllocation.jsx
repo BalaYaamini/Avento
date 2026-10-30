@@ -2,6 +2,68 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
+const DEFAULT_ALLOC_CONFIG = {
+  problemStatement: { enabled: true, method: 'leader' },
+  venue: { enabled: true, method: 'bulk' }
+};
+
+const normalizeConfig = (raw) => {
+  const cfg = (raw && typeof raw === 'object') ? raw : {};
+  const ps = (cfg.problemStatement && typeof cfg.problemStatement === 'object') ? cfg.problemStatement : {};
+  const venue = (cfg.venue && typeof cfg.venue === 'object') ? cfg.venue : {};
+  return {
+    problemStatement: {
+      enabled: ps.enabled === undefined ? DEFAULT_ALLOC_CONFIG.problemStatement.enabled : !!ps.enabled,
+      method: ps.method === 'bulk' ? 'bulk' : 'leader'
+    },
+    venue: {
+      enabled: venue.enabled === undefined ? DEFAULT_ALLOC_CONFIG.venue.enabled : !!venue.enabled,
+      method: venue.method === 'individual' ? 'individual' : 'bulk'
+    }
+  };
+};
+
+const ToggleSwitch = ({ checked, onChange, labelOn = 'Enabled', labelOff = 'Disabled' }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
+    className={`relative inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-extrabold uppercase tracking-wider transition-all ${
+      checked
+        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+        : 'bg-slate-500/10 border-slate-500/20 text-text-secondary'
+    }`}
+  >
+    <span
+      className={`inline-block w-8 h-4 rounded-full relative transition-all ${
+        checked ? 'bg-emerald-500' : 'bg-slate-400/60'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${
+          checked ? 'left-[18px]' : 'left-0.5'
+        }`}
+      />
+    </span>
+    <span>{checked ? labelOn : labelOff}</span>
+  </button>
+);
+
+const MethodChip = ({ active, onClick, children }) => (
+  <button
+    type="button"
+    onClick={(e) => { e.stopPropagation(); onClick(); }}
+    className={`px-3 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider border transition-all ${
+      active
+        ? 'bg-cyan-600 text-white border-cyan-600 shadow-sm'
+        : 'bg-white/60 dark:bg-slate-900/60 text-text-secondary border-pastel-lavender/25 hover:border-cyan-500/40 hover:text-cyan-600'
+    }`}
+  >
+    {children}
+  </button>
+);
+
 const TeamAllocation = ({ eventId, eventTitle }) => {
   const [allocations, setAllocations] = useState([]);
   const [problemStatements, setProblemStatements] = useState([]);
@@ -10,8 +72,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
 
-  // Allocation Method State: 'excel' | 'leader'
-  const [allocationMethod, setAllocationMethod] = useState('leader');
+  // Allocation settings: enable/disable problem statement & venue, each with bulk or individual method
+  const [allocConfig, setAllocConfig] = useState(DEFAULT_ALLOC_CONFIG);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // Config State
   const [psList, setPsList] = useState([]);
@@ -35,6 +98,12 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const pdfFileInputRef = useRef(null);
 
+  const psEnabled = allocConfig.problemStatement.enabled;
+  const venueEnabled = allocConfig.venue.enabled;
+  const psUsesBulk = psEnabled && allocConfig.problemStatement.method === 'bulk';
+  const venueUsesBulk = venueEnabled && allocConfig.venue.method === 'bulk';
+  const showBulkSection = psUsesBulk || venueUsesBulk;
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -49,6 +118,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       if (allocRes.data) {
         const teamList = allocRes.data.allocations || (Array.isArray(allocRes.data) ? allocRes.data : []);
         setAllocations(teamList);
+        if (allocRes.data.allocationConfig) {
+          setAllocConfig(normalizeConfig(allocRes.data.allocationConfig));
+        }
       }
 
       if (psRes.data) {
@@ -57,6 +129,9 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         setTotalTeams(psRes.data.totalTeams || 0);
         if (psRes.data.pdfUrl) {
           setPdfInfo({ pdfUrl: psRes.data.pdfUrl, fileName: 'Problem_Statement.pdf' });
+        }
+        if (psRes.data.allocationConfig) {
+          setAllocConfig(normalizeConfig(psRes.data.allocationConfig));
         }
 
         // Initialize local config form
@@ -87,7 +162,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       }
     } catch (err) {
       console.error('Error fetching allocation data:', err);
-      setError(err.response?.data?.message || 'Failed to load team allocation data.');
+      setError(err.response?.data?.message || 'Failed to load allocation data.');
     } finally {
       setLoading(false);
     }
@@ -132,6 +207,31 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       fetchData();
     }
   }, [eventId]);
+
+  // Save Allocation Settings (enable/disable + method per type)
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    setStatusMessage(null);
+    try {
+      const res = await axios.put(`/api/allocations/event/${eventId}/config`, {
+        allocationConfig: allocConfig
+      });
+      setAllocConfig(normalizeConfig(res.data?.allocationConfig || allocConfig));
+      setStatusMessage({ type: 'success', text: res.data?.message || 'Allocation settings saved.' });
+    } catch (err) {
+      console.error('Save allocation settings error:', err);
+      setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save allocation settings.' });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const updateAllocConfig = (type, patch) => {
+    setAllocConfig(prev => ({
+      ...prev,
+      [type]: { ...prev[type], ...patch }
+    }));
+  };
 
   // Add new Problem Statement Row
   const handleAddProblemStatement = () => {
@@ -210,8 +310,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Team Allocations');
-      const filename = `${(eventTitle || 'Event').replace(/[^a-zA-Z0-9]/g, '_')}_Team_Allocation_Template.xlsx`;
+      XLSX.utils.book_append_sheet(wb, ws, 'Allocations');
+      const filename = `${(eventTitle || 'Event').replace(/[^a-zA-Z0-9]/g, '_')}_Allocation_Template.xlsx`;
       XLSX.writeFile(wb, filename);
       setStatusMessage({ type: 'success', text: 'Allocation template downloaded successfully.' });
     } catch (err) {
@@ -242,14 +342,15 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         }
 
         const validTeamMap = new Map(allocations.map(a => [a.teamId, a.teamName]));
+        const knownPsTitles = new Set(psList.map(p => String(p.title || '').trim().toLowerCase()));
         const seenTeams = new Set();
         let allRowsValid = true;
 
         const parsedPreview = jsonRows.map((row, index) => {
           const teamId = String(row['Team ID'] || row['teamId'] || row['TeamId'] || row['team_id'] || '').trim();
           const teamName = String(row['Team Name'] || row['teamName'] || row['TeamName'] || row['team_name'] || 'Row ' + (index + 1)).trim();
-          const venueRoom = String(row['Venue / Room'] || row['Venue/Room'] || row['Venue'] || row['Room'] || row['venueRoom'] || '').trim();
-          const problemStatement = String(row['Problem Statement'] || row['ProblemStatement'] || row['Problem'] || row['problemStatement'] || '').trim();
+          const venueRoom = venueEnabled ? String(row['Venue / Room'] || row['Venue/Room'] || row['Venue'] || row['Room'] || row['venueRoom'] || '').trim() : '';
+          const problemStatement = psEnabled ? String(row['Problem Statement'] || row['ProblemStatement'] || row['Problem'] || row['problemStatement'] || '').trim() : '';
 
           let rowStatus = 'Valid';
           let errorMessage = '';
@@ -258,9 +359,13 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             rowStatus = 'Invalid';
             errorMessage = `Team not found for this event: ${teamName} (${teamId || 'No ID'})`;
             allRowsValid = false;
-          } else if (!venueRoom) {
+          } else if (venueEnabled && !venueRoom) {
             rowStatus = 'Invalid';
             errorMessage = `Venue / Room is missing for team: ${teamName}`;
+            allRowsValid = false;
+          } else if (psEnabled && problemStatement && !knownPsTitles.has(problemStatement.toLowerCase())) {
+            rowStatus = 'Invalid';
+            errorMessage = `Problem statement not found: "${problemStatement}" for team: ${teamName}`;
             allRowsValid = false;
           } else if (seenTeams.has(teamId)) {
             rowStatus = 'Invalid';
@@ -299,12 +404,12 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
     setSaving(true);
     setStatusMessage(null);
     try {
-      const payload = previewData.map(p => ({
-        teamId: p.teamId,
-        teamName: p.teamName,
-        venueRoom: p.venueRoom,
-        problemStatement: p.problemStatement
-      }));
+      const payload = previewData.map(p => {
+        const entry = { teamId: p.teamId, teamName: p.teamName };
+        if (venueEnabled) entry.venueRoom = p.venueRoom;
+        if (psEnabled) entry.problemStatement = p.problemStatement;
+        return entry;
+      });
 
       const res = await axios.post(`/api/allocations/event/${eventId}`, { allocations: payload });
       setStatusMessage({ type: 'success', text: res.data.message || 'Allocations saved successfully!' });
@@ -312,7 +417,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       fetchData();
     } catch (err) {
       console.error('Save allocations error:', err);
-      setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save team allocations.' });
+      setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to save allocations.' });
     } finally {
       setSaving(false);
     }
@@ -320,18 +425,20 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
   // 4. Inline Edit Save (Venue or Problem Statement independently)
   const handleSaveInlineEdit = async (teamId) => {
-    if (!editForm.venueRoom.trim() && !editForm.problemStatement.trim()) {
-      setStatusMessage({ type: 'error', text: 'Please enter a Venue / Room or select a Problem Statement.' });
+    const venueVal = venueEnabled ? editForm.venueRoom.trim() : '';
+    const psVal = psEnabled ? editForm.problemStatement.trim() : '';
+
+    if (!venueVal && !psVal) {
+      setStatusMessage({ type: 'error', text: 'Please enter a value for at least one enabled allocation type.' });
       return;
     }
 
     try {
+      const entry = { teamId };
+      if (venueEnabled) entry.venueRoom = venueVal;
+      if (psEnabled) entry.problemStatement = psVal;
       await axios.post(`/api/allocations/event/${eventId}`, {
-        allocations: [{
-          teamId,
-          venueRoom: editForm.venueRoom.trim(),
-          problemStatement: editForm.problemStatement.trim()
-        }]
+        allocations: [entry]
       });
       setEditingTeamId(null);
       setStatusMessage({ type: 'success', text: 'Allocation updated successfully.' });
@@ -357,9 +464,10 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
 
   const filteredAllocations = allocations.filter(a => {
     const q = searchQuery.toLowerCase();
-    return a.teamName.toLowerCase().includes(q) ||
-           a.venueRoom.toLowerCase().includes(q) ||
-           a.problemStatement.toLowerCase().includes(q);
+    if (a.teamName.toLowerCase().includes(q)) return true;
+    if (venueEnabled && (a.venueRoom || '').toLowerCase().includes(q)) return true;
+    if (psEnabled && (a.problemStatement || '').toLowerCase().includes(q)) return true;
+    return false;
   });
 
   return (
@@ -370,7 +478,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-heading text-xl font-bold text-text-primary">
-              Team <span className="text-cyan-500">Allocation</span>
+              <span className="text-cyan-500">Allocation</span>
             </h2>
             {eventTitle && (
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-semibold border border-cyan-500/20">
@@ -379,7 +487,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             )}
           </div>
           <p className="text-text-secondary text-xs mt-1">
-            Configure problem statements, assign capacities, and manage team allocations.
+            Enable problem statement and/or venue allocation, then assign them in bulk or individually.
           </p>
         </div>
       </div>
@@ -436,8 +544,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               <thead>
                 <tr className="bg-white/40 dark:bg-slate-800/40 text-text-secondary text-[10px] font-bold uppercase tracking-wider border-b border-pastel-lavender/20">
                   <th className="px-4 py-3">Team Name</th>
-                  <th className="px-4 py-3">Venue / Room</th>
-                  <th className="px-4 py-3">Problem Statement</th>
+                  {venueEnabled && <th className="px-4 py-3">Venue / Room</th>}
+                  {psEnabled && <th className="px-4 py-3">Problem Statement</th>}
                   <th className="px-4 py-3 text-center">Status</th>
                 </tr>
               </thead>
@@ -445,8 +553,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                 {previewData.map((row, idx) => (
                   <tr key={idx} className={row.status === 'Valid' ? 'hover:bg-emerald-500/5' : 'bg-red-500/5 hover:bg-red-500/10'}>
                     <td className="px-4 py-3 font-bold text-text-primary">{row.teamName}</td>
-                    <td className="px-4 py-3 font-semibold text-text-primary">{row.venueRoom || '—'}</td>
-                    <td className="px-4 py-3 text-text-secondary max-w-xs truncate">{row.problemStatement || '—'}</td>
+                    {venueEnabled && <td className="px-4 py-3 font-semibold text-text-primary">{row.venueRoom || '—'}</td>}
+                    {psEnabled && <td className="px-4 py-3 text-text-secondary max-w-xs truncate">{row.problemStatement || '—'}</td>}
                     <td className="px-4 py-3 text-center">
                       {row.status === 'Valid' ? (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Valid</span>
@@ -465,123 +573,156 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       )}
 
       {/* ================================================== */}
-      {/* 1. ALLOCATION METHOD SELECTOR (EITHER / OR TOGGLE) */}
+      {/* 1. ALLOCATION SETTINGS (ENABLE / DISABLE PER TYPE) */}
       {/* ================================================== */}
       <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl p-6 border border-pastel-lavender/20 shadow-soft space-y-4">
-        <div>
-          <h3 className="font-heading text-sm font-extrabold uppercase tracking-wider text-text-primary flex items-center gap-2">
-            <span>⚙ Allocation Method</span>
-          </h3>
-          <p className="text-text-secondary text-xs mt-1">
-            Choose how problem statement & venue allocations will be assigned to participating teams.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-heading text-sm font-extrabold uppercase tracking-wider text-text-primary flex items-center gap-2">
+              <span>⚙ Allocation Settings</span>
+            </h3>
+            <p className="text-text-secondary text-xs mt-1">
+              Enable or disable problem statement and venue allocation. Each enabled type can be allocated in bulk or individually.
+            </p>
+          </div>
+          <button
+            onClick={handleSaveSettings}
+            disabled={savingSettings}
+            className="btn-primary px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md disabled:opacity-40 transition-all whitespace-nowrap"
+          >
+            {savingSettings ? 'Saving Settings...' : '💾 Save Settings'}
+          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          {/* METHOD A: BULK EXCEL ALLOCATION */}
-          <div
-            onClick={() => setAllocationMethod('excel')}
-            className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between space-y-4 ${
-              allocationMethod === 'excel'
-                ? 'bg-cyan-500/10 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
-                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-cyan-500/40 opacity-75 hover:opacity-100'
-            }`}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-lg font-bold">
-                    📊
-                  </span>
-                  <h4 className="font-heading font-bold text-sm text-text-primary">
-                    Bulk Excel Allocation
-                  </h4>
-                </div>
-                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                  allocationMethod === 'excel'
-                    ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
+
+          {/* PROBLEM STATEMENT TOGGLE CARD */}
+          <div className={`rounded-2xl p-5 border-2 transition-all space-y-4 ${
+            psEnabled
+              ? 'bg-cyan-500/10 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
+              : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 opacity-75'
+          }`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-9 h-9 rounded-xl border flex items-center justify-center text-lg font-bold ${
+                  psEnabled
+                    ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20'
                     : 'bg-slate-500/10 text-text-secondary border-slate-500/20'
                 }`}>
-                  {allocationMethod === 'excel' ? '✓ Active Method' : 'Select'}
+                  📌
                 </span>
+                <div>
+                  <h4 className="font-heading font-bold text-sm text-text-primary">Problem Statement</h4>
+                  <p className="text-[10px] text-text-secondary">Allocate problem statements to teams</p>
+                </div>
               </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Download pre-filled team list as Excel, fill in problem statements & venue rooms, and upload to assign allocations in bulk.
-              </p>
+              <ToggleSwitch
+                checked={psEnabled}
+                onChange={(val) => updateAllocConfig('problemStatement', { enabled: val })}
+              />
             </div>
 
-            <button
-              type="button"
-              className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition-all ${
-                allocationMethod === 'excel'
-                  ? 'bg-cyan-600 text-white shadow-sm'
-                  : 'bg-slate-500/10 text-text-secondary hover:bg-cyan-500/10 hover:text-cyan-600'
-              }`}
-            >
-              {allocationMethod === 'excel' ? 'Active Allocation Mode' : 'Use Bulk Excel Allocation'}
-            </button>
+            {psEnabled && (
+              <div className="space-y-2 pt-1 border-t border-cyan-500/10">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary">Allocation Method</span>
+                <div className="flex flex-wrap gap-2">
+                  <MethodChip
+                    active={allocConfig.problemStatement.method === 'bulk'}
+                    onClick={() => updateAllocConfig('problemStatement', { method: 'bulk' })}
+                  >
+                    📊 Bulk Excel
+                  </MethodChip>
+                  <MethodChip
+                    active={allocConfig.problemStatement.method === 'leader'}
+                    onClick={() => updateAllocConfig('problemStatement', { method: 'leader' })}
+                  >
+                    🎯 Individual / Team Leader
+                  </MethodChip>
+                </div>
+                <p className="text-[11px] text-text-secondary leading-relaxed pt-1">
+                  {allocConfig.problemStatement.method === 'bulk'
+                    ? 'Assign problem statements to all teams at once via Excel upload, or edit individually in the overview table below.'
+                    : 'Configure statements & slot capacities. Team Leaders self-select after QR check-in, or allocate individually in the overview table.'}
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* METHOD B: TEAM LEADER SELECTION */}
-          <div
-            onClick={() => setAllocationMethod('leader')}
-            className={`cursor-pointer rounded-2xl p-5 border-2 transition-all flex flex-col justify-between space-y-4 ${
-              allocationMethod === 'leader'
-                ? 'bg-cyan-500/10 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
-                : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 hover:border-cyan-500/40 opacity-75 hover:opacity-100'
-            }`}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 flex items-center justify-center text-lg font-bold">
-                    🎯
-                  </span>
-                  <h4 className="font-heading font-bold text-sm text-text-primary">
-                    Team Leader Selection
-                  </h4>
-                </div>
-                <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                  allocationMethod === 'leader'
-                    ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
+          {/* VENUE TOGGLE CARD */}
+          <div className={`rounded-2xl p-5 border-2 transition-all space-y-4 ${
+            venueEnabled
+              ? 'bg-cyan-500/10 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
+              : 'bg-white/60 dark:bg-slate-900/60 border-pastel-lavender/20 opacity-75'
+          }`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-9 h-9 rounded-xl border flex items-center justify-center text-lg font-bold ${
+                  venueEnabled
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                     : 'bg-slate-500/10 text-text-secondary border-slate-500/20'
                 }`}>
-                  {allocationMethod === 'leader' ? '✓ Active Method' : 'Select'}
+                  📍
                 </span>
+                <div>
+                  <h4 className="font-heading font-bold text-sm text-text-primary">Venue / Room</h4>
+                  <p className="text-[10px] text-text-secondary">Allocate venue rooms to teams</p>
+                </div>
               </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Configure problem statements & slot capacities. Present Team Leaders select available problem statements after QR check-in.
-              </p>
+              <ToggleSwitch
+                checked={venueEnabled}
+                onChange={(val) => updateAllocConfig('venue', { enabled: val })}
+              />
             </div>
 
-            <button
-              type="button"
-              className={`w-full py-2 px-4 rounded-xl text-xs font-bold transition-all ${
-                allocationMethod === 'leader'
-                  ? 'bg-cyan-600 text-white shadow-sm'
-                  : 'bg-slate-500/10 text-text-secondary hover:bg-cyan-500/10 hover:text-cyan-600'
-              }`}
-            >
-              {allocationMethod === 'leader' ? 'Active Allocation Mode' : 'Use Team Leader Selection'}
-            </button>
+            {venueEnabled && (
+              <div className="space-y-2 pt-1 border-t border-emerald-500/10">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary">Allocation Method</span>
+                <div className="flex flex-wrap gap-2">
+                  <MethodChip
+                    active={allocConfig.venue.method === 'bulk'}
+                    onClick={() => updateAllocConfig('venue', { method: 'bulk' })}
+                  >
+                    📊 Bulk Excel
+                  </MethodChip>
+                  <MethodChip
+                    active={allocConfig.venue.method === 'individual'}
+                    onClick={() => updateAllocConfig('venue', { method: 'individual' })}
+                  >
+                    ✏️ Individual (per team)
+                  </MethodChip>
+                </div>
+                <p className="text-[11px] text-text-secondary leading-relaxed pt-1">
+                  {allocConfig.venue.method === 'bulk'
+                    ? 'Assign venue rooms to all teams at once via Excel upload.'
+                    : 'Assign venue rooms one team at a time using the overview table below.'}
+                </p>
+              </div>
+            )}
           </div>
 
         </div>
+
+        {!psEnabled && !venueEnabled && (
+          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-600 dark:text-amber-400">
+            ⚠ Both allocation types are disabled. Enable Problem Statement and/or Venue allocation to start assigning.
+          </div>
+        )}
       </div>
 
       {/* ================================================== */}
-      {/* 2. MODE A: BULK EXCEL ALLOCATION WORKFLOW          */}
+      {/* 2. BULK EXCEL WORKFLOW (ANY ENABLED TYPE ON BULK)  */}
       {/* ================================================== */}
-      {allocationMethod === 'excel' && (
+      {showBulkSection && (psEnabled || venueEnabled) && (
         <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 shadow-soft p-6 space-y-4 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-pastel-lavender/20 pb-3">
             <div>
               <h3 className="font-heading font-bold text-sm text-text-primary flex items-center gap-2">
-                <span>📊 Bulk Excel Allocation Mode</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Active</span>
+                <span>📊 Bulk Excel Allocation</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Bulk</span>
               </h3>
-              <p className="text-xs text-text-secondary mt-0.5">Download pre-filled team spreadsheet, assign problem statements & venues, and upload to apply allocations.</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Template columns: Team ID, Team Name{venueUsesBulk ? ', Venue / Room' : ''}{psUsesBulk ? ', Problem Statement' : ''}.
+              </p>
             </div>
           </div>
 
@@ -613,7 +754,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                   <span>Upload Filled Template</span>
                 </div>
                 <p className="text-xs text-text-secondary mt-2 leading-relaxed">
-                  Upload the completed Excel file to apply problem statement & venue allocations to all teams.
+                  Upload the completed Excel file to apply allocations to all teams in bulk.
                 </p>
               </div>
               <input
@@ -635,14 +776,14 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       )}
 
       {/* ================================================== */}
-      {/* 3. MODE B: TEAM LEADER SELECTION WORKFLOW         */}
+      {/* 3. PROBLEM STATEMENT CONFIGURATION (WHEN ENABLED) */}
       {/* ================================================== */}
-      {allocationMethod === 'leader' && (
+      {psEnabled && (
         <div className="space-y-6 animate-fade-in">
 
           {/* CAPACITY SUMMARY CARDS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
+
             {/* Card 1: Eligible Teams */}
             <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 p-5 shadow-soft flex items-center justify-between">
               <div>
@@ -674,7 +815,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-pastel-lavender/20">
               <div>
                 <h3 className="font-heading font-bold text-base text-text-primary">Configure Problem Statements</h3>
-                <p className="text-xs text-text-secondary">Add, edit, or remove problem statements for team leaders to choose from.</p>
+                <p className="text-xs text-text-secondary">Add, edit, or remove problem statements for bulk upload and team leader selection.</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -737,7 +878,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                    
+
                     <div className="md:col-span-2">
                       <label className="block text-[10px] font-bold text-text-secondary uppercase mb-1">
                         PS Code
@@ -803,17 +944,21 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
       )}
 
       {/* ================================================== */}
-      {/* 5. TEAM ALLOCATION OVERVIEW TABLE (ALWAYS VISIBLE) */}
+      {/* 4. ALLOCATION OVERVIEW TABLE (ALWAYS VISIBLE)     */}
       {/* ================================================== */}
       <div className="bg-white/40 dark:bg-slate-800/40 backdrop-blur-md rounded-2xl border border-pastel-lavender/20 shadow-soft overflow-hidden space-y-0">
-        
+
         {/* Table Title Bar */}
         <div className="p-5 border-b border-pastel-lavender/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
             <h3 className="font-heading font-bold text-base text-text-primary flex items-center gap-2">
-              <span>📋 Team Allocation Overview</span>
+              <span>📋 Allocation Overview</span>
             </h3>
-            <p className="text-xs text-text-secondary">Central monitor of all confirmed teams and their assigned allocations.</p>
+            <p className="text-xs text-text-secondary">
+              {psEnabled || venueEnabled
+                ? 'Monitor and manage allocations for all confirmed teams and individual participants.'
+                : 'Enable an allocation type in settings to start assigning.'}
+            </p>
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
@@ -833,7 +978,7 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
         {loading ? (
           <div className="p-8 text-center space-y-3">
             <div className="animate-spin w-8 h-8 border-4 border-pastel-lavender border-t-transparent rounded-full mx-auto" />
-            <p className="text-xs font-semibold text-text-secondary">Loading team allocations...</p>
+            <p className="text-xs font-semibold text-text-secondary">Loading allocations...</p>
           </div>
         ) : error ? (
           <div className="p-8 text-center">
@@ -844,7 +989,11 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
           <div className="p-12 text-center text-text-secondary space-y-2">
             <div className="text-3xl">📌</div>
             <h4 className="font-bold text-text-primary text-base">No Allocations Found</h4>
-            <p className="text-xs max-w-sm mx-auto">Teams will appear here once registered. Problem statements can be selected by team leaders or allocated in bulk.</p>
+            <p className="text-xs max-w-sm mx-auto">
+              {psEnabled || venueEnabled
+                ? 'Teams will appear here once registered. Assign allocations in bulk via Excel or individually per team.'
+                : 'Problem statement and venue allocation are currently disabled in settings.'}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -852,8 +1001,8 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
               <thead>
                 <tr className="bg-white/40 dark:bg-slate-900/40 text-text-secondary text-[10px] font-bold uppercase tracking-wider border-b border-pastel-lavender/20">
                   <th className="px-6 py-4">Team Name</th>
-                  <th className="px-6 py-4">Venue / Room</th>
-                  <th className="px-6 py-4">Problem Statement</th>
+                  {venueEnabled && <th className="px-6 py-4">Venue / Room</th>}
+                  {psEnabled && <th className="px-6 py-4">Problem Statement</th>}
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -868,45 +1017,49 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                     {/* EDIT ALLOCATION MODE */}
                     {editingTeamId === team.teamId ? (
                       <>
-                        <td className="px-6 py-3">
-                          <input
-                            type="text"
-                            value={editForm.venueRoom}
-                            onChange={(e) => setEditForm({ ...editForm, venueRoom: e.target.value })}
-                            className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
-                            placeholder="e.g. Room 101"
-                          />
-                        </td>
-                        <td className="px-6 py-3">
-                          {psList.length > 0 ? (
-                            <select
-                              value={editForm.problemStatement}
-                              onChange={(e) => {
-                                const selectedPsTitle = e.target.value;
-                                const matchedPs = psList.find(p => p.title === selectedPsTitle);
-                                setEditForm({
-                                  ...editForm,
-                                  problemStatement: selectedPsTitle,
-                                  venueRoom: matchedPs?.venueRoom || editForm.venueRoom
-                                });
-                              }}
-                              className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
-                            >
-                              <option value="">-- Select Problem Statement --</option>
-                              {psList.map((p, i) => (
-                                <option key={p.id || i} value={p.title}>{p.title}</option>
-                              ))}
-                            </select>
-                          ) : (
+                        {venueEnabled && (
+                          <td className="px-6 py-3">
                             <input
                               type="text"
-                              value={editForm.problemStatement}
-                              onChange={(e) => setEditForm({ ...editForm, problemStatement: e.target.value })}
+                              value={editForm.venueRoom}
+                              onChange={(e) => setEditForm({ ...editForm, venueRoom: e.target.value })}
                               className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
-                              placeholder="e.g. AI System Design"
+                              placeholder="e.g. Room 101"
                             />
-                          )}
-                        </td>
+                          </td>
+                        )}
+                        {psEnabled && (
+                          <td className="px-6 py-3">
+                            {psList.length > 0 ? (
+                              <select
+                                value={editForm.problemStatement}
+                                onChange={(e) => {
+                                  const selectedPsTitle = e.target.value;
+                                  const matchedPs = psList.find(p => p.title === selectedPsTitle);
+                                  setEditForm({
+                                    ...editForm,
+                                    problemStatement: selectedPsTitle,
+                                    venueRoom: (venueEnabled && matchedPs?.venueRoom) ? matchedPs.venueRoom : editForm.venueRoom
+                                  });
+                                }}
+                                className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                              >
+                                <option value="">-- Select Problem Statement --</option>
+                                {psList.map((p, i) => (
+                                  <option key={p.id || i} value={p.title}>{p.title}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={editForm.problemStatement}
+                                onChange={(e) => setEditForm({ ...editForm, problemStatement: e.target.value })}
+                                className="w-full bg-white dark:bg-slate-900 border border-cyan-500 rounded-lg px-2.5 py-1 text-xs text-text-primary focus:outline-none"
+                                placeholder="e.g. AI System Design"
+                              />
+                            )}
+                          </td>
+                        )}
                         <td className="px-6 py-4">
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-500">Editing</span>
                         </td>
@@ -927,12 +1080,16 @@ const TeamAllocation = ({ eventId, eventTitle }) => {
                       </>
                     ) : (
                       <>
-                        <td className="px-6 py-4 font-bold text-cyan-600 dark:text-cyan-400">
-                          {team.venueRoom && team.venueRoom.trim() ? `📍 ${team.venueRoom.trim()}` : <span className="text-amber-500 font-semibold">Yet to assign</span>}
-                        </td>
-                        <td className="px-6 py-4 text-text-primary max-w-sm truncate">
-                          {team.problemStatement ? `📌 ${team.problemStatementCode ? `[${team.problemStatementCode}] ` : ''}${team.problemStatement}` : <span className="text-text-secondary italic">Not assigned</span>}
-                        </td>
+                        {venueEnabled && (
+                          <td className="px-6 py-4 font-bold text-cyan-600 dark:text-cyan-400">
+                            {team.venueRoom && team.venueRoom.trim() ? `📍 ${team.venueRoom.trim()}` : <span className="text-amber-500 font-semibold">Yet to assign</span>}
+                          </td>
+                        )}
+                        {psEnabled && (
+                          <td className="px-6 py-4 text-text-primary max-w-sm truncate">
+                            {team.problemStatement ? `📌 ${team.problemStatementCode ? `[${team.problemStatementCode}] ` : ''}${team.problemStatement}` : <span className="text-text-secondary italic">Not assigned</span>}
+                          </td>
+                        )}
                         <td className="px-6 py-4">
                           {team.isAllocated ? (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
