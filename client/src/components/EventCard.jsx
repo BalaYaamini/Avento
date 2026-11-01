@@ -11,7 +11,7 @@ import {
   PinDoodle
 } from './Doodles';
 
-const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onViewScores, onCancelRegister }) => {
+const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOrganizer, joinTeamEnabled, requestStatus, onRegister, onJoinTeam, isSubmitting, onViewOrganizers, onViewScores, onCancelRegister, cancelDisabled = false }) => {
   const { user } = useAuth();
   const [showPosterZoom, setShowPosterZoom] = useState(false);
 
@@ -307,7 +307,9 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                   <button
                     type="button"
                     onClick={onCancelRegister}
-                    className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
+                    disabled={cancelDisabled}
+                    title={cancelDisabled ? 'Locked after panel allocation' : undefined}
+                    className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50"
                   >
                     Cancel Registration
                   </button>
@@ -334,7 +336,9 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                   <button
                     type="button"
                     onClick={onCancelRegister}
-                    className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity"
+                    disabled={cancelDisabled}
+                    title={cancelDisabled ? 'Locked after panel allocation' : undefined}
+                    className="w-full text-center py-1 text-xs font-bold text-pastel-coral hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:opacity-50"
                   >
                     Cancel Registration
                   </button>

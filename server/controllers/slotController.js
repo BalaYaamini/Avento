@@ -1,9 +1,37 @@
 const supabase = require('../config/supabaseClient');
 const { checkCoreOrganizerAccess } = require('./eventController');
-const { sendNotification, sendEmailNotification } = require('../services/notificationService');
+const { notifyUser } = require('../services/notificationService');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUUID = (str) => typeof str === 'string' && UUID_REGEX.test(str.trim());
+
+// Time-of-day in minutes — robust for both "HH:MM" input and Postgres TIME
+// values like "09:00:00".
+const timeToMinutes = (t) => {
+  const [h, m] = String(t || '').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+const slotDayKey = (d) => (d ? String(d) : null);
+const slotRoomKey = (r) => String(r || '').trim().toLowerCase();
+
+// True when two slots sit on the same day (a missing date matches any day),
+// in the same room, and their time windows intersect. Back-to-back slots
+// (end == next start) never clash.
+const slotsClash = (a, b) => {
+  const dayA = slotDayKey(a.slot_date);
+  const dayB = slotDayKey(b.slot_date);
+  if (dayA !== null && dayB !== null && dayA !== dayB) return false;
+  if (slotRoomKey(a.venue_room) !== slotRoomKey(b.venue_room)) return false;
+  return timeToMinutes(a.start_time) < timeToMinutes(b.end_time)
+    && timeToMinutes(a.end_time) > timeToMinutes(b.start_time);
+};
+
+const describeSlot = (s) => {
+  const day = s.slot_date ? String(s.slot_date) : 'date TBD';
+  const room = slotRoomKey(s.venue_room) ? ` in ${String(s.venue_room).trim()}` : '';
+  return `"${s.slot_name}" (${day}, ${String(s.start_time).substring(0, 5)} - ${String(s.end_time).substring(0, 5)}${room})`;
+};
 
 /**
  * GET /api/events/:eventId/slots
@@ -249,7 +277,8 @@ const getSlotsOverview = async (req, res) => {
     const enrichedSlots = (slots || []).map(slot => {
       const maxCap = Number(slot.max_capacity) || 0;
       const slotRegs = registrationsBySlot[slot.id] || [];
-      const allocated = slotRegs.length || Number(slot.allocated_count) || 0;
+      // One seat per team, one per individual registration (matches the atomic allocation RPCs)
+      const allocated = new Set(slotRegs.map(r => r.team_id ? `team_${r.team_id}` : `reg_${r.id}`)).size;
       const attendedCount = slotRegs.filter(r => r.attendance_status === 'present' || r.status === 'attended').length;
       const slotsRemaining = Math.max(0, maxCap - allocated);
       const isFull = allocated >= maxCap || slot.status === 'full';
@@ -295,6 +324,58 @@ const getSlotsOverview = async (req, res) => {
   } catch (err) {
     console.error('Error in getSlotsOverview:', err);
     return res.status(500).json({ message: 'Internal server error', error: err.message });
+  }
+};
+
+/**
+ * Reconcile stored slot counts (allocated_count / status) with live occupancy.
+ * Seat semantics match the atomic allocation RPCs: one seat per team,
+ * one seat per individual registration.
+ */
+const resyncEventSlotCounts = async (eventId) => {
+  try {
+    if (!isUUID(eventId)) return;
+
+    const { data: slots, error: slotsErr } = await supabase
+      .from('event_slots')
+      .select('id, max_capacity, status, allocated_count')
+      .eq('event_id', eventId);
+    if (slotsErr || !slots || slots.length === 0) return;
+
+    const { data: regs, error: regsErr } = await supabase
+      .from('event_registrations')
+      .select('id, team_id, slot_id, event_teams:team_id(slot_id)')
+      .eq('event_id', eventId)
+      .not('status', 'in', '("cancelled","rejected","expired")');
+    if (regsErr) {
+      console.warn('resyncEventSlotCounts: could not read live occupancy:', regsErr.message);
+      return;
+    }
+
+    const seatsBySlot = new Map();
+    (regs || []).forEach(r => {
+      const slotId = r.slot_id || r.event_teams?.slot_id;
+      if (!slotId) return;
+      const seatKey = r.team_id ? `team_${r.team_id}` : `reg_${r.id}`;
+      if (!seatsBySlot.has(slotId)) seatsBySlot.set(slotId, new Set());
+      seatsBySlot.get(slotId).add(seatKey);
+    });
+
+    for (const slot of slots) {
+      const allocated = (seatsBySlot.get(slot.id) || new Set()).size;
+      const status = slot.status === 'inactive'
+        ? 'inactive'
+        : (allocated >= (Number(slot.max_capacity) || 0) ? 'full' : 'active');
+
+      if (allocated !== Number(slot.allocated_count) || status !== slot.status) {
+        await supabase
+          .from('event_slots')
+          .update({ allocated_count: allocated, status, updated_at: new Date().toISOString() })
+          .eq('id', slot.id);
+      }
+    }
+  } catch (err) {
+    console.warn('resyncEventSlotCounts warning:', err.message);
   }
 };
 
@@ -346,6 +427,21 @@ const createSlot = async (req, res) => {
       allocated_count: 0,
       status: 'active'
     };
+
+    // Refuse to create a slot that clashes with an existing one (same day,
+    // same room, overlapping time) — duplicates at the same time confuse
+    // students and organizers alike.
+    const { data: existingSlots } = await supabase
+      .from('event_slots')
+      .select('slot_name, slot_date, start_time, end_time, venue_room')
+      .eq('event_id', eventId);
+
+    const clash = (existingSlots || []).find(s => slotsClash(newSlot, s));
+    if (clash) {
+      return res.status(409).json({
+        message: `A slot at this time already exists: ${describeSlot(clash)}. Change the date, time or room to avoid duplicates.`
+      });
+    }
 
     const { data: inserted, error: insertErr } = await supabase
       .from('event_slots')
@@ -422,9 +518,39 @@ const bulkCreateSlots = async (req, res) => {
       return res.status(400).json({ message: 'No valid slots provided. Each slot needs slot_name, start_time, and end_time.' });
     }
 
+    // Skip slots that clash with slots already stored for this event (or with
+    // an earlier slot in this same batch): same day, same room, overlapping
+    // time. Re-running auto-generation must never create duplicate batches.
+    const { data: existingSlots } = await supabase
+      .from('event_slots')
+      .select('slot_name, slot_date, start_time, end_time, venue_room')
+      .eq('event_id', eventId);
+
+    const taken = [...(existingSlots || [])];
+    const accepted = [];
+    const skipped = [];
+    for (const s of formattedSlots) {
+      if (taken.some(t => slotsClash(s, t))) {
+        skipped.push(s);
+        continue;
+      }
+      accepted.push(s);
+      taken.push(s);
+    }
+
+    if (accepted.length === 0) {
+      return res.status(200).json({
+        message: `No new slots created — ${skipped.length} matching slot(s) already exist at the same time.`,
+        slots: [],
+        created: 0,
+        skipped: skipped.length,
+        skippedSlots: skipped.map(describeSlot)
+      });
+    }
+
     const { data: inserted, error: insertErr } = await supabase
       .from('event_slots')
-      .insert(formattedSlots)
+      .insert(accepted)
       .select();
 
     if (insertErr) {
@@ -439,8 +565,13 @@ const bulkCreateSlots = async (req, res) => {
       .eq('id', eventId);
 
     return res.status(201).json({
-      message: `${inserted.length} time slot(s) created successfully`,
-      slots: inserted
+      message: skipped.length > 0
+        ? `${inserted.length} time slot(s) created, ${skipped.length} skipped (already exist at the same time)`
+        : `${inserted.length} time slot(s) created successfully`,
+      slots: inserted,
+      created: inserted.length,
+      skipped: skipped.length,
+      skippedSlots: skipped.map(describeSlot)
     });
   } catch (err) {
     console.error('Error in bulkCreateSlots:', err);
@@ -691,6 +822,10 @@ const reassignParticipantSlot = async (req, res) => {
       return res.status(403).json({ message: 'Access denied: Core Organizer privileges required' });
     }
 
+    // Heal stale stored counts first so the capacity check and the atomic
+    // allocation RPC always see the same occupancy the roster displays
+    await resyncEventSlotCounts(eventId);
+
     // Check target slot
     const { data: targetSlot, error: targetSlotErr } = await supabase
       .from('event_slots')
@@ -710,6 +845,7 @@ const reassignParticipantSlot = async (req, res) => {
     let previousSlotId = null;
     let recipientUserId = null;
     let participantName = '';
+    let isTeamReassign = false;
 
     if (teamId && isUUID(teamId)) {
       // Reassign Team
@@ -727,10 +863,7 @@ const reassignParticipantSlot = async (req, res) => {
       previousSlotId = team.slot_id;
       recipientUserId = team.leader_id;
       participantName = team.name || 'Team';
-
-      // Update team and all team member registrations
-      await supabase.from('event_teams').update({ slot_id: targetSlotId }).eq('id', teamId);
-      await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('team_id', teamId);
+      isTeamReassign = true;
 
     } else if (registrationId && isUUID(registrationId)) {
       // Reassign Individual Registration
@@ -748,34 +881,71 @@ const reassignParticipantSlot = async (req, res) => {
       previousSlotId = reg.slot_id;
       recipientUserId = reg.user_id;
       participantName = reg.profiles?.name || 'Participant';
-
-      await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('id', registrationId);
     } else {
       return res.status(400).json({ message: 'Must provide either registrationId or teamId.' });
     }
 
-    // Atomically release previous slot if existed
+    // Allocate the target seat first so a full target can never cost the old seat
+    if (previousSlotId !== targetSlotId) {
+      const { data: allocRes, error: allocErr } = await supabase.rpc('allocate_event_slot_atomic', {
+        p_slot_id: targetSlotId
+      });
+      if (allocErr || !allocRes?.success) {
+        return res.status(409).json({ message: allocRes?.message || 'Target slot is currently full.' });
+      }
+    }
+
+    // Update assignment rows. Verify rows actually changed: a silent 0-row update
+    // (e.g. blocked by RLS) must never report success.
+    let rowsChanged = 0;
+    let updateErr = null;
+    if (isTeamReassign) {
+      const teamUpd = await supabase.from('event_teams').update({ slot_id: targetSlotId }).eq('id', teamId).select('id');
+      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('team_id', teamId).select('id');
+      updateErr = teamUpd.error || regUpd.error || null;
+      rowsChanged = (teamUpd.data?.length || 0) + (regUpd.data?.length || 0);
+    } else {
+      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('id', registrationId).select('id');
+      updateErr = regUpd.error || null;
+      rowsChanged = regUpd.data?.length || 0;
+    }
+
+    if (updateErr || rowsChanged === 0) {
+      if (previousSlotId !== targetSlotId) {
+        await supabase.rpc('release_event_slot_atomic', { p_slot_id: targetSlotId });
+        if (previousSlotId && isUUID(previousSlotId)) {
+          await supabase.rpc('allocate_event_slot_atomic', { p_slot_id: previousSlotId });
+        }
+      }
+      console.error('Reassign update failed:', updateErr || '0 rows updated');
+      return res.status(500).json({ message: 'Failed to update the slot assignment. Please try again.' });
+    }
+
+    // Release the previous seat once the move has committed
     if (previousSlotId && isUUID(previousSlotId) && previousSlotId !== targetSlotId) {
       await supabase.rpc('release_event_slot_atomic', { p_slot_id: previousSlotId });
     }
 
-    // Atomically allocate new slot
-    if (previousSlotId !== targetSlotId) {
-      await supabase.rpc('allocate_event_slot_atomic', { p_slot_id: targetSlotId });
-    }
+    // Reconcile stored counts with live occupancy
+    await resyncEventSlotCounts(eventId);
 
-    // Notify participant
+    // Notify participant (best-effort: a notification failure must never fail
+    // a reassign that has already committed)
     if (recipientUserId) {
       const slotTimeStr = `${targetSlot.slot_name} (${targetSlot.start_time} - ${targetSlot.end_time})`;
       const notifMsg = `Your time slot for "${event.title}" has been reassigned by the organizers to: ${slotTimeStr}${targetSlot.venue_room ? ` at ${targetSlot.venue_room}` : ''}.`;
 
-      await sendNotification({
-        recipientId: recipientUserId,
-        title: 'Event Slot Reassigned',
-        message: notifMsg,
-        type: 'event_update',
-        eventId: eventId
-      }).catch(e => console.warn('Could not send notification:', e.message));
+      try {
+        await notifyUser({
+          recipientId: recipientUserId,
+          title: 'Event Slot Reassigned',
+          message: notifMsg,
+          type: 'event_update',
+          eventId: eventId
+        });
+      } catch (e) {
+        console.warn('Could not send notification:', e.message);
+      }
     }
 
     return res.status(200).json({
@@ -824,6 +994,24 @@ const rescheduleStudentSlot = async (req, res) => {
       return res.status(403).json({ message: 'Unauthorized: Only the registered student or team leader can reschedule.' });
     }
 
+    let panelRegIds = [regId];
+    if (reg.team_id) {
+      const { data: teamRegRows } = await supabase
+        .from('event_registrations')
+        .select('id')
+        .eq('team_id', reg.team_id);
+      panelRegIds = (teamRegRows || []).map(r => r.id);
+    }
+    const { data: panelLock } = await supabase
+      .from('panel_assignments')
+      .select('id')
+      .in('registration_id', panelRegIds)
+      .limit(1)
+      .maybeSingle();
+    if (panelLock) {
+      return res.status(400).json({ message: 'Slot cannot be changed after panel allocation.' });
+    }
+
     // Check deadline
     if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
       return res.status(400).json({ message: 'Slot rescheduling is closed because the registration deadline has passed.' });
@@ -832,6 +1020,10 @@ const rescheduleStudentSlot = async (req, res) => {
     if (event.status === 'completed' || event.status === 'cancelled') {
       return res.status(400).json({ message: 'Cannot reschedule for a completed or cancelled event.' });
     }
+
+    // Heal stale stored counts first so the capacity check and the atomic
+    // reschedule RPC always see the same occupancy the slot picker displays
+    await resyncEventSlotCounts(event.id);
 
     // Check target slot
     const { data: targetSlot, error: targetSlotErr } = await supabase
@@ -858,6 +1050,26 @@ const rescheduleStudentSlot = async (req, res) => {
       return res.status(400).json({ message: 'You are already registered for this time slot.' });
     }
 
+    // Prefer the atomic database transaction (v49 patch) when available:
+    // seat transfer + registration/team updates commit together or not at all.
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc('reschedule_event_slot_atomic', {
+      p_registration_id: regId,
+      p_target_slot_id: targetSlotId,
+      p_user_id: req.user.id
+    });
+
+    if (!rpcErr && rpcRes && typeof rpcRes === 'object' && 'success' in rpcRes) {
+      if (!rpcRes.success) {
+        return res.status(400).json({ message: rpcRes.message || 'Failed to change your time slot.' });
+      }
+      await resyncEventSlotCounts(event.id);
+      return res.status(200).json({
+        message: rpcRes.message || `Successfully rescheduled to ${targetSlot.slot_name} (${targetSlot.start_time} - ${targetSlot.end_time})`,
+        slot: rpcRes.slot || targetSlot
+      });
+    }
+
+    // Fallback: stepwise flow (RPC not installed on this database)
     // Atomic allocation of target slot
     const { data: allocRes, error: allocErr } = await supabase.rpc('allocate_event_slot_atomic', {
       p_slot_id: targetSlotId
@@ -872,21 +1084,33 @@ const rescheduleStudentSlot = async (req, res) => {
       await supabase.rpc('release_event_slot_atomic', { p_slot_id: previousSlotId });
     }
 
-    // Update registration and team if applicable
+    // Update registration and team if applicable. Verify rows actually changed:
+    // a silent 0-row update (e.g. blocked by RLS) must never report success.
+    let rowsChanged = 0;
+    let updateErr = null;
     if (reg.team_id) {
-      const teamUpd = await supabase.from('event_teams').update({ slot_id: targetSlotId }).eq('id', reg.team_id);
-      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('team_id', reg.team_id);
-      if (teamUpd.error || regUpd.error) {
-        console.error('Reschedule update failed:', teamUpd.error || regUpd.error);
-        return res.status(500).json({ message: 'Failed to update your slot assignment. Please try again.' });
-      }
+      const teamUpd = await supabase.from('event_teams').update({ slot_id: targetSlotId }).eq('id', reg.team_id).select('id');
+      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('team_id', reg.team_id).select('id');
+      updateErr = teamUpd.error || regUpd.error || null;
+      rowsChanged = (teamUpd.data?.length || 0) + (regUpd.data?.length || 0);
     } else {
-      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('id', regId);
-      if (regUpd.error) {
-        console.error('Reschedule update failed:', regUpd.error);
-        return res.status(500).json({ message: 'Failed to update your slot assignment. Please try again.' });
-      }
+      const regUpd = await supabase.from('event_registrations').update({ slot_id: targetSlotId }).eq('id', regId).select('id');
+      updateErr = regUpd.error || null;
+      rowsChanged = regUpd.data?.length || 0;
     }
+
+    if (updateErr || rowsChanged === 0) {
+      // Roll back the seat transfer so counts stay consistent with the unchanged assignment
+      await supabase.rpc('release_event_slot_atomic', { p_slot_id: targetSlotId });
+      if (previousSlotId && isUUID(previousSlotId)) {
+        await supabase.rpc('allocate_event_slot_atomic', { p_slot_id: previousSlotId });
+      }
+      console.error('Reschedule update failed:', updateErr || '0 rows updated');
+      return res.status(500).json({ message: 'Failed to update your slot assignment. Please try again.' });
+    }
+
+    // Reconcile stored counts with live occupancy
+    await resyncEventSlotCounts(event.id);
 
     return res.status(200).json({
       message: `Successfully rescheduled to ${targetSlot.slot_name} (${targetSlot.start_time} - ${targetSlot.end_time})`,
@@ -901,6 +1125,7 @@ const rescheduleStudentSlot = async (req, res) => {
 module.exports = {
   getEventSlots,
   getSlotsOverview,
+  resyncEventSlotCounts,
   createSlot,
   bulkCreateSlots,
   updateSlot,

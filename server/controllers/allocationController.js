@@ -1,6 +1,6 @@
 const supabase = require('../config/supabaseClient');
 const { checkCoreOrganizerAccess } = require('./eventController');
-const { sendEmailNotification } = require('../services/notificationService');
+const { sendEmailNotification, emailBrandHeader } = require('../services/notificationService');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,7 +54,7 @@ async function generateProblemStatementsPdfBuffer(eventTitle, problemStatements)
 
   let page = pdfDoc.addPage([pageWidth, pageHeight]);
 
-  const purplePrimary = rgb(0.486, 0.227, 0.929); // #7c3aed
+  const brandPrimary = rgb(0.031, 0.569, 0.698); // #0891b2
   const darkSlate = rgb(0.06, 0.09, 0.16); // #0f172a
   const textSecondary = rgb(0.28, 0.33, 0.41); // #475569
   const borderGray = rgb(0.88, 0.91, 0.94); // #e2e8f0
@@ -66,7 +66,7 @@ async function generateProblemStatementsPdfBuffer(eventTitle, problemStatements)
       y: pageHeight - 35,
       size: 18,
       font: fontBold,
-      color: purplePrimary,
+      color: brandPrimary,
     });
 
     pg.drawText('PROBLEM STATEMENTS SPECIFICATION', {
@@ -89,7 +89,7 @@ async function generateProblemStatementsPdfBuffer(eventTitle, problemStatements)
       start: { x: margin, y: pageHeight - 65 },
       end: { x: pageWidth - margin, y: pageHeight - 65 },
       thickness: 1.5,
-      color: purplePrimary,
+      color: brandPrimary,
     });
   };
 
@@ -147,7 +147,7 @@ async function generateProblemStatementsPdfBuffer(eventTitle, problemStatements)
       y: y - blockHeight,
       width: 4,
       height: blockHeight,
-      color: purplePrimary,
+      color: brandPrimary,
     });
 
     let currentY = y - 20;
@@ -283,8 +283,7 @@ async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemState
 <body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#f8fafc;color:#1e293b;">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;padding:32px;box-shadow:0 4px 20px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
     <div style="text-align:center;margin-bottom:24px;">
-      <h1 style="margin:0;font-size:24px;letter-spacing:1px;color:#7c3aed;">AVENTO</h1>
-      <p style="margin:4px 0 0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;">Allocation Confirmation</p>
+      ${emailBrandHeader('Allocation Confirmation')}
     </div>
     
     <h2 style="margin:0 0 12px;font-size:18px;color:#0f172a;">Problem Statement & Venue Allocated</h2>
@@ -293,12 +292,12 @@ async function sendAllocationEmailToTeam({ eventId, teamId, userId, problemState
       Your problem statement and venue allocation for <strong>${eventTitle}</strong> has been confirmed.
     </p>
 
-    <div style="background-color:#f1f5f9;border-left:4px solid #7c3aed;padding:18px;border-radius:10px;margin-bottom:24px;">
+    <div style="background-color:#f1f5f9;border-left:4px solid #0891b2;padding:18px;border-radius:10px;margin-bottom:24px;">
       <table width="100%" border="0" cellspacing="0" cellpadding="0">
         <tr><td style="padding:4px 0;font-size:13px;color:#64748b;width:35%;"><strong>Allocation:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${displayOwnerName}</td></tr>
         <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Problem Statement:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0f172a;">${problemStatement}</td></tr>
         ${psDescription ? `<tr><td style="padding:4px 0;font-size:13px;color:#64748b;vertical-align:top;"><strong>Description:</strong></td><td style="padding:4px 0;font-size:13px;color:#334155;line-height:1.5;">${psDescription}</td></tr>` : ''}
-        <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Venue / Room:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#7c3aed;">${displayVenue}</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#64748b;"><strong>Venue / Room:</strong></td><td style="padding:4px 0;font-size:14px;font-weight:700;color:#0891b2;">${displayVenue}</td></tr>
       </table>
     </div>
 

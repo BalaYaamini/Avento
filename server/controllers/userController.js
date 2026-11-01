@@ -515,7 +515,7 @@ exports.submitContactForm = async (req, res) => {
       return res.status(400).json({ message: 'Please provide name, email, subject, and message.' });
     }
 
-    const { sendEmailNotification, sendInAppNotification } = require('../services/notificationService');
+    const { sendEmailNotification, sendInAppNotification, emailBrandHeader } = require('../services/notificationService');
 
     const studentRollNo = email.trim().split('@')[0];
 
@@ -524,17 +524,20 @@ exports.submitContactForm = async (req, res) => {
 
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+        <div style="text-align:center;margin-bottom:20px;">
+          ${emailBrandHeader('')}
+        </div>
         <div style="margin-bottom: 20px;">
-          <span style="background-color: #f3e8ff; color: #7c3aed; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; text-transform: uppercase;">Avento Contact Support</span>
+          <span style="background-color: #ecfeff; color: #0891b2; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; text-transform: uppercase;">Avento Contact Support</span>
         </div>
         <h2 style="color: #0f172a; margin: 0 0 16px 0; font-size: 22px;">New Support Ticket Message</h2>
         <div style="background-color: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Sender Name:</strong> ${name}</p>
-          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email ID:</strong> <a href="mailto:${email}" style="color: #7c3aed;">${email}</a></p>
+          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email ID:</strong> <a href="mailto:${email}" style="color: #0891b2;">${email}</a></p>
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Roll Number / ID:</strong> ${studentRollNo}</p>
           <p style="margin: 0; font-size: 14px;"><strong>Subject:</strong> ${subject}</p>
         </div>
-        <div style="background-color: #ffffff; padding: 16px; border-radius: 12px; border-left: 4px solid #7c3aed; border-top: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;">
+        <div style="background-color: #ffffff; padding: 16px; border-radius: 12px; border-left: 4px solid #0891b2; border-top: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;">
           <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Message Content:</p>
           <p style="margin: 0; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: #334155;">${message}</p>
         </div>
@@ -548,31 +551,9 @@ exports.submitContactForm = async (req, res) => {
     await sendEmailNotification({
       recipientEmail: adminEmail,
       subject: emailSubject,
-      htmlBody: htmlContent
+      htmlBody: htmlContent,
+      replyTo: email
     });
-
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: adminEmail,
-          replyTo: email,
-          subject: emailSubject,
-          text: textContent,
-          html: htmlContent,
-        });
-      } catch (nodemailerErr) {
-        console.warn('[submitContactForm] Nodemailer send failed:', nodemailerErr.message);
-      }
-    }
 
     try {
       const { data: adminProfiles } = await supabase

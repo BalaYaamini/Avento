@@ -1,23 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { supabase } from '../context/AuthContext';
+
+// Resolve the effective slot for a registration.
+// Team registrations treat the team's slot as the source of truth (keeps every view consistent after a change).
+const resolveRegSlot = (reg) => {
+  if (!reg) return null;
+  const teamSlot = reg.teamId?.slot || reg.event_teams?.slot || null;
+  const ownSlot = reg.slot || null;
+  return reg.teamId || reg.event_teams ? (teamSlot || ownSlot) : (ownSlot || teamSlot);
+};
 
 const OrganizerRegistrations = ({ eventId, event }) => {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchRegistrations = async () => {
+  const fetchRegistrations = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const res = await axios.get(`/api/registrations/event/${eventId}`);
       setRegistrations(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to load registrations. Please try again.');
+      if (!silent) setError('Failed to load registrations. Please try again.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -25,6 +35,40 @@ const OrganizerRegistrations = ({ eventId, event }) => {
     if (eventId) {
       fetchRegistrations();
     }
+  }, [eventId]);
+
+  // Live updates: slot changes, reschedules, reassignments and team changes on this
+  // event refresh the list in place so the displayed slot is never stale
+  useEffect(() => {
+    if (!eventId) return undefined;
+
+    const refresh = () => fetchRegistrations({ silent: true });
+
+    const channel = supabase
+      .channel(`live-organizer-regs-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        refresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_teams', filter: `event_id=eq.${eventId}` },
+        refresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        refresh
+      )
+      .subscribe();
+
+    window.addEventListener('focus', refresh);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', refresh);
+    };
   }, [eventId]);
 
   if (loading) {
@@ -86,7 +130,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
 
   const exportTeams = () => {
     const rows = registrations.map(reg => {
-      const slotObj = reg.slot || reg.teamId?.slot;
+      const slotObj = resolveRegSlot(reg);
       return {
         Event: event?.title || reg.eventId?.title || '',
         Team: reg.teamId?.name || 'Individual',
@@ -114,7 +158,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
       if (!reg.teamId) return result;
       const id = reg.team_id;
       const leader = reg.teamId.leader_id === reg.user_id;
-      const slotObj = reg.slot || reg.teamId?.slot;
+      const slotObj = resolveRegSlot(reg);
       if (!result[id]) {
         result[id] = {
           Event: event?.title || '',
@@ -381,7 +425,7 @@ const OrganizerRegistrations = ({ eventId, event }) => {
             </thead>
             <tbody>
               {registrations.map(reg => {
-                const slotObj = reg.slot || reg.teamId?.slot;
+                const slotObj = resolveRegSlot(reg);
                 return (
                   <tr key={reg.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 font-semibold text-slate-800">

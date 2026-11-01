@@ -112,6 +112,7 @@ app.use('/api/certificates', require('./routes/certificateRoutes'));
 app.use('/api/feedbacks', require('./routes/feedbackRoutes'));
 app.use('/api/allocations', require('./routes/allocationRoutes'));
 app.use('/api/slots', require('./routes/slotRoutes'));
+app.use('/api/panels', require('./routes/panelRoutes'));
 
 // Serve client static files in production
 const clientBuildPath = path.join(__dirname, '../client/dist');

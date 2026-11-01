@@ -48,6 +48,7 @@ import StudentOrgEvents from './pages/StudentOrgEvents';
 // Workspace view
 import Workspace from './pages/Workspace';
 import ProposalWorkspace from './pages/ProposalWorkspace';
+import StudentScoreCard from './pages/StudentScoreCard';
 
 /* Global Alert Override */
 const GlobalAlert = () => {
@@ -136,6 +137,7 @@ const AnimatedRoutes = () => {
 
         {/* Workspace */}
         <Route path="/workspace/:eventId" element={<ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}><Workspace /></ProtectedRoute>} />
+        <Route path="/workspace/:eventId/scoring/student/:registrationId" element={<ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student', 'student_organizer']}><StudentScoreCard /></ProtectedRoute>} />
         <Route path="/proposals/:proposalId" element={<ProtectedRoute allowedRoles={['admin', 'faculty', 'faculty_organizer', 'student']}><ProposalWorkspace /></ProtectedRoute>} />
 
         <Route path="*" element={<Home />} />

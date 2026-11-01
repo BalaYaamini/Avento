@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, supabase } from '../context/AuthContext';
 
 const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
   const { user } = useAuth();
@@ -9,23 +9,57 @@ const ConfirmedTeamsOverview = ({ eventId, eventTitle }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchConfirmedTeams = async () => {
-      try {
-        const response = await axios.get(`/api/registrations/event/${eventId}/confirmed-teams`);
-        setTeams(response.data);
-      } catch (err) {
-        console.error('Error fetching confirmed teams:', err);
-        setError(err.response?.data?.message || 'Failed to fetch confirmed teams.');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchConfirmedTeams = async ({ silent = false } = {}) => {
+    try {
+      const response = await axios.get(`/api/registrations/event/${eventId}/confirmed-teams`);
+      setTeams(response.data);
+    } catch (err) {
+      console.error('Error fetching confirmed teams:', err);
+      if (!silent) setError(err.response?.data?.message || 'Failed to fetch confirmed teams.');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     if (eventId && user) {
       fetchConfirmedTeams();
     }
   }, [eventId, user]);
+
+  // Live updates: slot changes, reschedules, reassignments and team changes on this
+  // event refresh the overview in place so the displayed slot is never stale
+  useEffect(() => {
+    if (!eventId) return undefined;
+
+    const refresh = () => fetchConfirmedTeams({ silent: true });
+
+    const channel = supabase
+      .channel(`live-confirmed-teams-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        refresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_teams', filter: `event_id=eq.${eventId}` },
+        refresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        refresh
+      )
+      .subscribe();
+
+    window.addEventListener('focus', refresh);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [eventId]);
 
   const formatAttendanceTimestamp = (ts) => {
     if (!ts) return '—';

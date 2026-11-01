@@ -411,6 +411,75 @@ exports.getMyRegistrations = async (req, res) => {
 
     if (error) throw error;
 
+    // Attach the panel each registration is allocated to (panel allocation
+    // module) so students can see it on their pass / registrations page.
+    // Non-fatal: a failed panel lookup must never break this feed.
+    try {
+      const regIds = (registrations || []).map(r => r.id).filter(Boolean);
+      if (regIds.length > 0) {
+        const { data: panelAssigns } = await supabase
+          .from('panel_assignments')
+          .select('registration_id, panel_id')
+          .in('registration_id', regIds);
+
+        const panelIds = [...new Set((panelAssigns || []).map(a => a.panel_id).filter(Boolean))];
+        const panelById = new Map();
+        const membersByPanel = new Map();
+
+        if (panelIds.length > 0) {
+          const { data: panelRows } = await supabase
+            .from('event_panels')
+            .select('id, name, venue_room')
+            .in('id', panelIds);
+          (panelRows || []).forEach(p => panelById.set(p.id, p));
+
+          const { data: memberRows } = await supabase
+            .from('panel_members')
+            .select('panel_id, user_id')
+            .in('panel_id', panelIds);
+
+          const memberUserIds = [...new Set((memberRows || []).map(m => m.user_id).filter(Boolean))];
+          let memberProfiles = [];
+          if (memberUserIds.length > 0) {
+            const { data: profs } = await supabase
+              .from('profiles')
+              .select('id, name, role')
+              .in('id', memberUserIds);
+            memberProfiles = profs || [];
+          }
+          const memberProfileMap = new Map(memberProfiles.map(p => [p.id, p]));
+          (memberRows || []).forEach(m => {
+            if (!membersByPanel.has(m.panel_id)) membersByPanel.set(m.panel_id, []);
+            const prof = memberProfileMap.get(m.user_id) || {};
+            membersByPanel.get(m.panel_id).push({
+              user_id: m.user_id,
+              name: prof.name || 'Panel Member',
+              role: prof.role || ''
+            });
+          });
+        }
+
+        const panelByReg = new Map();
+        (panelAssigns || []).forEach(a => {
+          if (panelByReg.has(a.registration_id)) return;
+          const panel = panelById.get(a.panel_id);
+          if (!panel) return;
+          panelByReg.set(a.registration_id, {
+            id: panel.id,
+            name: panel.name,
+            venueRoom: panel.venue_room || '',
+            members: membersByPanel.get(panel.id) || []
+          });
+        });
+
+        registrations.forEach(r => {
+          r.panel = panelByReg.get(r.id) || null;
+        });
+      }
+    } catch (panelErr) {
+      console.warn('Notice loading panel allocations for registrations:', panelErr.message);
+    }
+
     // Fetch team members for team registrations
     const enrichedRegistrations = await Promise.all(registrations.map(async (reg) => {
       if (reg.eventId && reg.eventId.registration_type === 'team') {
@@ -481,6 +550,26 @@ exports.getMyRegistrations = async (req, res) => {
 const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, res) => {
   try {
     const isAdminOrOrganizer = reqUserRoles.includes('admin') || reqUserRoles.includes('organizer') || reqUserRoles.includes('faculty_organizer') || reqUserRoles.includes('faculty');
+
+    if (!isAdminOrOrganizer) {
+      let panelRegIds = [registration.id];
+      if (registration.team_id) {
+        const { data: teamRegRows } = await supabase
+          .from('event_registrations')
+          .select('id')
+          .eq('team_id', registration.team_id);
+        panelRegIds = (teamRegRows || []).map(r => r.id);
+      }
+      const { data: panelLock } = await supabase
+        .from('panel_assignments')
+        .select('id')
+        .in('registration_id', panelRegIds)
+        .limit(1)
+        .maybeSingle();
+      if (panelLock) {
+        return res.status(400).json({ message: 'This registration cannot be cancelled after panel allocation.' });
+      }
+    }
 
     // Fetch event details for count decrements and notifications
     const { data: eventDetails } = await supabase.from('events').select('title, venue, registered_count, registration_deadline').eq('id', registration.event_id).maybeSingle();
@@ -2248,7 +2337,7 @@ exports.addTeamMember = async (req, res) => {
         emailSubject: `Team Invitation – ${event.title}`,
         emailHtml: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-            <h2 style="color: #4f46e5;">New Team Invitation</h2>
+            <h2 style="color: #0891b2;">New Team Invitation</h2>
             <p>You have been invited to join team <strong>${team.name}</strong> for the event <strong>${event.title}</strong>.</p>
             <p><strong>Date:</strong> ${dateStr}</p>
             <p>Please log in to your dashboard to accept or reject this invitation.</p>

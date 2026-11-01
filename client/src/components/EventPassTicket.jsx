@@ -120,6 +120,15 @@ const EventPassTicket = ({
     ? `${venueFormatted}, ${roomDisplay}`
     : venueFormatted;
 
+  // ── Panel: the judging panel this student is allocated to (if any) ─────
+  const panelInfo = registration.panel || null;
+  const panelName = String(panelInfo?.name || '').trim();
+  const panelRoom = String(panelInfo?.venueRoom || '').trim();
+  const panelDisplay = [panelName, panelRoom ? `Room ${panelRoom}` : '']
+    .filter(Boolean)
+    .join(' · ');
+  const panelMembers = Array.isArray(panelInfo?.members) ? panelInfo.members : [];
+
   // Display Registration ID — short code derived from the real registration
   // UUID (the exact value encoded in the QR, which the scanner looks up).
   const regIdShort =
@@ -360,8 +369,8 @@ const EventPassTicket = ({
             <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-0.5">
               {/* Left Column: Event Details Grid (Date, Time, Venue, IDs) */}
               <div className="flex-1 space-y-1.5 min-w-0">
-                {/* 3-Column Info Pills: DATE, TIME, VENUE */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                {/* 3-Column Info Pills: DATE, TIME, VENUE (+ PANEL when allocated) */}
+                <div className={`grid grid-cols-1 gap-1.5 ${panelDisplay ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}`}>
                   {/* DATE */}
                   <div className={`py-1 px-1.5 rounded-lg border ${theme.pillBg}`}>
                     <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
@@ -400,6 +409,24 @@ const EventPassTicket = ({
                       {fullVenueDisplay}
                     </div>
                   </div>
+
+                  {/* PANEL (only when a panel has been allocated) */}
+                  {panelDisplay && (
+                    <div className={`py-1 px-1.5 rounded-lg border ${theme.pillBg}`}>
+                      <div className="flex items-center gap-1 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                        <svg className="w-2.5 h-2.5 text-cyan-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <span>PANEL</span>
+                      </div>
+                      <div
+                        className="text-[10px] font-bold text-slate-800 dark:text-slate-100 mt-0.5 leading-tight truncate"
+                        title={panelMembers.length > 0 ? `${panelDisplay} — ${panelMembers.map(m => m.name).join(', ')}` : panelDisplay}
+                      >
+                        {panelDisplay}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom Row: Registration ID & Team Details */}
@@ -469,7 +496,6 @@ const EventPassTicket = ({
             {/* Attendance Status Banner (if verified) */}
             {registration.attendance_status === 'Present' && (
               <div className="mt-1 px-2.5 py-0.5 bg-emerald-500/15 border border-emerald-500/30 rounded-md text-emerald-600 dark:text-emerald-400 text-[10px] font-bold flex items-center justify-center gap-1.5 animate-fade-in">
-                <span>✓</span>
                 <span>Attendance Verified at Venue</span>
               </div>
             )}

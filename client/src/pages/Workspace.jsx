@@ -22,6 +22,7 @@ import OrganizerPeriodicAttendance from '../components/OrganizerPeriodicAttendan
 import ReviewDiscussionTab from '../components/ReviewDiscussionTab';
 import OrganizingTeamTab from '../components/OrganizingTeamTab';
 import SlotManagementTab from '../components/SlotManagementTab';
+import PanelAllocationTab from '../components/PanelAllocationTab';
 
 const Workspace = () => {
   const { eventId } = useParams();
@@ -31,6 +32,7 @@ const Workspace = () => {
   const [event, setEvent] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [organizers, setOrganizers] = useState([]);
+  const [isPanelMemberUser, setIsPanelMemberUser] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -315,11 +317,16 @@ const Workspace = () => {
     }
   };
 
-  useEffect(() => {
-    fetchWorkspaceData();
+    useEffect(() => {
+      fetchWorkspaceData();
 
-    // Set up Realtime Subscription for tasks in this event
-    const channel = supabase
+      // Panel membership (lets panel members reach the Scoring Board)
+      axios.get(`/api/panels/event/${eventId}/my-membership`)
+        .then(res => setIsPanelMemberUser(Boolean(res.data?.isPanelMember)))
+        .catch(() => setIsPanelMemberUser(false));
+
+      // Set up Realtime Subscription for tasks in this event
+      const channel = supabase
       .channel(`workspace-tasks-${eventId}`)
       .on('postgres_changes', { 
         event: '*', 
@@ -401,6 +408,8 @@ const Workspace = () => {
   const isModuleAllowed = (moduleId) => {
     if (!event || !user) return false;
     if (isSuperUser) return true;
+    // Panel members can always reach the Scoring Board to score their students
+    if (moduleId === 'scoring' && isPanelMemberUser) return true;
 
     // Find current user's organizer/member record
     const myOrg = (organizers || []).find(org => 
@@ -419,6 +428,7 @@ const Workspace = () => {
     if (Array.isArray(allowed)) {
       if (moduleId === 'confirmed_teams' && allowed.includes('registrations')) return true;
       if (moduleId === 'slots' && (allowed.includes('registrations') || allowed.includes('slots'))) return true;
+      if (moduleId === 'panel_allocation' && (allowed.includes('allocation') || allowed.includes('panel_allocation'))) return true;
       return allowed.includes(moduleId);
     }
     return true;
@@ -442,6 +452,7 @@ const Workspace = () => {
     'registrations',
     'slots',
     'allocation',
+    'panel_allocation',
     'scoring',
     'periodic_attendance',
     'id_cards',
@@ -877,6 +888,25 @@ const Workspace = () => {
               </button>
             )}
 
+            {isModuleAllowed('panel_allocation') && (
+              <button
+                type="button"
+                onClick={() => handleTabChange('panel_allocation')}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all duration-200 cursor-pointer ${
+                  activeTab === 'panel_allocation'
+                    ? 'bg-gradient-to-r from-cyan-600 to-cyan-700 text-white shadow-sm shadow-cyan-500/25 font-extrabold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="truncate">Panel Allocation</span>
+                </div>
+              </button>
+            )}
+
             {isModuleAllowed('scoring') && (
               <button
                 type="button"
@@ -1081,6 +1111,17 @@ const Workspace = () => {
           {activeTab === 'allocation' && isModuleAllowed('allocation') && (
             <div className="mb-8">
               <TeamAllocation eventId={eventId} eventTitle={event?.title} />
+            </div>
+          )}
+
+          {activeTab === 'panel_allocation' && isModuleAllowed('panel_allocation') && (
+            <div className="mb-8">
+              <PanelAllocationTab
+                eventId={eventId}
+                event={event}
+                user={user}
+                hasFullAccess={hasFullAccess()}
+              />
             </div>
           )}
 

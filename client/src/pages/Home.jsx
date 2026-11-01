@@ -562,6 +562,14 @@ const Home = () => {
     });
   };
 
+  const isPanelLocked = (eventId) => {
+    return myRegistrations.some(reg => {
+      const rawId = reg.event_id;
+      const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
+      return (String(rawId) === String(eventId) || String(joinedId) === String(eventId)) && !!reg.panel;
+    });
+  };
+
   const getPendingTeamStatus = (event) => {
     if (!user) return null;
     const eventId = event._id || event.id;
@@ -931,7 +939,7 @@ const Home = () => {
                 isSubmitting={registeringIds[evt._id || evt.id]}
                 onViewOrganizers={() => handleViewOrganizers(evt)}
                 onViewScores={() => setScoreEvent(evt)}
-                onCancelRegister={() => openConfirmCancel(evt)}
+                cancelDisabled={isPanelLocked(evt._id || evt.id)} onCancelRegister={() => openConfirmCancel(evt)}
               />
             ))}
           </div>

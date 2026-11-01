@@ -33,6 +33,13 @@ router.get('/:eventId/scoring', authMiddleware, scoringController.getScoring);
 router.put('/:eventId/scoring', authMiddleware, scoringController.updateConfig);
 router.put('/:eventId/scoring/score', authMiddleware, scoringController.updateScore);
 router.put('/:eventId/scoring/bulk', authMiddleware, scoringController.bulkUpdateScores);
+router.put('/:eventId/scoring/student-score', authMiddleware, scoringController.updateStudentScore);
+router.put('/:eventId/scoring/student-bulk', authMiddleware, scoringController.bulkUpdateStudentScores);
+router.put('/:eventId/scoring/student-comment', authMiddleware, scoringController.updateStudentComment);
+router.get('/:eventId/scoring/student/:registrationId', authMiddleware, scoringController.getStudentScoreCard);
+router.post('/:eventId/scoring/reports', authMiddleware, scoringController.sendStudentScoreReports);
+router.get('/:eventId/scoring/report/:registrationId/pdf', authMiddleware, scoringController.getStudentScoreReportPdf);
+router.get('/:eventId/scoring/analysis/pdf', authMiddleware, scoringController.getScoringAnalysisPdf);
 
 // IMPORTANT: /organizer/my-events MUST come before /:id to avoid being matched as an id
 router.get(

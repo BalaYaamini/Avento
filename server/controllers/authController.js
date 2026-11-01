@@ -3,7 +3,7 @@
 const supabase = require('../config/supabaseClient');
 const jwt = require('jsonwebtoken');
 const { validatePasswordStrength } = require('../utils/passwordValidator');
-const { sendPasswordResetEmail, sendEmailNotification } = require('../services/notificationService');
+const { sendPasswordResetEmail, sendEmailNotification, emailBrandHeader } = require('../services/notificationService');
 
 const getRoleFromEmail = (email) => {
   const e = email.toLowerCase();
@@ -439,12 +439,10 @@ exports.sendOtp = async (req, res) => {
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
     <tr><td align="center">
       <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
-        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="height:8px;background:linear-gradient(135deg,#06b6d4,#0891b2);"></td></tr>
         <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
-          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
-            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
-          </h1>
-          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Verification Code</p>
+          ${emailBrandHeader('')}
+          <p style="margin:12px 0 0 0;color:#0891b2;font-size:20px;font-weight:600;letter-spacing:1px;">Verification Code</p>
         </td></tr>
         <tr><td style="padding:30px 40px;">
           <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>
@@ -764,12 +762,10 @@ exports.sendSetPasswordOtp = async (req, res) => {
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
     <tr><td align="center">
       <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
-        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="height:8px;background:linear-gradient(135deg,#06b6d4,#0891b2);"></td></tr>
         <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
-          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
-            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
-          </h1>
-          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Set Your Password</p>
+          ${emailBrandHeader('')}
+          <p style="margin:12px 0 0 0;color:#0891b2;font-size:20px;font-weight:600;letter-spacing:1px;">Set Your Password</p>
         </td></tr>
         <tr><td style="padding:30px 40px;">
           <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>

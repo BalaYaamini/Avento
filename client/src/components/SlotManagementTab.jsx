@@ -152,7 +152,6 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
   const renderSlotCard = (slot) => {
     const isSelected = selectedSlotFilter === slot.id;
     const isFull = slot.is_full;
-    const slotRegs = registrationsBySlot[slot.id] || [];
 
     return (
       <div
@@ -243,7 +242,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
           <div className="flex items-center justify-between text-xs font-bold mb-1.5">
             <span className="text-slate-500 dark:text-slate-400 text-[11px]">Enrollment</span>
             <span className="text-slate-800 dark:text-white text-[11px]">
-              {slotRegs.length} / {slot.max_capacity} ({slot.fill_percentage}%)
+              {slot.allocated_count} / {slot.max_capacity} ({slot.fill_percentage}%)
             </span>
           </div>
 
@@ -351,8 +350,20 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             cursor += duration + breakMinutes;
           }
 
-          await axios.post(`/api/slots/event/${eventId}/bulk`, { slots: generated });
-          setSuccessMessage(`Created ${generated.length} slots ("${payload.slot_name}" series) successfully.`);
+          const res = await axios.post(`/api/slots/event/${eventId}/bulk`, { slots: generated });
+          const createdCount = res.data?.created ?? (res.data?.slots?.length || 0);
+          const skippedCount = res.data?.skipped ?? 0;
+
+          if (createdCount === 0) {
+            setSlotFormError(`Nothing created — all ${skippedCount} slot(s) in this series already exist at the same date & time.`);
+            return;
+          }
+
+          setSuccessMessage(
+            skippedCount > 0
+              ? `Created ${createdCount} slot(s) ("${payload.slot_name}" series). Skipped ${skippedCount} that already exist at the same date & time.`
+              : `Created ${createdCount} slots ("${payload.slot_name}" series) successfully.`
+          );
         }
       }
 
@@ -409,8 +420,20 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
         return;
       }
 
-      await axios.post(`/api/slots/event/${eventId}/bulk`, { slots: generated });
-      setSuccessMessage(`Generated ${generated.length} time slots successfully.`);
+      const res = await axios.post(`/api/slots/event/${eventId}/bulk`, { slots: generated });
+      const createdCount = res.data?.created ?? (res.data?.slots?.length || 0);
+      const skippedCount = res.data?.skipped ?? 0;
+
+      if (createdCount === 0) {
+        setSlotFormError(`Nothing generated — all ${skippedCount} slot(s) already exist at the same date & time. Adjust the time window, or delete the old slots first.`);
+        return;
+      }
+
+      setSuccessMessage(
+        skippedCount > 0
+          ? `Generated ${createdCount} time slot(s). Skipped ${skippedCount} that already exist at the same date & time.`
+          : `Generated ${createdCount} time slots successfully.`
+      );
       setIsQuickGenOpen(false);
       fetchSlotOverview();
       setTimeout(() => setSuccessMessage(''), 4000);
@@ -670,6 +693,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                   type="button"
                   onClick={() => {
                     const defaultDate = event?.date ? new Date(event.date).toISOString().split('T')[0] : '';
+                    setSlotFormError('');
                     setQuickGenData(prev => ({ ...prev, slot_date: defaultDate, venue_room: event?.venue || '' }));
                     setIsQuickGenOpen(true);
                   }}
@@ -1229,6 +1253,12 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
         title="Auto-Generate Time Slots / Batches"
       >
         <form onSubmit={handleQuickGenerate} className="space-y-4">
+          {slotFormError && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs font-bold">
+              {slotFormError}
+            </div>
+          )}
+
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Quickly generate evenly spaced time slots throughout the day for your event.
           </p>
