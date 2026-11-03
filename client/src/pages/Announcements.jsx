@@ -142,16 +142,16 @@ const Announcements = () => {
         </div>
 
         <div className="flex gap-3 mb-8 animate-fade-in-up delay-100 flex-wrap">
-          <button onClick={viewAll} className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${activeTab === 'all' ? 'bg-violet-100 text-violet-700 border border-violet-200' : 'bg-white/50 text-slate-500 border border-slate-200 hover:bg-white/80'}`}>
+          <button onClick={viewAll} className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${activeTab === 'all' ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-white/50 text-slate-500 border border-slate-200 hover:bg-white/80'}`}>
             All
             {unreadData.totalUnread > 0 && <span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold text-white bg-red-500 rounded-full">{unreadData.totalUnread}</span>}
           </button>
-          <button onClick={viewPublic} className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${activeTab === 'public' && !selectedEvent ? 'bg-violet-100 text-violet-700 border border-violet-200' : 'bg-white/50 text-slate-500 border border-slate-200 hover:bg-white/80'}`}>
+          <button onClick={viewPublic} className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${activeTab === 'public' && !selectedEvent ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-white/50 text-slate-500 border border-slate-200 hover:bg-white/80'}`}>
             Public
             {publicAnnouncements.some(a => !a.isRead) && <span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold text-white bg-red-500 rounded-full">{publicAnnouncements.filter(a => !a.isRead).length}</span>}
           </button>
           {displayEvents.map(ev => (
-            <button key={ev.id} onClick={() => viewEvent(ev.id)} className={`px-5 py-2 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-2 ${activeTab === 'event' && selectedEvent === ev.id ? 'bg-violet-100 text-violet-700 border border-violet-200' : 'bg-white/50 text-slate-500 border border-slate-200 hover:bg-white/80'}`}>
+            <button key={ev.id} onClick={() => viewEvent(ev.id)} className={`px-5 py-2 text-xs font-bold rounded-xl transition-all inline-flex items-center gap-2 ${activeTab === 'event' && selectedEvent === ev.id ? 'bg-cyan-100 text-cyan-700 border border-cyan-200' : 'bg-white/50 text-slate-500 border border-slate-200 hover:bg-white/80'}`}>
               {ev.name}
               {unreadSet.has(ev.id) && <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold text-white bg-red-500 rounded-full">{unreadCountMap[ev.id]}</span>}
             </button>
@@ -173,7 +173,7 @@ const Announcements = () => {
             {Object.keys(eventGroups).length > 0 && (
               <div>
                 <h2 className="font-display text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  <svg className="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                   Event Announcements
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -189,7 +189,7 @@ const Announcements = () => {
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 text-cyan-700 text-[10px] font-bold uppercase tracking-wider">
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                               {group.eventName || 'Event'}
                             </span>
@@ -243,7 +243,7 @@ const Announcements = () => {
             )}
           </div>
         ) : (
-          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-violet-500/3">
+          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-cyan-500/3">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -267,8 +267,8 @@ const Announcements = () => {
                           {item.imageUrl ? (
                             <img src={item.imageUrl} alt="" className="h-10 w-16 rounded-lg object-cover bg-white/50" />
                           ) : (
-                            <div className="h-10 w-16 rounded-lg bg-violet-50 flex items-center justify-center">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                            <div className="h-10 w-16 rounded-lg bg-cyan-50 flex items-center justify-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
                             </div>
                           )}
                           <div className="flex items-center gap-2">
@@ -279,7 +279,7 @@ const Announcements = () => {
                       </td>
                       <td className="px-6 py-4">
                         {item.eventName ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 text-cyan-700 text-[10px] font-bold uppercase tracking-wider">
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                             {item.eventName}
                           </span>
@@ -310,7 +310,7 @@ const Announcements = () => {
             <div className="sticky top-0 bg-white/95 backdrop-blur-sm px-6 py-5 border-b border-slate-100 flex justify-between items-center rounded-t-3xl z-10">
               <div className="flex items-center gap-3">
                 {openAnnouncement.eventName ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold uppercase tracking-wider">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 text-cyan-700 text-[10px] font-bold uppercase tracking-wider">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     {openAnnouncement.eventName}
                   </span>

@@ -44,7 +44,7 @@ const AcceptInvite = () => {
   if (loading) {
     return (
       <div className="flex-grow py-20 flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full"></div>
+        <div className="animate-spin h-8 w-8 border-4 border-cyan-500 border-t-transparent rounded-full"></div>
       </div>
     );
   }
@@ -90,10 +90,10 @@ const AcceptInvite = () => {
   return (
     <div className="flex-grow py-20 text-slate-700">
       <div className="max-w-lg mx-auto px-4">
-        <div className="glass-panel rounded-2xl p-8 shadow-2xl shadow-violet-500/5 animate-fade-in-up">
+        <div className="glass-panel rounded-2xl p-8 shadow-2xl shadow-cyan-500/5 animate-fade-in-up">
           
           <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-violet-100 text-violet-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-cyan-100 text-cyan-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
               </svg>
@@ -122,7 +122,7 @@ const AcceptInvite = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-xs font-bold text-slate-500 uppercase">Team</span>
-                    <span className="text-sm font-bold text-violet-600">{invite?.teamName}</span>
+                    <span className="text-sm font-bold text-cyan-600">{invite?.teamName}</span>
                   </div>
                   {invite?.eventDate && (
                     <div className="flex justify-between">

@@ -11,8 +11,6 @@ const AuthContext = createContext();
 export const inferRole = (email) => {
   const e = (email || '').toLowerCase();
   if (e === 'admin.avento@gmail.com') return 'admin';
-  if (e.endsWith('@cse.suh.edu.in') || e.endsWith('@aiml.suh.edu.in')) return 'student';
-  if (e.endsWith('@suh.edu.in')) return 'faculty';
   return 'student';
 };
 

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Split Panel Dashboard — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--red:#dc2626;--red-light:#ef4444;--text:#e5e5e5;--text-dim:#737373;--text-muted:#525252;--radius:12px}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex}
+
+/* LEFT PANEL */
+.left-panel{width:40%;height:100vh;background:linear-gradient(180deg,#0a0a0a 0%,#1a0808 100%);display:flex;flex-direction:column;padding:36px 40px;overflow-y:auto;flex-shrink:0}
+.left-panel::-webkit-scrollbar{width:4px}
+.left-panel::-webkit-scrollbar-track{background:transparent}
+.left-panel::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+.left-panel .logo{font-size:22px;font-weight:800;color:var(--red);letter-spacing:-.5px;margin-bottom:40px}
+.left-panel .heading{font-size:28px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:36px}
+
+.stat-stack{display:flex;flex-direction:column;gap:24px;flex:1}
+.stat-big{display:flex;flex-direction:column;gap:10px;padding:24px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);border-radius:var(--radius)}
+.stat-big .top{display:flex;align-items:center;gap:12px}
+.stat-big .icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.stat-big .value{font-size:48px;font-weight:800;letter-spacing:-2px;line-height:1}
+.stat-big .label{font-size:13px;color:var(--text-dim);font-weight:500}
+.stat-big .progress-track{width:100%;height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.stat-big .progress-fill{height:100%;border-radius:2px;transition:width .6s ease}
+
+/* USER CARD */
+.user-card{margin-top:auto;padding:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:var(--radius);display:flex;align-items:center;gap:12px}
+.user-card .avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0}
+.user-card .info .name{font-size:14px;font-weight:600}
+.user-card .info .role{font-size:12px;color:var(--text-dim)}
+
+/* RIGHT PANEL */
+.right-panel{width:60%;height:100vh;background:#111111;display:flex;flex-direction:column;overflow-y:auto}
+.right-panel::-webkit-scrollbar{width:4px}
+.right-panel::-webkit-scrollbar-track{background:transparent}
+.right-panel::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+.right-top{padding:24px 32px;border-bottom:1px solid rgba(255,255,255,.04)}
+.search-bar{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 14px}
+.search-bar svg{width:16px;height:16px;stroke:var(--text-muted);fill:none;stroke-width:2;flex-shrink:0}
+.search-bar input{background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;width:100%}
+.search-bar input::placeholder{color:var(--text-muted)}
+
+/* TAB BAR */
+.tabs{display:flex;gap:4px;padding:0 32px;border-bottom:1px solid rgba(255,255,255,.04)}
+.tab{padding:14px 16px;font-size:13px;font-weight:500;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text);border-bottom-color:var(--red)}
+
+/* CONTENT */
+.right-content{padding:24px 32px;display:flex;flex-direction:column;gap:28px;flex:1}
+
+.section-title{font-size:15px;font-weight:600;letter-spacing:-.2px;margin-bottom:14px}
+
+/* TABLE */
+.events-table{width:100%;border-collapse:collapse}
+.events-table th{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;text-align:left;padding:0 14px 10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.events-table td{font-size:13px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.03)}
+.events-table tr:last-child td{border-bottom:none}
+.events-table .event-name{font-weight:600}
+.events-table .badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-block}
+.badge-live{background:rgba(220,38,38,.12);color:var(--red-light)}
+.badge-active{background:rgba(34,197,94,.1);color:#22c55e}
+.badge-upcoming{background:rgba(59,130,246,.1);color:#3b82f6}
+.badge-ended{background:rgba(255,255,255,.06);color:var(--text-dim)}
+
+/* ACTIVITY FEED */
+.feed{display:flex;flex-direction:column;gap:0}
+.feed-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.03);align-items:flex-start}
+.feed-item:last-child{border-bottom:none}
+.feed-item .dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.feed-item .content{flex:1;min-width:0}
+.feed-item .text{font-size:13px;line-height:1.5;color:var(--text-dim)}
+.feed-item .text strong{color:var(--text);font-weight:600}
+.feed-item .time{font-size:11px;color:var(--text-muted);margin-top:3px}
+</style>
+</head>
+<body>
+
+<!-- LEFT PANEL -->
+<div class="left-panel">
+  <div class="logo">Avento</div>
+  <div class="heading">Admin Console</div>
+
+  <div class="stat-stack">
+    <div class="stat-big">
+      <div class="top">
+        <div class="icon" style="background:rgba(220,38,38,.12)">📊</div>
+        <div>
+          <div class="label">Total Events</div>
+        </div>
+      </div>
+      <div class="value">1,247</div>
+      <div class="progress-track"><div class="progress-fill" style="width:78%;background:var(--red)"></div></div>
+    </div>
+
+    <div class="stat-big">
+      <div class="top">
+        <div class="icon" style="background:rgba(59,130,246,.12)">👥</div>
+        <div>
+          <div class="label">Active Users</div>
+        </div>
+      </div>
+      <div class="value">8,432</div>
+      <div class="progress-track"><div class="progress-fill" style="width:65%;background:#3b82f6"></div></div>
+    </div>
+
+    <div class="stat-big">
+      <div class="top">
+        <div class="icon" style="background:rgba(34,197,94,.12)">💰</div>
+        <div>
+          <div class="label">Revenue</div>
+        </div>
+      </div>
+      <div class="value">$284K</div>
+      <div class="progress-track"><div class="progress-fill" style="width:85%;background:#22c55e"></div></div>
+    </div>
+  </div>
+
+  <div class="user-card">
+    <div class="avatar">R</div>
+    <div class="info">
+      <div class="name">Rahul Kapoor</div>
+      <div class="role">Platform Admin</div>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="right-panel">
+  <div class="right-top">
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search events, users, reports...">
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active">Overview</div>
+    <div class="tab">Events</div>
+    <div class="tab">Users</div>
+    <div class="tab">Reports</div>
+  </div>
+
+  <div class="right-content">
+    <div>
+      <div class="section-title">Recent Events</div>
+      <table class="events-table">
+        <thead>
+          <tr><th>Event</th><th>Date</th><th>Attendees</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="event-name">HackFusion 2.0</td><td>Sep 10, 2026</td><td>342</td><td><span class="badge badge-live">Live</span></td></tr>
+          <tr><td class="event-name">AI Workshop Series</td><td>Sep 8, 2026</td><td>189</td><td><span class="badge badge-active">Active</span></td></tr>
+          <tr><td class="event-name">Cultural Fest '26</td><td>Sep 15, 2026</td><td>567</td><td><span class="badge badge-upcoming">Upcoming</span></td></tr>
+          <tr><td class="event-name">Startup Pitch Night</td><td>Sep 5, 2026</td><td>96</td><td><span class="badge badge-live">Live</span></td></tr>
+          <tr><td class="event-name">Design Thinking Workshop</td><td>Sep 1, 2026</td><td>78</td><td><span class="badge badge-ended">Ended</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div>
+      <div class="section-title">Activity Feed</div>
+      <div class="feed">
+        <div class="feed-item">
+          <div class="dot" style="background:#22c55e"></div>
+          <div class="content">
+            <div class="text"><strong>Arjun</strong> approved 12 registrations for HackFusion 2.0</div>
+            <div class="time">2 minutes ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#3b82f6"></div>
+          <div class="content">
+            <div class="text"><strong>Sneha</strong> created a new event "Blockchain Hackathon" with 3 tracks</div>
+            <div class="time">18 minutes ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#f59e0b"></div>
+          <div class="content">
+            <div class="text"><strong>Meera</strong> updated venue details for Cultural Fest — Main Auditorium confirmed</div>
+            <div class="time">1 hour ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#ef4444"></div>
+          <div class="content">
+            <div class="text"><strong>Vikram</strong> flagged a conflict in event scheduling for Sep 15</div>
+            <div class="time">2 hours ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#22c55e"></div>
+          <div class="content">
+            <div class="text"><strong>Priya</strong> exported the Q3 attendance report — 94% completion rate</div>
+            <div class="time">3 hours ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#3b82f6"></div>
+          <div class="content">
+            <div class="text"><strong>Rohan</strong> sent a bulk notification to 8,400+ active users</div>
+            <div class="time">4 hours ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#f59e0b"></div>
+          <div class="content">
+            <div class="text"><strong>Divya</strong> updated the AI Workshop curriculum — added deep learning module</div>
+            <div class="time">5 hours ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -23,6 +23,7 @@ router.get('/event/:eventId/template', authMiddleware, allocationController.getA
 router.post('/event/:eventId', authMiddleware, allocationController.saveTeamAllocations);
 router.get('/event/:eventId/problem-statements', authMiddleware, allocationController.getProblemStatements);
 router.post('/event/:eventId/problem-statements', authMiddleware, allocationController.saveProblemStatements);
+router.put('/event/:eventId/config', authMiddleware, allocationController.saveAllocationConfig);
 router.delete('/event/:eventId/target/:targetId', authMiddleware, allocationController.deleteAllocation);
 
 const uploadPdfMiddleware = (req, res, next) => {

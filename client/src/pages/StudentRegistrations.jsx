@@ -3,10 +3,26 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import Modal from '../components/Modal';
 import FeedbackModal from '../components/FeedbackModal';
-import { QRCodeSVG } from 'qrcode.react';
+import EventPassTicket from '../components/EventPassTicket';
 import { supabase, useAuth } from '../context/AuthContext';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import PaymentSection, { isValidUtr } from '../components/PaymentSection';
+
+// Resolve the effective slot for a registration.
+// Team registrations treat the team's slot as the source of truth (keeps every view consistent after a change).
+const resolveRegSlotId = (reg) => {
+  if (!reg) return '';
+  const teamSlotId = reg.teamId?.slot_id || reg.teamId?.slot?.id || '';
+  const ownSlotId = reg.slot_id || reg.slot?.id || '';
+  return reg.teamId ? (teamSlotId || ownSlotId) : (ownSlotId || teamSlotId);
+};
+
+const resolveRegSlot = (reg) => {
+  if (!reg) return null;
+  const teamSlot = reg.teamId?.slot || null;
+  const ownSlot = reg.slot || null;
+  return reg.teamId ? (teamSlot || ownSlot) : (ownSlot || teamSlot);
+};
 
 const StudentRegistrations = () => {
   const { user } = useAuth();
@@ -26,6 +42,14 @@ const StudentRegistrations = () => {
   const [qrModalData, setQrModalData] = useState(null);
   const [isConfirmTeamOpen, setIsConfirmTeamOpen] = useState(false);
   const [confirmTeamReg, setConfirmTeamReg] = useState(null);
+  
+  // Slot Rescheduling state
+  const [rescheduleReg, setRescheduleReg] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedNewSlotId, setSelectedNewSlotId] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleFeedback, setRescheduleFeedback] = useState(null);
   
   // Edit Team state
   const [editTeamData, setEditTeamData] = useState(null);
@@ -86,6 +110,17 @@ const StudentRegistrations = () => {
     }
   }, [registrations, isEditTeamOpen]);
 
+  // Keep the open pass modal in sync with the latest registration data
+  // (slot reschedules, team changes, attendance, etc.)
+  useEffect(() => {
+    if (qrModalData) {
+      const updatedReg = registrations.find(r => r.id === qrModalData.id);
+      if (updatedReg && JSON.stringify(updatedReg) !== JSON.stringify(qrModalData)) {
+        setQrModalData(updatedReg);
+      }
+    }
+  }, [registrations]);
+
   // Feedback & Allocation states
   const [feedbackStatuses, setFeedbackStatuses] = useState({});
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -114,6 +149,118 @@ const StudentRegistrations = () => {
       setPsError(err.response?.data?.message || 'Failed to select problem statement.');
     } finally {
       setIsSubmittingPs(false);
+    }
+  };
+
+  const loadRescheduleSlots = async (eventId, { silent = false } = {}) => {
+    if (!eventId) return;
+    if (!silent) setLoadingSlots(true);
+    try {
+      const res = await axios.get(`/api/slots/event/${eventId}`);
+      setAvailableSlots(res.data?.slots || []);
+    } catch (err) {
+      console.error('Failed to fetch event slots:', err);
+      if (!silent) setRescheduleFeedback({ type: 'error', message: 'Failed to load available slots.' });
+    } finally {
+      if (!silent) setLoadingSlots(false);
+    }
+  };
+
+  const openRescheduleModal = async (reg) => {
+    setRescheduleReg(reg);
+    setSelectedNewSlotId(resolveRegSlotId(reg));
+    setRescheduleFeedback(null);
+    const eventId = reg.eventId?.id || reg.eventId?._id || reg.event_id;
+    await loadRescheduleSlots(eventId);
+  };
+
+  // Keep the reschedule list live while the modal is open: bookings/changes made by
+  // anyone on this event refresh the available slots and seat counts in place
+  useEffect(() => {
+    if (!rescheduleReg) return undefined;
+    const eventId = rescheduleReg.eventId?.id || rescheduleReg.eventId?._id || rescheduleReg.event_id;
+    if (!eventId) return undefined;
+
+    const channel = supabase
+      .channel(`live-reschedule-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        () => loadRescheduleSlots(eventId, { silent: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        () => loadRescheduleSlots(eventId, { silent: true })
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [rescheduleReg?.id]);
+
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleReg || !selectedNewSlotId || rescheduling) return;
+    const currentSlotId = resolveRegSlotId(rescheduleReg);
+    if (selectedNewSlotId === currentSlotId) {
+      setRescheduleFeedback({ type: 'error', message: 'Please select a different slot to switch to.' });
+      return;
+    }
+
+    setRescheduling(true);
+    setRescheduleFeedback(null);
+    try {
+      const res = await axios.put(`/api/slots/reschedule/${rescheduleReg.id}`, {
+        targetSlotId: selectedNewSlotId
+      });
+      const updatedSlot = res.data?.slot || availableSlots.find(s => s.id === selectedNewSlotId) || null;
+      const targetRegId = rescheduleReg.id;
+      const targetTeamId = rescheduleReg.team_id || rescheduleReg.teamId?.id || null;
+
+      // Immediately update local registration state so the card & pass show the new slot right away
+      if (updatedSlot) {
+        setRegistrations(prev =>
+          prev.map(r => {
+            const matchesReg = r.id === targetRegId;
+            const matchesTeam = targetTeamId && (r.team_id === targetTeamId || r.teamId?.id === targetTeamId);
+            if (!matchesReg && !matchesTeam) return r;
+            return {
+              ...r,
+              slot_id: updatedSlot.id,
+              slot: updatedSlot,
+              teamId: r.teamId
+                ? { ...r.teamId, slot_id: updatedSlot.id, slot: updatedSlot }
+                : r.teamId
+            };
+          })
+        );
+        setRescheduleReg(prev =>
+          prev
+            ? {
+                ...prev,
+                slot_id: updatedSlot.id,
+                slot: updatedSlot,
+                teamId: prev.teamId
+                  ? { ...prev.teamId, slot_id: updatedSlot.id, slot: updatedSlot }
+                  : prev.teamId
+              }
+            : null
+        );
+      }
+
+      setRescheduleFeedback({ type: 'success', message: res.data?.message || 'Time slot changed successfully!' });
+      await fetchRegistrations({ silent: true });
+
+      setTimeout(() => {
+        setRescheduleReg(null);
+        setSelectedNewSlotId('');
+      }, 900);
+    } catch (err) {
+      console.error('Failed to reschedule slot:', err);
+      setRescheduleFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to reschedule time slot.' });
+    } finally {
+      setRescheduling(false);
     }
   };
 
@@ -148,18 +295,18 @@ const StudentRegistrations = () => {
     setTeamAllocations(allocMap);
   };
 
-  const fetchRegistrations = async () => {
+  const fetchRegistrations = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const res = await axios.get('/api/registrations/my-registrations');
       setRegistrations(res.data);
       fetchAllocationsForRegistrations(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch registrations. Please reload.');
+      if (!silent) setError('Failed to fetch registrations. Please reload.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -188,14 +335,28 @@ const StudentRegistrations = () => {
     fetchRegistrations();
     fetchFeedbackStatuses();
 
-    // Set up realtime subscription for team membership & problem statement slot changes
+    // Set up realtime subscription for team membership, slot changes & problem statement changes
     const regSubscription = supabase
       .channel('public:event_registrations')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'event_registrations' },
         () => {
-          fetchRegistrations();
+          fetchRegistrations({ silent: true });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_teams' },
+        () => {
+          fetchRegistrations({ silent: true });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots' },
+        () => {
+          fetchRegistrations({ silent: true });
         }
       )
       .subscribe();
@@ -206,7 +367,7 @@ const StudentRegistrations = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'event_problem_statements' },
         () => {
-          fetchRegistrations();
+          fetchRegistrations({ silent: true });
         }
       )
       .subscribe();
@@ -526,7 +687,7 @@ const StudentRegistrations = () => {
             <h1 className="font-display text-3xl font-black text-text-primary">My Registered <span className="heading-gradient">Events</span></h1>
             <p className="font-body text-slate-600 text-sm mt-1.5">Track and manage your campus event bookings</p>
           </div>
-          <Link to="/" className="btn-primary text-center px-5 py-2.5 text-xs font-display font-bold rounded-xl text-white self-start shadow-lg shadow-violet-500/15">
+          <Link to="/" className="btn-primary text-center px-5 py-2.5 text-xs font-display font-bold rounded-xl text-white self-start shadow-lg shadow-cyan-500/15">
             Browse More Events
           </Link>
         </div>
@@ -539,7 +700,6 @@ const StudentRegistrations = () => {
               : 'bg-red-500/8 border-red-500/15 text-red-600 dark:text-red-400'
           }`}>
             <div className="flex items-center gap-3">
-              <span className="text-lg">{feedback.type === 'success' ? '✓' : '⚠'}</span>
               <span className="text-sm font-semibold">{feedback.message}</span>
             </div>
             {feedback.profileIncomplete && (
@@ -560,7 +720,7 @@ const StudentRegistrations = () => {
             onClick={() => setActiveSubTab('registrations')}
             className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
               activeSubTab === 'registrations'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25'
                 : 'bg-white/10 text-slate-400 hover:bg-white/20 hover:text-white'
             }`}
           >
@@ -570,7 +730,7 @@ const StudentRegistrations = () => {
             onClick={() => setActiveSubTab('invitations')}
             className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
               activeSubTab === 'invitations'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25'
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25'
                 : 'bg-white/10 text-slate-400 hover:bg-white/20 hover:text-white'
             }`}
           >
@@ -587,11 +747,8 @@ const StudentRegistrations = () => {
         {activeSubTab === 'registrations' && (
           <>
             {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length > 0 && (
-              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-violet-600/15 via-purple-600/15 to-indigo-600/15 border border-violet-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-violet-500/5 animate-fade-in-up">
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-cyan-600/15 via-cyan-600/15 to-indigo-600/15 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-cyan-500/5 animate-fade-in-up">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center text-lg font-bold shrink-0 shadow-md">
-                    📩
-                  </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-800">
                       You have {registrations.filter(r => r.status === 'pending' && (!r.teamId || r.teamId.leader_id !== user?.id)).length} pending team invitation(s)!
@@ -601,7 +758,7 @@ const StudentRegistrations = () => {
                 </div>
                 <button
                   onClick={() => setActiveSubTab('invitations')}
-                  className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
+                  className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl shadow-md transition-all shrink-0 cursor-pointer"
                 >
                   View Team Invitations →
                 </button>
@@ -642,6 +799,7 @@ const StudentRegistrations = () => {
                 {registrations.filter(r => r.status === 'registered' || (r.status === 'pending' && r.teamId && r.teamId.leader_id === user?.id)).map((reg, i) => {
                   const evt = reg.eventId;
                   if (!evt) return null; // safety if event was deleted
+                  const slotInfo = resolveRegSlot(reg);
 
                   return (
                     <div 
@@ -682,6 +840,38 @@ const StudentRegistrations = () => {
                                   </svg>
                                   {formatDate(evt.date)}
                                 </div>
+                                {slotInfo && (
+                                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-violet-700 bg-violet-50 px-3 py-1.5 rounded-xl border border-violet-200/80 mt-2 w-fit">
+                                    
+                                    <span>Slot: <strong>{slotInfo.slot_name}</strong></span>
+                                    <span>•</span>
+                                    <span>{slotInfo.slot_date} ({slotInfo.start_time} - {slotInfo.end_time})</span>
+                                    {slotInfo.venue_room && (
+                                      <>
+                                        <span>•</span>
+                                        <span>Room {slotInfo.venue_room}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                                {reg.panel && reg.panel.name && (
+                                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-cyan-700 bg-cyan-50 px-3 py-1.5 rounded-xl border border-cyan-200/80 mt-2 w-fit">
+                                    
+                                    <span>Panel: <strong>{reg.panel.name}</strong></span>
+                                    {reg.panel.venueRoom && (
+                                      <>
+                                        <span>•</span>
+                                        <span>Room {reg.panel.venueRoom}</span>
+                                      </>
+                                    )}
+                                    {Array.isArray(reg.panel.members) && reg.panel.members.length > 0 && (
+                                      <>
+                                        <span>•</span>
+                                        <span>{reg.panel.members.map(m => m.name).join(', ')}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             
@@ -709,17 +899,17 @@ const StudentRegistrations = () => {
                                    }
                                    return isReady ? (
                                     <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-blue-500/8 text-blue-500 border-blue-500/15 flex items-center gap-1.5">
-                                      🟢 Ready for Team Confirmation
+                                      Ready for Team Confirmation
                                     </span>
                                   ) : (
                                     <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-amber-500/8 text-amber-500 border-amber-500/15 flex items-center gap-1.5">
-                                      🟡 Waiting for Member Approval
+                                      Waiting for Member Approval
                                     </span>
                                   );
                                 })()
                               ) : (
                                 <span className="text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl border bg-emerald-500/8 text-emerald-500 border-emerald-500/15 flex items-center gap-1.5">
-                                  ✓ Registered
+                                  Registered
                                 </span>
                               )}
                               <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider mt-1">
@@ -748,7 +938,7 @@ const StudentRegistrations = () => {
                         {evt.status === 'completed' && (
                           feedbackStatuses[evt.id || evt._id] ? (
                             <span className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center">
-                              ✓ Feedback Submitted
+                              Feedback Submitted
                             </span>
                           ) : (
                             <button
@@ -756,7 +946,7 @@ const StudentRegistrations = () => {
                                 setFeedbackEvent(evt);
                                 setIsFeedbackModalOpen(true);
                               }}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all duration-300"
                             >
                               Submit Feedback
                             </button>
@@ -774,6 +964,18 @@ const StudentRegistrations = () => {
                             View Pass
                           </button>
                         ) : null}
+                        {(evt.has_slots || reg.slot || reg.teamId?.slot) && evt.status !== 'completed' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
+                          (!reg.teamId && reg.status === 'registered') ||
+                          (reg.teamId && reg.teamDetails?.leader_id === user?.id && (reg.status === 'registered' || reg.teamDetails?.teamStatus === 'registered' || reg.teamId?.status === 'registered' || reg.teamDetails?.teamStatus === 'pending'))
+                        ) && (
+                          <button
+                            disabled={!!reg.panel} title={reg.panel ? 'Slot cannot be changed after panel allocation' : undefined} onClick={() => openRescheduleModal(reg)}
+                            className="px-4 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-violet-500/10"
+                          >
+                            
+                            <span>{slotInfo ? 'Change Slot' : 'Select Slot'}</span>
+                          </button>
+                        )}
                         {(() => {
                           const isConfirmedReg = reg.status === 'registered' || reg.teamId?.status === 'registered' || reg.teamDetails?.teamStatus === 'registered';
                           const currentCount = evt.confirmed_teams_count || evt.registered_count || 0;
@@ -804,9 +1006,9 @@ const StudentRegistrations = () => {
                                 !reg.teamId ? (
                                   (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
                                     <button
-                                      onClick={() => openConfirmCancel(reg)}
-                                      disabled={cancellingId === reg.id}
-                                      className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                                      title={reg.panel ? 'Locked after panel allocation' : undefined} onClick={() => openConfirmCancel(reg)}
+                                      disabled={cancellingId === reg.id || !!reg.panel}
+                                      className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-500/10"
                                     >
                                       {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
                                     </button>
@@ -817,7 +1019,7 @@ const StudentRegistrations = () => {
                                       <>
                                         <button
                                           onClick={() => handleEditTeamOpen(reg)}
-                                          className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-500/10 text-violet-600 border border-violet-500/20 hover:bg-violet-500/20 transition-all duration-300"
+                                          className="px-5 py-2 text-xs font-bold rounded-xl bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all duration-300"
                                         >
                                           Edit Team
                                         </button>
@@ -870,9 +1072,9 @@ const StudentRegistrations = () => {
                                     )}
                                     {reg.teamDetails?.teamStatus !== 'registered' && (!evt.registration_deadline || new Date() <= new Date(evt.registration_deadline)) && (
                                       <button
-                                        onClick={() => openConfirmCancel(reg)}
-                                        disabled={cancellingId === reg.id}
-                                        className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                                        title={reg.panel ? 'Locked after panel allocation' : undefined} onClick={() => openConfirmCancel(reg)}
+                                        disabled={cancellingId === reg.id || !!reg.panel}
+                                        className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-500/10"
                                       >
                                         {cancellingId === reg.id ? 'Cancelling...' : 'Cancel Registration'}
                                       </button>
@@ -891,8 +1093,10 @@ const StudentRegistrations = () => {
                         const allocData = teamAllocations[eventId];
                         if (!allocData) return null;
 
-                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message, venueRoom } = allocData;
+                        const { allocation, teamConfirmed, checkedIn, isLeader, isIndividual, availableProblemStatements, message, venueRoom, allocationConfig } = allocData;
                         const displayVenue = (venueRoom && venueRoom.trim()) ? venueRoom.trim() : 'Yet to assign';
+                        const psActive = allocationConfig?.problemStatement?.enabled !== false;
+                        const venueActive = allocationConfig?.venue?.enabled !== false;
 
                         // Only show for confirmed teams or individual registrations
                         if (!teamConfirmed) return null;
@@ -905,7 +1109,7 @@ const StudentRegistrations = () => {
                             <div className="mt-4 p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/20 rounded-2xl animate-fade-in space-y-3">
                               <div className="flex items-center justify-between">
                                 <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <span>🎯</span>
+                                  
                                   <span>Your Event Allocation ({allocation.teamName || 'Your Allocation'})</span>
                                 </div>
                                 <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
@@ -914,6 +1118,7 @@ const StudentRegistrations = () => {
                               </div>
 
                               <div className="space-y-2 text-xs">
+                                {psActive && (
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 space-y-1">
                                   <div className="text-[10px] font-extrabold uppercase tracking-wider text-text-secondary">Problem Statement</div>
                                   <div className="font-bold text-sm text-text-primary">
@@ -923,12 +1128,16 @@ const StudentRegistrations = () => {
                                     <p className="text-xs text-text-secondary mt-1 leading-relaxed">{allocation.description}</p>
                                   )}
                                 </div>
+                                )}
 
+                                {venueActive && (
                                 <div className="bg-white/60 dark:bg-slate-900/60 p-3 rounded-xl border border-emerald-500/10 flex items-center justify-between">
-                                  <span className="text-text-secondary font-semibold text-xs">📍 Allocated Venue / Room</span>
-                                  <span className="font-extrabold text-violet-600 dark:text-violet-400 text-xs">{allocVenue}</span>
+                                  <span className="text-text-secondary font-semibold text-xs">Allocated Venue / Room</span>
+                                  <span className="font-extrabold text-cyan-600 dark:text-cyan-400 text-xs">{allocVenue}</span>
                                 </div>
+                                )}
 
+                                {psActive && (
                                 <div className="pt-1 flex justify-end">
                                   <button
                                     onClick={async () => {
@@ -949,41 +1158,45 @@ const StudentRegistrations = () => {
                                         alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
                                       }
                                     }}
-                                    className="px-3.5 py-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-xl text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1.5"
+                                    className="px-3.5 py-1.5 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 rounded-xl text-xs font-bold hover:bg-cyan-500/20 transition-all flex items-center gap-1.5"
                                   >
-                                    📄 Download Problem Statement PDF
+                                    Download Problem Statement PDF
                                   </button>
                                 </div>
+                                )}
                               </div>
                             </div>
                           );
                         }
 
-                        // 2. If unallocated and student hasn't scanned QR / checked in yet
-                        if (!checkedIn) {
+                        // 1b. Problem statement allocation disabled — show venue-only card (if venue enabled)
+                        if (!psActive) {
+                          if (!venueActive) return null;
                           return (
-                            <div className="mt-4 p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/20 rounded-2xl animate-fade-in space-y-2">
+                            <div className="mt-4 p-4 bg-white/60 dark:bg-slate-900/60 border border-pastel-lavender/20 rounded-2xl animate-fade-in space-y-2">
                               <div className="flex items-center justify-between">
-                                <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <span>🔒</span>
-                                  <span>Problem Statement Selection & PDF</span>
+                                <div className="text-[11px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                                  
+                                  <span>Your Venue Allocation</span>
                                 </div>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                                  Check-in Required
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                                  displayVenue !== 'Yet to assign'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                                }`}>
+                                  {displayVenue !== 'Yet to assign' ? 'Venue Assigned' : 'Yet to assign'}
                                 </span>
                               </div>
-                              
-                              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
-                                Attendance check-in is required before accessing the problem statement document or making a selection.
-                              </p>
-
-                              {displayVenue !== 'Yet to assign' && (
-                                <div className="text-xs font-semibold text-text-primary pt-1">
-                                  📍 Assigned Venue / Room: <span className="font-extrabold text-violet-600">{displayVenue}</span>
-                                </div>
-                              )}
+                              <div className="text-xs font-semibold text-text-primary">
+                                Venue / Room: <span className="font-extrabold text-cyan-600 dark:text-cyan-400">{displayVenue}</span>
+                              </div>
                             </div>
                           );
+                        }
+
+                        // 2. Not checked in yet — hide the allocation card until attendance check-in
+                        if (!checkedIn) {
+                          return null;
                         }
 
                         // 3. If checked in, but problem statement not selected yet and user is not team leader
@@ -992,7 +1205,7 @@ const StudentRegistrations = () => {
                             <div className="mt-4 p-4 bg-blue-500/10 dark:bg-blue-950/40 border border-blue-500/20 rounded-2xl animate-fade-in space-y-3">
                               <div className="flex items-center justify-between">
                                 <div className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                                  <span>📍</span>
+                                  
                                   <span>Problem Statement Selection</span>
                                 </div>
                                 <button
@@ -1014,9 +1227,9 @@ const StudentRegistrations = () => {
                                       alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
                                     }
                                   }}
-                                  className="px-3 py-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 rounded-lg text-xs font-bold hover:bg-violet-500/20 transition-all flex items-center gap-1"
+                                  className="px-3 py-1 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 rounded-lg text-xs font-bold hover:bg-cyan-500/20 transition-all flex items-center gap-1"
                                 >
-                                  📄 View PDF Document
+                                  View PDF Document
                                 </button>
                               </div>
                               <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
@@ -1024,7 +1237,7 @@ const StudentRegistrations = () => {
                               </p>
                               {displayVenue !== 'Yet to assign' && (
                                 <div className="text-xs font-semibold text-text-primary pt-1">
-                                  📍 Assigned Venue / Room: <span className="font-extrabold text-violet-600">{displayVenue}</span>
+                                  Assigned Venue / Room: <span className="font-extrabold text-cyan-600">{displayVenue}</span>
                                 </div>
                               )}
                             </div>
@@ -1033,13 +1246,10 @@ const StudentRegistrations = () => {
 
                         // 4. PROBLEM STATEMENT SELECTION INTERFACE (Leader or Individual - Checked In!)
                         return (
-                          <div className="mt-4 p-5 bg-gradient-to-br from-violet-500/10 via-purple-500/5 to-slate-900/10 dark:from-violet-950/40 dark:via-purple-950/20 dark:to-slate-900/40 border border-violet-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-violet-500/15 pb-3.5">
+                          <div className="mt-4 p-5 bg-gradient-to-br from-cyan-500/10 via-cyan-500/5 to-slate-900/10 dark:from-cyan-950/40 dark:via-cyan-950/20 dark:to-slate-900/40 border border-cyan-500/20 rounded-2xl animate-fade-in space-y-4 shadow-soft">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cyan-500/15 pb-3.5">
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <span className="w-8 h-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/30 flex items-center justify-center text-sm font-bold">
-                                    🎯
-                                  </span>
                                   <h4 className="font-heading font-extrabold text-base text-text-primary tracking-tight">
                                     Choose Your Problem Statement
                                   </h4>
@@ -1050,8 +1260,8 @@ const StudentRegistrations = () => {
                                     : 'Select one problem statement for your entire team. Your selection will be final after confirmation.'}
                                 </p>
                                 {displayVenue !== 'Yet to assign' && (
-                                  <div className="text-xs font-bold text-violet-600 dark:text-violet-400 pt-1 flex items-center gap-1">
-                                    <span>📍 Assigned Venue / Room:</span>
+                                  <div className="text-xs font-bold text-cyan-600 dark:text-cyan-400 pt-1 flex items-center gap-1">
+                                    <span>Assigned Venue / Room:</span>
                                     <span>{displayVenue}</span>
                                   </div>
                                 )}
@@ -1077,16 +1287,16 @@ const StudentRegistrations = () => {
                                       alert(err.response?.data?.message || 'Attendance check-in is required before accessing the PDF.');
                                     }
                                   }}
-                                  className="px-3.5 py-1.5 bg-violet-600 text-white rounded-xl text-xs font-bold hover:bg-violet-700 transition-all flex items-center gap-1.5 shadow-sm"
+                                  className="px-3.5 py-1.5 bg-cyan-600 text-white rounded-xl text-xs font-bold hover:bg-cyan-700 transition-all flex items-center gap-1.5 shadow-sm"
                                 >
-                                  📄 Download Problem Statements PDF
+                                  Download Problem Statements PDF
                                 </button>
                               </div>
                             </div>
 
                             {psError && (
                               <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs font-bold flex items-center gap-2">
-                                <span>⚠️</span> <span>{psError}</span>
+                                <span>{psError}</span>
                               </div>
                             )}
 
@@ -1116,36 +1326,36 @@ const StudentRegistrations = () => {
                                         isFull
                                           ? 'bg-gray-100/50 dark:bg-slate-900/40 border-gray-300/40 dark:border-slate-800 opacity-85'
                                           : isSelected
-                                            ? 'bg-violet-500/10 dark:bg-violet-950/40 border-violet-500 shadow-md ring-2 ring-violet-500/20'
-                                            : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-violet-500/40 hover:shadow-soft'
+                                            ? 'bg-cyan-500/10 dark:bg-cyan-950/40 border-cyan-500 shadow-md ring-2 ring-cyan-500/20'
+                                            : 'bg-white/90 dark:bg-slate-800/90 border-pastel-lavender/30 hover:border-cyan-500/40 hover:shadow-soft'
                                       }`}
                                     >
                                       {/* Card Top Info */}
                                       <div className="space-y-3">
                                         <div className="flex justify-between items-center pb-2.5 border-b border-pastel-lavender/10">
-                                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
                                             {psCode}
                                           </span>
                                           <div className="flex items-center gap-1.5">
                                             {isFull ? (
                                               <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20">
-                                                🔴 Full (0 Slots Left)
+                                                Full (0 Slots Left)
                                               </span>
                                             ) : (
                                               <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                                                ⚡ {slotsRemaining} / {maxCapacity} Slots Left
+                                                {slotsRemaining} / {maxCapacity} Slots Left
                                               </span>
                                             )}
                                             {isSelected && (
-                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20">
-                                                ✓ Selected
+                                              <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20">
+                                                Selected
                                               </span>
                                             )}
                                           </div>
                                         </div>
 
                                         <div className="space-y-1.5">
-                                          <h5 className="font-heading font-extrabold text-sm text-text-primary group-hover:text-violet-600 transition-colors leading-snug">
+                                          <h5 className="font-heading font-extrabold text-sm text-text-primary group-hover:text-cyan-600 transition-colors leading-snug">
                                             [{psCode}] {ps.title}
                                           </h5>
                                           {ps.description && (
@@ -1169,11 +1379,11 @@ const StudentRegistrations = () => {
                                               isFull
                                                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-300/30'
                                                 : isSelected
-                                                  ? 'bg-violet-600 text-white ring-2 ring-violet-500/40'
+                                                  ? 'bg-cyan-600 text-white ring-2 ring-cyan-500/40'
                                                   : 'btn-primary text-white hover:shadow-md'
                                             }`}
                                           >
-                                            {isFull ? 'Fully Booked' : isSelected ? '✓ Selected' : 'Select'}
+                                            {isFull ? 'Fully Booked' : isSelected ? 'Selected' : 'Select'}
                                           </button>
                                         </div>
                                       </div>
@@ -1342,7 +1552,7 @@ const StudentRegistrations = () => {
                             <button
                               onClick={() => openConfirmLeave(reg)}
                               disabled={processingId === reg.team_id}
-                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                              className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-500/10"
                             >
                               {processingId === reg.team_id ? 'Processing...' : 'Leave Team'}
                             </button>
@@ -1471,7 +1681,7 @@ const StudentRegistrations = () => {
                         <button
                           onClick={() => setWithdrawRequestObj(req)}
                           disabled={withdrawingId === req.id}
-                          className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50"
+                          className="px-5 py-2 text-xs font-bold rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-500/10"
                         >
                           {withdrawingId === req.id ? 'Withdrawing...' : 'Withdraw Request'}
                         </button>
@@ -1574,7 +1784,7 @@ const StudentRegistrations = () => {
                 If you reject this invitation, you will not be able to join this team again unless the Team Leader sends you a new invitation.
               </p>
               <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-3 items-start">
-                <span className="text-xl">⚠</span>
+                
                 <p className="text-red-500 text-xs font-semibold mt-1">
                   Are you sure you want to reject this invitation?
                 </p>
@@ -1625,7 +1835,7 @@ const StudentRegistrations = () => {
                 If you leave this team, you will no longer be a member of it. You may join another team or create your own team if you are eligible.
               </p>
               <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-3 items-start">
-                <span className="text-xl">⚠</span>
+                
                 <p className="text-red-500 text-xs font-semibold mt-1">
                   Are you sure you want to leave?
                 </p>
@@ -1796,11 +2006,11 @@ const StudentRegistrations = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {(member.status === 'registered' || member.id === teamModalData.teamDetails?.leader_id) && <span className="text-[10px] text-emerald-500 font-bold uppercase">🟢 Accepted</span>}
-                        {member.status === 'pending' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-amber-500 font-bold uppercase">🟡 Pending</span>}
-                        {member.status === 'rejected' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-red-500 font-bold uppercase">🔴 Rejected</span>}
+                        {(member.status === 'registered' || member.id === teamModalData.teamDetails?.leader_id) && <span className="text-[10px] text-emerald-500 font-bold uppercase">Accepted</span>}
+                        {member.status === 'pending' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-amber-500 font-bold uppercase">Pending</span>}
+                        {member.status === 'rejected' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-red-500 font-bold uppercase">Rejected</span>}
                         {member.status === 'auto_rejected' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-slate-400 font-bold uppercase">Unavailable (Joined another team)</span>}
-                        {member.status === 'cancelled' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-slate-400 font-bold uppercase">⚪ Left Team</span>}
+                        {member.status === 'cancelled' && member.id !== teamModalData.teamDetails?.leader_id && <span className="text-[10px] text-slate-400 font-bold uppercase">Left Team</span>}
                         {member.id === teamModalData.teamDetails?.leader_id && (
                           <span className="text-[10px] text-fuchsia-400 font-bold uppercase">Leader</span>
                         )}
@@ -1840,7 +2050,7 @@ const StudentRegistrations = () => {
                 <div className={`p-3 rounded-lg text-xs font-bold flex items-center gap-2 ${
                   teamEditFeedback.type === 'success' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
                 }`}>
-                  {teamEditFeedback.type === 'success' ? '✓' : '⚠'} {teamEditFeedback.message}
+                  {teamEditFeedback.message}
                 </div>
               )}
 
@@ -1856,7 +2066,7 @@ const StudentRegistrations = () => {
                       className={`w-full bg-white border text-slate-800 text-sm rounded-xl focus:outline-none block p-2.5 transition-all duration-300 ${
                         nameUnavailable
                           ? 'border-red-500/80 focus:border-red-500/80'
-                          : 'border-slate-200 focus:border-violet-500'
+                          : 'border-slate-200 focus:border-cyan-500'
                       }`}
                       placeholder="Enter team name"
                       disabled={!!processingId}
@@ -1873,7 +2083,7 @@ const StudentRegistrations = () => {
                   <button
                     onClick={handleUpdateTeamName}
                     disabled={!!processingId || editTeamName.trim() === editTeamData.teamId.name || isCheckingName || nameUnavailable}
-                    className="px-4 py-2.5 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 transition-colors"
+                    className="px-4 py-2.5 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-50 transition-colors"
                   >
                     {processingId === `name-${editTeamData.teamId.id}` ? 'Saving...' : 'Save Name'}
                   </button>
@@ -1954,7 +2164,7 @@ const StudentRegistrations = () => {
                           value={editInviteName}
                           onChange={(e) => setEditInviteName(e.target.value)}
                           disabled={!!processingId}
-                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500 transition-all duration-300"
+                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500 transition-all duration-300"
                         />
                         <input
                           type="email"
@@ -1962,12 +2172,12 @@ const StudentRegistrations = () => {
                           value={editInviteEmail}
                           onChange={(e) => setEditInviteEmail(e.target.value)}
                           disabled={!!processingId}
-                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-violet-500 transition-all duration-300"
+                          className="flex-1 bg-white border border-slate-200 text-slate-800 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-500 transition-all duration-300"
                         />
                         <button
                           onClick={handleInviteExternalEdit}
                           disabled={!!processingId || !editInviteName.trim() || !editInviteEmail.trim()}
-                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+                          className="px-4 py-2.5 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
                         >
                           {editInvitingExternal ? 'Sending...' : 'Invite'}
                         </button>
@@ -1975,11 +2185,11 @@ const StudentRegistrations = () => {
                       {editExternalInvites.length > 0 && (
                         <div className="space-y-1.5">
                           {editExternalInvites.map((inv, i) => (
-                            <div key={i} className="flex items-center justify-between p-2 bg-violet-50/50 rounded-lg border border-violet-200/50">
+                            <div key={i} className="flex items-center justify-between p-2 bg-cyan-50/50 rounded-lg border border-cyan-200/50">
                               <div className="text-xs">
                                 <span className="font-bold text-slate-700">{inv.name}</span>
                                 <span className="text-slate-500 ml-1">({inv.email})</span>
-                                <span className="ml-1 text-violet-600 font-bold">— invite sent</span>
+                                <span className="ml-1 text-cyan-600 font-bold">— invite sent</span>
                               </div>
                               <button
                                 onClick={() => setEditExternalInvites(editExternalInvites.filter((_, idx) => idx !== i))}
@@ -2023,39 +2233,18 @@ const StudentRegistrations = () => {
           <Modal
             isOpen={!!qrModalData}
             onClose={() => setQrModalData(null)}
-            title="Event Pass"
+            title="Event Entry Pass"
+            subtitle="Show this official digital ticket with QR code at the venue check-in desk."
+            maxWidth="max-w-[820px]"
           >
-            <div className="flex flex-col items-center justify-center py-6 space-y-6">
-              <div className="text-center">
-                <h3 className="font-display font-bold text-lg text-slate-800">{qrModalData.eventId?.title}</h3>
-                <p className="text-xs font-medium text-slate-500 mt-1 uppercase tracking-wider">{qrModalData.eventId?.venue} • {formatDate(qrModalData.eventId?.date)}</p>
-              </div>
-              <div className="bg-[#FFFFFF] dark:bg-[#FFFFFF] !bg-[#FFFFFF] p-4 rounded-xl shadow-lg border border-slate-200 flex items-center justify-center">
-                <QRCodeSVG 
-                  value={String(qrModalData.id || qrModalData.registration_id || qrModalData.user_id || 'EVENT_PASS')} 
-                  size={200} 
-                  level="H" 
-                  bgColor="#FFFFFF"
-                  fgColor="#000000"
-                  includeMargin={false} 
-                />
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-slate-600 font-medium">Show this QR code at the venue for attendance verification.</p>
-                {qrModalData.attendance_status === 'Present' && (
-                  <div className="mt-4 px-4 py-2 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-sm font-bold flex items-center justify-center gap-2">
-                    <span>✓</span> Attendance Verified
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => setQrModalData(null)}
-                className="px-5 py-2.5 text-sm font-bold rounded-xl btn-secondary"
-              >
-                Close
-              </button>
+            <div className="py-2">
+              <EventPassTicket
+                registration={qrModalData}
+                user={user}
+                allocation={teamAllocations[qrModalData.event_id || qrModalData.eventId?.id]}
+                onClose={() => setQrModalData(null)}
+                showDownloadButton={true}
+              />
             </div>
           </Modal>
         )}
@@ -2079,7 +2268,7 @@ const StudentRegistrations = () => {
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-pastel-lavender/30 p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
               <div className="flex justify-between items-center pb-3 border-b border-pastel-lavender/20">
                 <h4 className="font-heading font-bold text-base text-text-primary flex items-center gap-2">
-                  <span>🎯 Confirm Problem Statement</span>
+                  <span>Confirm Problem Statement</span>
                 </h4>
                 <button 
                   onClick={() => setSelectedPsToConfirm(null)}
@@ -2091,13 +2280,13 @@ const StudentRegistrations = () => {
 
               <div className="space-y-2 text-xs text-text-secondary">
                 <p>You are about to select the following problem statement for your entire team:</p>
-                <div className="p-3.5 bg-violet-500/10 border border-violet-500/20 rounded-xl space-y-1.5">
-                  <p className="font-bold text-sm text-violet-600 dark:text-violet-400">
+                <div className="p-3.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl space-y-1.5">
+                  <p className="font-bold text-sm text-cyan-600 dark:text-cyan-400">
                     {selectedPsToConfirm.ps.title}
                   </p>
                 </div>
                 <p className="text-amber-600 dark:text-amber-400 font-semibold pt-1">
-                  ⚠️ Note: This selection will be assigned to your team and locked.
+                  Note: This selection will be assigned to your team and locked.
                 </p>
               </div>
 
@@ -2119,6 +2308,135 @@ const StudentRegistrations = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Slot Reschedule Modal */}
+        {rescheduleReg && (
+          <Modal
+            isOpen={!!rescheduleReg}
+            onClose={() => {
+              if (rescheduling) return;
+              setRescheduleReg(null);
+            }}
+            title={resolveRegSlot(rescheduleReg) ? 'Change Your Time Slot' : 'Select Your Time Slot'}
+          >
+            <div className="space-y-4">
+              <p className="text-xs text-slate-600">
+                Select an available time slot for <strong>{rescheduleReg.eventId?.title}</strong>. {resolveRegSlot(rescheduleReg) ? 'Your previous slot seat will be automatically released and assigned to your new selection.' : 'Your registration will be assigned to the selected slot immediately.'}
+              </p>
+
+              {rescheduleFeedback && (
+                <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                  rescheduleFeedback.type === 'success' 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' 
+                    : 'bg-red-500/10 border-red-500/20 text-red-600'
+                }`}>
+                  
+                  <span>{rescheduleFeedback.message}</span>
+                </div>
+              )}
+
+              {loadingSlots ? (
+                <div className="py-8 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                  <div className="animate-spin h-4 w-4 border-2 border-violet-600 border-t-transparent rounded-full" />
+                  <span>Loading available slots...</span>
+                </div>
+              ) : availableSlots.length === 0 ? (
+                <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-500">
+                  No other active time slots are configured for this event.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                  {availableSlots
+                    .filter(s => s.status !== 'inactive' || s.id === resolveRegSlotId(rescheduleReg))
+                    .map(s => {
+                    const currentSlotId = resolveRegSlotId(rescheduleReg);
+                    const isCurrent = s.id === currentSlotId;
+                    const isSelected = s.id === selectedNewSlotId;
+                    const remaining = s.slots_remaining ?? s.remaining_capacity ?? Math.max(0, (Number(s.max_capacity) || 0) - (Number(s.allocated_count) || 0));
+                    const isFull = !isCurrent && (remaining <= 0 || s.is_full);
+
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => {
+                          if (isFull) return;
+                          setSelectedNewSlotId(s.id);
+                        }}
+                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          isCurrent
+                            ? 'bg-amber-50/70 border-amber-300'
+                            : isSelected
+                            ? 'bg-violet-500/10 border-violet-600 shadow-sm'
+                            : isFull
+                            ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
+                            : 'bg-white border-slate-200 hover:border-violet-300'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-slate-800">{s.slot_name}</span>
+                            {isCurrent && (
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                                Current Slot
+                              </span>
+                            )}
+                            {isSelected && !isCurrent && (
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-violet-600 text-white">
+                                Selected
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-600 mt-1 flex flex-wrap items-center gap-2">
+                            <span>{s.slot_date}</span>
+                            <span>•</span>
+                            <span>{s.start_time} - {s.end_time}</span>
+                            {s.venue_room && (
+                              <>
+                                <span>•</span>
+                                <span>Room {s.venue_room}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          {isFull ? (
+                            <span className="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200">
+                              Full (0 left)
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              {remaining} / {s.max_capacity} Seats Left
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-200/50">
+                <button
+                  type="button"
+                  onClick={() => setRescheduleReg(null)}
+                  disabled={rescheduling}
+                  className="px-4 py-2 text-xs font-bold rounded-xl btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRescheduleSubmit}
+                  disabled={rescheduling || !selectedNewSlotId || selectedNewSlotId === resolveRegSlotId(rescheduleReg)}
+                  className="btn-primary px-5 py-2 text-xs font-bold rounded-xl text-white shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {rescheduling ? 'Switching Slot...' : 'Confirm Slot Change'}
+                </button>
+              </div>
+            </div>
+          </Modal>
         )}
 
       </div>

@@ -1,5 +1,6 @@
 const supabase = require('../config/supabaseClient');
 const nodemailer = require('nodemailer');
+const { invalidateProfileCache } = require('../middleware/authMiddleware');
 
 exports.getUsers = async (req, res) => {
   try {
@@ -56,45 +57,148 @@ exports.getUsers = async (req, res) => {
 
 exports.getFacultyCoordinators = async (req, res) => {
   try {
-    let faculty = [];
-    let page = 0;
-    const PAGE_SIZE = 1000;
-    while (true) {
-      const { data, error } = await supabase.from('profiles').select('*').eq('role', 'faculty').range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-      if (error) throw error;
-      faculty.push(...(data || []));
-      if (!data || data.length < PAGE_SIZE) break;
-      page++;
-    }
+    // Query only profiles with eligible faculty coordinator roles (faculty, faculty_organizer)
+    const { data: byRole, error: roleErr } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, department, employee_id, status')
+      .in('role', ['faculty', 'faculty_organizer'])
+      .neq('status', 'inactive');
 
-    const result = faculty.map(f => ({
+    if (roleErr) throw roleErr;
+
+    // Deduplicate and strictly exclude admins, higher officials, and student profiles
+    const merged = new Map();
+    (byRole || []).forEach(f => {
+      const r = (f.role || '').toLowerCase();
+      const name = (f.name || f.fullName || '').toLowerCase();
+      const email = (f.email || '').toLowerCase();
+      if (
+        (r === 'faculty' || r === 'faculty_organizer') &&
+        !r.includes('admin') &&
+        !r.includes('higher') &&
+        !r.includes('official') &&
+        !name.includes('higher official') &&
+        !name.includes('administrator') &&
+        !email.includes('admin')
+      ) {
+        merged.set(f.id, f);
+      }
+    });
+
+    const result = Array.from(merged.values()).map(f => ({
       id: f.id,
       fullName: f.name || f.fullName,
+      name: f.name || f.fullName,
       email: f.email,
+      role: f.role,
       employeeId: f.employee_id || '',
       department: f.department || '',
-      displayLabel: f.employee_id ? `${f.name || f.fullName} (${f.employee_id})` : (f.name || f.fullName)
+      displayLabel: f.employee_id 
+        ? `${f.name || f.fullName} (${f.employee_id}${f.department ? ' - ' + f.department : ''})` 
+        : (f.department ? `${f.name || f.fullName} (${f.department})` : (f.name || f.fullName))
     }));
     res.json(result);
   } catch (err) {
+    console.error('getFacultyCoordinators error:', err.message);
     res.status(500).json({ message: 'Server error fetching faculty coordinators.', error: err.message });
+  }
+};
+
+exports.getHigherOfficials = async (req, res) => {
+  try {
+    const { data: officials, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, role, department, employee_id, status')
+      .in('role', ['admin', 'official'])
+      .neq('status', 'inactive');
+
+    if (error) throw error;
+
+    const result = (officials || []).map(o => {
+      const isSuperAdmin = (o.email || '').toLowerCase().trim() === 'admin.avento@gmail.com';
+      const empText = o.employee_id ? `${o.employee_id} • ` : '';
+      const deptText = o.department ? `${o.department} - ` : '';
+      return {
+        id: o.id,
+        fullName: o.name || (isSuperAdmin ? 'Avento Admin' : 'University Admin'),
+        name: o.name || (isSuperAdmin ? 'Avento Admin' : 'University Admin'),
+        email: o.email,
+        role: o.role,
+        isSuperAdmin,
+        isUniversityAdmin: !isSuperAdmin,
+        roleName: isSuperAdmin ? 'Avento Admin' : 'University Admin',
+        employeeId: o.employee_id || '',
+        department: o.department || (isSuperAdmin ? 'Platform Super Admin' : 'University Administration'),
+        displayLabel: isSuperAdmin 
+          ? `${o.name || 'Avento Admin'} (Avento Admin • Master Access)`
+          : `${o.name || 'University Admin'} (${empText}${deptText}University Admin)`
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('getHigherOfficials error:', err.message);
+    res.status(500).json({ message: 'Server error fetching higher officials.', error: err.message });
   }
 };
 
 exports.searchUsers = async (req, res) => {
   try {
-    const { query } = req.query;
-    if (!query) return res.json([]);
+    const { query, eventId } = req.query;
+    if (!query || !query.trim()) return res.json([]);
+
+    const cleanQuery = query.trim().replace(/[%_]/g, '');
+    if (!cleanQuery) return res.json([]);
+
+    let excludedUserIds = new Set();
+    if (eventId) {
+      // 1. Fetch registered users for this event (exclude all active/attended/pending participants)
+      const { data: regs } = await supabase
+        .from('event_registrations')
+        .select('user_id, status')
+        .eq('event_id', eventId);
+
+      (regs || []).forEach(r => {
+        if (r.user_id && r.status !== 'cancelled') {
+          excludedUserIds.add(String(r.user_id));
+        }
+      });
+
+      // 2. Fetch existing proposal team members
+      const { data: existingMembers } = await supabase
+        .from('event_members')
+        .select('user_id')
+        .eq('event_id', eventId);
+
+      (existingMembers || []).forEach(m => {
+        if (m.user_id) excludedUserIds.add(String(m.user_id));
+      });
+
+      // 3. Fetch existing event organizers
+      const { data: existingOrgs } = await supabase
+        .from('event_organizers')
+        .select('student_id')
+        .eq('event_id', eventId);
+
+      (existingOrgs || []).forEach(o => {
+        if (o.student_id) excludedUserIds.add(String(o.student_id));
+      });
+    }
 
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('id, name, email, department, role, roll_number, employee_id, status')
-      .or(`name.ilike.%${query}%,email.ilike.%${query}%,department.ilike.%${query}%`)
-      .limit(20);
+      .or(`name.ilike.%${cleanQuery}%,email.ilike.%${cleanQuery}%,department.ilike.%${cleanQuery}%,roll_number.ilike.%${cleanQuery}%`)
+      .limit(50);
 
     if (error) throw error;
-    const activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
-    res.json(activeProfiles);
+    
+    let activeProfiles = (profiles || []).filter(p => p.status !== 'inactive');
+    if (excludedUserIds.size > 0) {
+      activeProfiles = activeProfiles.filter(p => !excludedUserIds.has(String(p.id)));
+    }
+
+    res.json(activeProfiles.slice(0, 25));
   } catch (err) {
     res.status(500).json({ message: 'Server error searching users.', error: err.message });
   }
@@ -248,6 +352,11 @@ exports.updateProfileDetails = async (req, res) => {
       console.warn('Auth metadata update warning:', authErr.message);
     }
 
+    if (invalidateProfileCache) {
+      invalidateProfileCache(userId);
+      invalidateProfileCache(req.user?.email);
+    }
+
     const finalProf = savedDbProfile || profileUpdate;
 
     // Return updated user object with dual-casing property aliases
@@ -265,8 +374,9 @@ exports.updateProfileDetails = async (req, res) => {
       degree_program: finalProf.degree_program || finalProf.degreeProgram || req.user.degree_program || req.user.degreeProgram || null,
       yearOfStudy: finalProf.year_of_study || finalProf.yearOfStudy || req.user.yearOfStudy || req.user.year_of_study || null,
       year_of_study: finalProf.year_of_study || finalProf.yearOfStudy || req.user.year_of_study || req.user.yearOfStudy || null,
-      collegeName: finalProf.college_name || finalProf.collegeName || req.user.collegeName || req.user.college_name || null,
-      college_name: finalProf.college_name || finalProf.collegeName || req.user.college_name || req.user.collegeName || null,
+      college: finalProf.college_name || finalProf.collegeName || finalProf.college || req.user.college || null,
+      collegeName: finalProf.college_name || finalProf.collegeName || finalProf.college || req.user.collegeName || req.user.college_name || null,
+      college_name: finalProf.college_name || finalProf.collegeName || finalProf.college || req.user.college_name || req.user.collegeName || null,
       rollNumber: finalProf.roll_number || finalProf.rollNumber || req.user.rollNumber || req.user.roll_number || null,
       roll_number: finalProf.roll_number || finalProf.rollNumber || req.user.roll_number || req.user.rollNumber || null,
       department: (finalProf.department !== undefined && finalProf.department !== null) ? finalProf.department : (req.user.department || null),
@@ -405,7 +515,7 @@ exports.submitContactForm = async (req, res) => {
       return res.status(400).json({ message: 'Please provide name, email, subject, and message.' });
     }
 
-    const { sendEmailNotification, sendInAppNotification } = require('../services/notificationService');
+    const { sendEmailNotification, sendInAppNotification, emailBrandHeader } = require('../services/notificationService');
 
     const studentRollNo = email.trim().split('@')[0];
 
@@ -414,17 +524,20 @@ exports.submitContactForm = async (req, res) => {
 
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+        <div style="text-align:center;margin-bottom:20px;">
+          ${emailBrandHeader('')}
+        </div>
         <div style="margin-bottom: 20px;">
-          <span style="background-color: #f3e8ff; color: #7c3aed; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; text-transform: uppercase;">Avento Contact Support</span>
+          <span style="background-color: #ecfeff; color: #0891b2; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: bold; text-transform: uppercase;">Avento Contact Support</span>
         </div>
         <h2 style="color: #0f172a; margin: 0 0 16px 0; font-size: 22px;">New Support Ticket Message</h2>
         <div style="background-color: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Sender Name:</strong> ${name}</p>
-          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email ID:</strong> <a href="mailto:${email}" style="color: #7c3aed;">${email}</a></p>
+          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email ID:</strong> <a href="mailto:${email}" style="color: #0891b2;">${email}</a></p>
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Roll Number / ID:</strong> ${studentRollNo}</p>
           <p style="margin: 0; font-size: 14px;"><strong>Subject:</strong> ${subject}</p>
         </div>
-        <div style="background-color: #ffffff; padding: 16px; border-radius: 12px; border-left: 4px solid #7c3aed; border-top: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;">
+        <div style="background-color: #ffffff; padding: 16px; border-radius: 12px; border-left: 4px solid #0891b2; border-top: 1px solid #f1f5f9; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;">
           <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Message Content:</p>
           <p style="margin: 0; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: #334155;">${message}</p>
         </div>
@@ -438,31 +551,9 @@ exports.submitContactForm = async (req, res) => {
     await sendEmailNotification({
       recipientEmail: adminEmail,
       subject: emailSubject,
-      htmlBody: htmlContent
+      htmlBody: htmlContent,
+      replyTo: email
     });
-
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      try {
-        const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-          },
-        });
-
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: adminEmail,
-          replyTo: email,
-          subject: emailSubject,
-          text: textContent,
-          html: htmlContent,
-        });
-      } catch (nodemailerErr) {
-        console.warn('[submitContactForm] Nodemailer send failed:', nodemailerErr.message);
-      }
-    }
 
     try {
       const { data: adminProfiles } = await supabase
@@ -493,7 +584,7 @@ exports.submitContactForm = async (req, res) => {
 
 exports.importUsers = async (req, res) => {
   try {
-    const { users } = req.body;
+    const { users, defaultRole } = req.body;
     if (!users || !Array.isArray(users)) {
       return res.status(400).json({ message: 'Invalid users array provided.' });
     }
@@ -508,25 +599,28 @@ exports.importUsers = async (req, res) => {
 
     for (const user of users) {
       try {
-        const emailLower = user.email.toLowerCase().trim();
+        const emailLower = user.email ? user.email.toLowerCase().trim() : '';
+        if (!emailLower || !emailLower.includes('@')) {
+          failed++;
+          errors.push({ email: emailLower || 'Unknown', reason: 'Invalid or missing email address' });
+          continue;
+        }
 
-        let role = user.role;
+        let role = user.role ? String(user.role).trim().toLowerCase() : (defaultRole ? String(defaultRole).trim().toLowerCase() : null);
         if (!role) {
           if (studentDomains.some(domain => emailLower.endsWith(domain))) {
             role = 'student';
           } else if (emailLower.endsWith(facultyDomain)) {
             role = 'faculty';
+          } else {
+            role = 'student';
           }
         }
 
-        if (!role) {
-          failed++;
-          errors.push({ email: emailLower, reason: 'Unsupported domain' });
-          continue;
-        }
-
         let defaultPassword = 'Student@123';
-        if (role === 'faculty' || role === 'faculty_organizer') {
+        if (role === 'admin') {
+          defaultPassword = 'Admin@123';
+        } else if (role === 'faculty' || role === 'faculty_organizer') {
           defaultPassword = 'Faculty@123';
         } else if (role === 'student' || role === 'student_organizer') {
           defaultPassword = 'Student@123';
@@ -581,7 +675,7 @@ exports.importUsers = async (req, res) => {
           registration_method: 'imported',
         };
 
-        if (role === 'faculty') profile.employee_id = user.employeeId || null;
+        if (role === 'faculty' || role === 'admin') profile.employee_id = user.employeeId || null;
         if (role === 'student' || role === 'student_organizer') profile.roll_number = derivedRollNumber;
 
         await supabase.from('profiles').upsert(profile);
@@ -863,9 +957,14 @@ exports.updateFullProfile = async (req, res) => {
     const { error } = await supabase.from('profiles').update(updates).eq('id', String(userId));
     if (error) throw error;
 
+    if (invalidateProfileCache) {
+      invalidateProfileCache(userId);
+      invalidateProfileCache(req.user?.email);
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, name, email, phone, college, gender, avatar_url, role')
+      .select('id, name, email, phone, college, college_name, gender, avatar_url, role, department, roll_number, degree_program, year_of_study')
       .eq('id', String(userId))
       .single();
 
@@ -876,10 +975,17 @@ exports.updateFullProfile = async (req, res) => {
         fullName: profile.name,
         email: profile.email,
         phone: profile.phone,
-        college: profile.college,
+        college: profile.college_name || profile.college,
+        collegeName: profile.college_name || profile.college,
+        college_name: profile.college_name || profile.college,
         gender: profile.gender,
         avatarUrl: profile.avatar_url,
         roles: [profile.role],
+        department: profile.department,
+        rollNumber: profile.roll_number,
+        roll_number: profile.roll_number,
+        degreeProgram: profile.degree_program,
+        yearOfStudy: profile.year_of_study
       }
     });
   } catch (err) {

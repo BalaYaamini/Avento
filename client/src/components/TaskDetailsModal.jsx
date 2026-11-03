@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Modal from './Modal';
 
@@ -6,14 +6,26 @@ const TaskDetailsModal = ({ isOpen, onClose, task, organizers, hasFullAccess, cu
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const commentsEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
     if (isOpen && task) {
       fetchComments();
     }
   }, [isOpen, task]);
+
+  useEffect(() => {
+    if (comments.length > 0) {
+      scrollToBottom();
+    }
+  }, [comments]);
 
   const fetchComments = async () => {
     try {
@@ -29,17 +41,25 @@ const TaskDetailsModal = ({ isOpen, onClose, task, organizers, hasFullAccess, cu
 
   const handleAddComment = async (e) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || submittingComment) return;
 
     try {
-      await axios.post(`/api/tasks/${task.id}/comments`, {
+      setSubmittingComment(true);
+      const res = await axios.post(`/api/tasks/${task.id}/comments`, {
         message: newComment.trim()
       });
       
+      const addedComment = res.data?.comment;
+      if (addedComment) {
+        setComments(prev => [...prev, addedComment]);
+      } else {
+        await fetchComments();
+      }
       setNewComment('');
-      fetchComments();
     } catch (err) {
       console.error('Error adding comment:', err);
+    } finally {
+      setSubmittingComment(false);
     }
   };
 
@@ -119,13 +139,27 @@ const TaskDetailsModal = ({ isOpen, onClose, task, organizers, hasFullAccess, cu
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="block text-slate-500 mb-1 text-xs uppercase font-semibold">Assigned To</span>
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                  {task.assigned_user ? task.assigned_user.name.charAt(0).toUpperCase() : '?'}
-                </div>
-                <span className="font-medium">{task.assigned_user ? task.assigned_user.name : 'Unassigned'}</span>
-                {isAssignedToMe && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">You</span>}
-              </div>
+              {(() => {
+                const assignedOrg = organizers?.find(o => String(o.userId || o.id) === String(task.assigned_to));
+                const assigneeName = 
+                  task.assigned_user?.name || 
+                  task.assigned_user?.fullName || 
+                  assignedOrg?.name || 
+                  (task.assigned_to ? 'Assigned Organizer' : 'Unassigned');
+                const initial = assigneeName !== 'Unassigned' ? assigneeName.charAt(0).toUpperCase() : '?';
+
+                return (
+                  <div className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${assigneeName !== 'Unassigned' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                      {initial}
+                    </div>
+                    <span className={`font-medium ${assigneeName !== 'Unassigned' ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                      {assigneeName}
+                    </span>
+                    {isAssignedToMe && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1 font-bold">You</span>}
+                  </div>
+                );
+              })()}
             </div>
             <div>
               <span className="block text-slate-500 mb-1 text-xs uppercase font-semibold">Deadline</span>
@@ -198,6 +232,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, organizers, hasFullAccess, cu
             ) : (
               <div className="text-center text-slate-400 text-sm py-8 italic">No comments yet.</div>
             )}
+            <div ref={commentsEndRef} />
           </div>
 
           <form onSubmit={handleAddComment} className="p-3 bg-white border-t mt-auto">

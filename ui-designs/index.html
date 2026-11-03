@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avento UI Design Collection</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --bg-secondary: #111111;
+    --bg-card: #161616;
+    --border: #1f1f1f;
+    --border-light: #2a2a2a;
+    --accent: #ef4444;
+    --text: #fafafa;
+    --text-secondary: #a3a3a3;
+    --text-muted: #525252;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    padding: 32px 48px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10,10,10,0.9);
+    backdrop-filter: blur(20px);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .logo {
+    width: 42px;
+    height: 42px;
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 18px;
+    color: white;
+  }
+
+  .header-title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .header-title span { color: var(--accent); }
+
+  .header-count {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+
+  .header-right {
+    display: flex;
+    gap: 8px;
+  }
+
+  .filter-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .filter-btn:hover {
+    border-color: var(--border-light);
+    color: var(--text);
+  }
+
+  .filter-btn.active {
+    background: rgba(239,68,68,0.1);
+    border-color: rgba(239,68,68,0.3);
+    color: var(--accent);
+  }
+
+  /* ── GALLERY ── */
+  .gallery {
+    padding: 40px 48px;
+  }
+
+  .section {
+    margin-bottom: 48px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(239,68,68,0.1);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .section-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-left: auto;
+  }
+
+  /* ── DESIGN CARDS ── */
+  .designs-grid {
+    display: grid;
+    gap: 24px;
+  }
+
+  .design-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .design-card:hover {
+    border-color: var(--border-light);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  }
+
+  .design-preview {
+    width: 100%;
+    aspect-ratio: 16/9;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-secondary);
+    cursor: pointer;
+  }
+
+  .design-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+    transition: transform 0.3s;
+  }
+
+  .design-card:hover .design-preview img {
+    transform: scale(1.02);
+  }
+
+  .design-preview-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .design-card:hover .design-preview-overlay {
+    opacity: 1;
+  }
+
+  .view-btn {
+    padding: 10px 24px;
+    background: white;
+    color: #0a0a0a;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+
+  .view-btn:hover { transform: scale(1.05); }
+
+  .design-info {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .design-name {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+  }
+
+  .design-tags {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .design-tag {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-muted);
+  }
+
+  .design-tag.accent {
+    background: rgba(239,68,68,0.1);
+    color: var(--accent);
+  }
+
+  .design-tag.blue { background: rgba(59,130,246,0.1); color: #60a5fa; }
+  .design-tag.green { background: rgba(16,185,129,0.1); color: #34d399; }
+  .design-tag.purple { background: rgba(139,92,246,0.1); color: #a78bfa; }
+  .design-tag.amber { background: rgba(245,158,11,0.1); color: #fbbf24; }
+  .design-tag.cyan { background: rgba(6,182,212,0.1); color: #22d3ee; }
+  .design-tag.orange { background: rgba(249,115,22,0.1); color: #fb923c; }
+
+  .design-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  /* ── GRID LAYOUTS ── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .grid-1 {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .grid-4 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+  }
+
+  /* ── LIGHTBOX ── */
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0,0,0,0.9);
+    backdrop-filter: blur(20px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    cursor: pointer;
+  }
+
+  .lightbox.active { display: flex; }
+
+  .lightbox img {
+    max-width: 95%;
+    max-height: 90vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    cursor: default;
+  }
+
+  .lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .lightbox-close:hover { background: rgba(255,255,255,0.2); }
+
+  .lightbox-title {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 24px;
+    background: rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo">A</div>
+    <div>
+      <div class="header-title">A<span>vento</span> Design Collection</div>
+      <div class="header-count">28 unique UI designs across themes and layouts</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button class="filter-btn active" data-filter="all">All (28)</button>
+    <button class="filter-btn" data-filter="animated">Animated (6)</button>
+    <button class="filter-btn" data-filter="clean">Clean (6)</button>
+    <button class="filter-btn" data-filter="original">Original (4)</button>
+    <button class="filter-btn" data-filter="theme">Themes (6)</button>
+    <button class="filter-btn" data-filter="layout">Layouts (6)</button>
+  </div>
+</div>
+
+<!-- GALLERY -->
+<div class="gallery">
+
+  <!-- SECTION 0: Animated Designs -->
+  <div class="section" data-category="animated">
+    <div class="section-header">
+      <div class="section-number">0</div>
+      <div class="section-title">Animated Designs</div>
+      <div class="section-subtitle">Dynamic animations — counters, hover effects, staggered entrance, pulse</div>
+    </div>
+    <div class="designs-grid grid-3">
+      <div class="design-card" data-category="animated">
+        <div class="design-preview" onclick="openLightbox('anim-dashboard.png', 'Animated Dashboard')">
+          <img src="anim-dashboard.png" alt="Animated Dashboard">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Animated Dashboard</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Counters</span>
+              <span class="design-tag">Progress</span>
+            </div>
+          </div>
+          <div class="design-status">anim1</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="animated">
+        <div class="design-preview" onclick="openLightbox('anim-events.png', 'Animated Events')">
+          <img src="anim-events.png" alt="Animated Events">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Animated Events</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Gradient</span>
+              <span class="design-tag">Hover</span>
+            </div>
+          </div>
+          <div class="design-status">anim2</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="animated">
+        <div class="design-preview" onclick="openLightbox('anim-login.png', 'Animated Login')">
+          <img src="anim-login.png" alt="Animated Login">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Animated Login</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Slide-in</span>
+              <span class="design-tag">Float</span>
+            </div>
+          </div>
+          <div class="design-status">anim3</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="animated">
+        <div class="design-preview" onclick="openLightbox('anim-workspace.png', 'Animated Workspace')">
+          <img src="anim-workspace.png" alt="Animated Workspace">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Animated Workspace</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Tabs</span>
+              <span class="design-tag">Check</span>
+            </div>
+          </div>
+          <div class="design-status">anim4</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="animated">
+        <div class="design-preview" onclick="openLightbox('anim-bento.png', 'Animated Bento')">
+          <img src="anim-bento.png" alt="Animated Bento">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Animated Bento</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Grid</span>
+              <span class="design-tag">Fill</span>
+            </div>
+          </div>
+          <div class="design-status">anim5</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="animated">
+        <div class="design-preview" onclick="openLightbox('anim-magazine.png', 'Animated Magazine')">
+          <img src="anim-magazine.png" alt="Animated Magazine">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Animated Magazine</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Reveal</span>
+              <span class="design-tag">Lift</span>
+            </div>
+          </div>
+          <div class="design-status">anim6</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: Clean Designs -->
+  <div class="section" data-category="clean">
+    <div class="section-header">
+      <div class="section-number">0</div>
+      <div class="section-title">Clean Designs</div>
+      <div class="section-subtitle">Limited palette, no color mixing — only dark + red accent</div>
+    </div>
+    <div class="designs-grid grid-3">
+      <div class="design-card" data-category="clean">
+        <div class="design-preview" onclick="openLightbox('clean-dashboard.png', 'Clean Dashboard')">
+          <img src="clean-dashboard.png" alt="Clean Dashboard">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Clean Dashboard</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Sidebar</span>
+              <span class="design-tag">Minimal</span>
+            </div>
+          </div>
+          <div class="design-status">clean1</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="clean">
+        <div class="design-preview" onclick="openLightbox('clean-events.png', 'Clean Events')">
+          <img src="clean-events.png" alt="Clean Events">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Clean Events</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Cards</span>
+              <span class="design-tag">Grid</span>
+            </div>
+          </div>
+          <div class="design-status">clean2</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="clean">
+        <div class="design-preview" onclick="openLightbox('clean-login.png', 'Clean Login')">
+          <img src="clean-login.png" alt="Clean Login">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Clean Login</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Split</span>
+              <span class="design-tag">Auth</span>
+            </div>
+          </div>
+          <div class="design-status">clean3</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="clean">
+        <div class="design-preview" onclick="openLightbox('clean-workspace.png', 'Clean Workspace')">
+          <img src="clean-workspace.png" alt="Clean Workspace">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Clean Workspace</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Tabs</span>
+              <span class="design-tag">Table</span>
+            </div>
+          </div>
+          <div class="design-status">clean4</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="clean">
+        <div class="design-preview" onclick="openLightbox('clean-bento.png', 'Clean Bento')">
+          <img src="clean-bento.png" alt="Clean Bento">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Clean Bento</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Grid</span>
+              <span class="design-tag">Asymmetric</span>
+            </div>
+          </div>
+          <div class="design-status">clean5</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="clean">
+        <div class="design-preview" onclick="openLightbox('clean-magazine.png', 'Clean Magazine')">
+          <img src="clean-magazine.png" alt="Clean Magazine">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Clean Magazine</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Editorial</span>
+              <span class="design-tag">3-Column</span>
+            </div>
+          </div>
+          <div class="design-status">clean6</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: Original Designs -->
+  <div class="section" data-category="original">
+    <div class="section-header">
+      <div class="section-number">1</div>
+      <div class="section-title">Original Designs</div>
+      <div class="section-subtitle">Red & Black — Sidebar Navigation</div>
+    </div>
+    <div class="designs-grid grid-2">
+      <div class="design-card" data-category="original">
+        <div class="design-preview" onclick="openLightbox('design1-dashboard.png', 'Crimson Dashboard')">
+          <img src="design1-dashboard.png" alt="Dashboard">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Crimson Dashboard</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Sidebar</span>
+              <span class="design-tag">Admin</span>
+            </div>
+          </div>
+          <div class="design-status">design1</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="original">
+        <div class="design-preview" onclick="openLightbox('design2-eventhub.png', 'Event Hub')">
+          <img src="design2-eventhub.png" alt="Event Hub">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Event Hub</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Sidebar</span>
+              <span class="design-tag">Cards</span>
+            </div>
+          </div>
+          <div class="design-status">design2</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="original">
+        <div class="design-preview" onclick="openLightbox('design3-login.png', 'Dark Elegance Login')">
+          <img src="design3-login.png" alt="Login">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Dark Elegance Login</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Split</span>
+              <span class="design-tag">Auth</span>
+            </div>
+          </div>
+          <div class="design-status">design3</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="original">
+        <div class="design-preview" onclick="openLightbox('design4-workspace.png', 'Workspace Pro')">
+          <img src="design4-workspace.png" alt="Workspace">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Workspace Pro</div>
+            <div class="design-tags">
+              <span class="design-tag accent">Red</span>
+              <span class="design-tag">Sidebar</span>
+              <span class="design-tag">Tabs</span>
+            </div>
+          </div>
+          <div class="design-status">design4</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: Color Themes -->
+  <div class="section" data-category="theme">
+    <div class="section-header">
+      <div class="section-number">2</div>
+      <div class="section-title">Color Themes</div>
+      <div class="section-subtitle">Same layout, 6 different accent colors</div>
+    </div>
+    <div class="designs-grid grid-3">
+      <div class="design-card" data-category="theme">
+        <div class="design-preview" onclick="openLightbox('theme-electric-blue.png', 'Electric Blue Theme')">
+          <img src="theme-electric-blue.png" alt="Electric Blue">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Electric Blue</div>
+            <div class="design-tags">
+              <span class="design-tag blue">#3b82f6</span>
+              <span class="design-tag">Professional</span>
+            </div>
+          </div>
+          <div class="design-status">theme1</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="theme">
+        <div class="design-preview" onclick="openLightbox('theme-emerald.png', 'Emerald Theme')">
+          <img src="theme-emerald.png" alt="Emerald">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Emerald</div>
+            <div class="design-tags">
+              <span class="design-tag green">#10b981</span>
+              <span class="design-tag">Fresh</span>
+            </div>
+          </div>
+          <div class="design-status">theme2</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="theme">
+        <div class="design-preview" onclick="openLightbox('theme-purple.png', 'Deep Purple Theme')">
+          <img src="theme-purple.png" alt="Purple">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Deep Purple</div>
+            <div class="design-tags">
+              <span class="design-tag purple">#8b5cf6</span>
+              <span class="design-tag">Creative</span>
+            </div>
+          </div>
+          <div class="design-status">theme3</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="theme">
+        <div class="design-preview" onclick="openLightbox('theme-amber.png', 'Amber Gold Theme')">
+          <img src="theme-amber.png" alt="Amber">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Amber Gold</div>
+            <div class="design-tags">
+              <span class="design-tag amber">#f59e0b</span>
+              <span class="design-tag">Premium</span>
+            </div>
+          </div>
+          <div class="design-status">theme4</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="theme">
+        <div class="design-preview" onclick="openLightbox('theme-cyan.png', 'Cyan Teal Theme')">
+          <img src="theme-cyan.png" alt="Cyan">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Cyan Teal</div>
+            <div class="design-tags">
+              <span class="design-tag cyan">#06b6d4</span>
+              <span class="design-tag">Tech</span>
+            </div>
+          </div>
+          <div class="design-status">theme5</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="theme">
+        <div class="design-preview" onclick="openLightbox('theme-sunset.png', 'Sunset Orange Theme')">
+          <img src="theme-sunset.png" alt="Sunset">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Sunset Orange</div>
+            <div class="design-tags">
+              <span class="design-tag orange">#f97316</span>
+              <span class="design-tag">Energetic</span>
+            </div>
+          </div>
+          <div class="design-status">theme6</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: Layout Designs -->
+  <div class="section" data-category="layout">
+    <div class="section-header">
+      <div class="section-number">3</div>
+      <div class="section-title">Layout Variations</div>
+      <div class="section-subtitle">6 completely different structural approaches</div>
+    </div>
+    <div class="designs-grid grid-3">
+      <div class="design-card" data-category="layout">
+        <div class="design-preview" onclick="openLightbox('layout-minimal.png', 'Minimal Sidebar Layout')">
+          <img src="layout-minimal.png" alt="Minimal">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Minimal Sidebar</div>
+            <div class="design-tags">
+              <span class="design-tag">72px Icons</span>
+              <span class="design-tag">Sparklines</span>
+            </div>
+          </div>
+          <div class="design-status">layout1</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="layout">
+        <div class="design-preview" onclick="openLightbox('layout-topnav.png', 'Top Navigation Layout')">
+          <img src="layout-topnav.png" alt="Top Nav">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Top Navigation</div>
+            <div class="design-tags">
+              <span class="design-tag">No Sidebar</span>
+              <span class="design-tag">Masonry</span>
+            </div>
+          </div>
+          <div class="design-status">layout2</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="layout">
+        <div class="design-preview" onclick="openLightbox('layout-bento.png', 'Bento Grid Layout')">
+          <img src="layout-bento.png" alt="Bento">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Bento Grid</div>
+            <div class="design-tags">
+              <span class="design-tag">Asymmetric</span>
+              <span class="design-tag">CSS Grid</span>
+            </div>
+          </div>
+          <div class="design-status">layout3</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="layout">
+        <div class="design-preview" onclick="openLightbox('layout-split.png', 'Split Panel Layout')">
+          <img src="layout-split.png" alt="Split">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Split Panel</div>
+            <div class="design-tags">
+              <span class="design-tag">40/60 Split</span>
+              <span class="design-tag">Massive Stats</span>
+            </div>
+          </div>
+          <div class="design-status">layout4</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="layout">
+        <div class="design-preview" onclick="openLightbox('layout-glass.png', 'Glassmorphism Layout')">
+          <img src="layout-glass.png" alt="Glass">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Glassmorphism</div>
+            <div class="design-tags">
+              <span class="design-tag">Blur</span>
+              <span class="design-tag">Light Theme</span>
+            </div>
+          </div>
+          <div class="design-status">layout5</div>
+        </div>
+      </div>
+
+      <div class="design-card" data-category="layout">
+        <div class="design-preview" onclick="openLightbox('layout-magazine.png', 'Magazine Editorial Layout')">
+          <img src="layout-magazine.png" alt="Magazine">
+          <div class="design-preview-overlay"><button class="view-btn">View Full</button></div>
+        </div>
+        <div class="design-info">
+          <div>
+            <div class="design-name">Magazine Editorial</div>
+            <div class="design-tags">
+              <span class="design-tag">Hero</span>
+              <span class="design-tag">3-Column</span>
+            </div>
+          </div>
+          <div class="design-status">layout6</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="">
+  <div class="lightbox-title" id="lightbox-title"></div>
+</div>
+
+<script>
+  // Lightbox
+  function openLightbox(src, title) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox-title').textContent = title;
+    document.getElementById('lightbox').classList.add('active');
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('active');
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeLightbox();
+  });
+
+  // Filter
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const filter = btn.dataset.filter;
+      
+      document.querySelectorAll('.section').forEach(section => {
+        if (filter === 'all') {
+          section.style.display = 'block';
+        } else {
+          section.style.display = section.dataset.category === filter ? 'block' : 'none';
+        }
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

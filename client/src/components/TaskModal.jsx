@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import Modal from './Modal';
-const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSave }) => {
+
+const TaskModal = ({ isOpen, onClose, task, initialStatus = 'To Do', eventId, eventDate, organizers, onSave }) => {
   const { user } = useAuth();
   const isEditing = !!task;
 
@@ -12,6 +13,7 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
     category: '',
     assigned_to: '',
     priority: 'Medium',
+    status: 'To Do',
     deadline: ''
   });
   const [loading, setLoading] = useState(false);
@@ -32,6 +34,7 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
           category: task.category || '',
           assigned_to: task.assigned_to || '',
           priority: task.priority || 'Medium',
+          status: task.status || 'To Do',
           deadline: task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : ''
         });
       } else {
@@ -41,12 +44,13 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
           category: '',
           assigned_to: '',
           priority: 'Medium',
+          status: initialStatus || 'To Do',
           deadline: ''
         });
       }
       setError('');
     }
-  }, [isOpen, task, isEditing]);
+  }, [isOpen, task, isEditing, initialStatus]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -84,6 +88,7 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
         category: formData.category || null,
         assigned_to: formData.assigned_to || null,
         priority: formData.priority,
+        status: formData.status,
         deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null
       };
 
@@ -117,38 +122,38 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
         {error && <div className="p-3 bg-red-50 text-red-600 rounded-md text-sm">{error}</div>}
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Title *</label>
           <input
             type="text"
             name="title"
             value={formData.title}
             onChange={handleChange}
             required
-            className="w-full px-3 py-2 border rounded-md focus:ring-slate-500 focus:border-slate-500"
+            className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             placeholder="E.g., Design event poster"
           />
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Description</label>
           <textarea
             name="description"
             value={formData.description}
             onChange={handleChange}
             rows={3}
-            className="w-full px-3 py-2 border rounded-md focus:ring-slate-500 focus:border-slate-500"
+            className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             placeholder="Task details and instructions..."
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Category</label>
             <select
               name="category"
               value={formData.category}
               onChange={handleChange}
-              className="w-full px-3 py-2 border rounded-md focus:ring-slate-500 focus:border-slate-500"
+              className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             >
               <option value="">Select Category</option>
               {suggestedCategories.map(cat => (
@@ -158,29 +163,49 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Assign To</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Assign To</label>
             <select
               name="assigned_to"
               value={formData.assigned_to}
               onChange={handleChange}
-              className="w-full px-3 py-2 border rounded-md focus:ring-slate-500 focus:border-slate-500"
+              className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             >
               <option value="">Unassigned</option>
-              {organizers.map(org => (
-                <option key={org.userId} value={org.userId}>{org.name} ({org.category})</option>
-              ))}
+              {organizers.map(org => {
+                const uid = org.userId || org.id;
+                return (
+                  <option key={uid} value={uid}>
+                    {org.name} ({org.category || 'Organizer'})
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Status</label>
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+            >
+              <option value="To Do">To Do</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Blocked">Blocked</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Priority</label>
             <select
               name="priority"
               value={formData.priority}
               onChange={handleChange}
-              className="w-full px-3 py-2 border rounded-md focus:ring-slate-500 focus:border-slate-500"
+              className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             >
               <option value="Low">Low</option>
               <option value="Medium">Medium</option>
@@ -189,7 +214,7 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Deadline</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Deadline</label>
             <input
               type="date"
               name="deadline"
@@ -197,16 +222,16 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
               onChange={handleChange}
               min={new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]}
               max={eventDate ? new Date(new Date(eventDate).getTime() - new Date(eventDate).getTimezoneOffset() * 60000).toISOString().split('T')[0] : ''}
-              className="w-full px-3 py-2 border rounded-md focus:ring-slate-500 focus:border-slate-500"
+              className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             />
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-3 pt-4 border-t">
+        <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-slate-600 border rounded-md hover:bg-slate-50"
+            className="px-4 py-2 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer font-semibold text-sm"
             disabled={loading}
           >
             Cancel
@@ -214,12 +239,12 @@ const TaskModal = ({ isOpen, onClose, task, eventId, eventDate, organizers, onSa
           <button
             type="submit"
             disabled={loading}
-            className="px-4 py-2 bg-slate-900 text-white rounded-md hover:bg-slate-800 flex items-center"
+            className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold text-sm rounded-xl hover:shadow-md hover:shadow-indigo-500/20 transition flex items-center cursor-pointer"
           >
             {loading ? (
               <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>Saving...</>
             ) : (
-              'Save Task'
+              isEditing ? 'Save Changes' : 'Create Task'
             )}
           </button>
         </div>

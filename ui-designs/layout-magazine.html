@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magazine Editorial — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--red:#dc2626;--red-light:#ef4444;--text:#e5e5e5;--text-dim:#737373;--text-muted:#525252;--radius:12px}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+/* TOP BAR */
+.topbar{height:48px;display:flex;align-items:center;padding:0 40px;border-bottom:1px solid rgba(255,255,255,.04);flex-shrink:0}
+.topbar .logo{font-size:16px;font-weight:800;color:var(--red);letter-spacing:-.5px}
+.topbar .nav{display:flex;gap:24px;margin:0 auto}
+.topbar .nav a{font-size:12px;font-weight:500;color:var(--text-muted);text-decoration:none;transition:color .2s;letter-spacing:.3px}
+.topbar .nav a:hover,.topbar .nav a.active{color:var(--text)}
+.topbar .avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;cursor:pointer}
+
+/* MAIN */
+.main{flex:1;overflow-y:auto;padding:0 40px 40px}
+.main::-webkit-scrollbar{width:6px}
+.main::-webkit-scrollbar-track{background:transparent}
+.main::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+/* HERO */
+.hero{width:100%;height:350px;border-radius:16px;background:linear-gradient(135deg,#1a0505 0%,#0a0a0a 40%,#0f0a1a 100%);margin:32px 0;display:flex;flex-direction:column;justify-content:flex-end;padding:40px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-80px;right:-80px;width:300px;height:300px;background:radial-gradient(circle,rgba(220,38,38,.15),transparent);border-radius:50%}
+.hero::after{content:'';position:absolute;bottom:-40px;left:30%;width:200px;height:200px;background:radial-gradient(circle,rgba(124,58,237,.1),transparent);border-radius:50%}
+.hero .overline{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:var(--red-light);margin-bottom:12px}
+.hero h1{font-size:52px;font-weight:900;letter-spacing:-2.5px;line-height:1;margin-bottom:10px}
+.hero .subtitle{font-size:16px;color:var(--text-dim);line-height:1.5;max-width:600px;margin-bottom:24px}
+.hero .badges{display:flex;gap:12px;flex-wrap:wrap}
+.hero .badge{display:flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:20px;font-size:13px;font-weight:500}
+.hero .badge .num{font-weight:800;color:var(--red-light)}
+
+/* 3-COL GRID */
+.magazine-grid{display:grid;grid-template-columns:260px 1fr 260px;gap:24px;padding-top:8px}
+.col{display:flex;flex-direction:column;gap:20px}
+
+/* CARD */
+.card{background:var(--surface);border-radius:var(--radius);padding:24px;border:1px solid rgba(255,255,255,.04);transition:all .2s}
+.card h3{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:16px}
+
+/* NAV CARD */
+.nav-links{display:flex;flex-direction:column;gap:2px}
+.nav-links a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--text-dim);text-decoration:none;font-size:13px;font-weight:500;transition:all .2s}
+.nav-links a:hover{background:rgba(220,38,38,.08);color:var(--text)}
+.nav-links a.active{background:rgba(220,33,38,.1);color:var(--red-light)}
+.nav-links a .icon{font-size:14px;width:20px;text-align:center}
+
+/* ACTION BUTTONS */
+.actions{display:flex;flex-direction:column;gap:6px}
+.action-btn{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;font-family:inherit}
+.action-btn:hover{background:var(--red);border-color:var(--red)}
+.action-btn .icon{font-size:14px}
+
+/* FEATURED EVENT */
+.featured{display:flex;flex-direction:column;gap:14px;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,.04)}
+.featured:last-child{border-bottom:none;padding-bottom:0}
+.featured .thumb{width:100%;height:180px;border-radius:10px;overflow:hidden}
+.featured .thumb div{width:100%;height:100%}
+.featured .tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--red-light)}
+.featured h2{font-size:20px;font-weight:800;letter-spacing:-.5px;line-height:1.2}
+.featured .excerpt{font-size:13px;color:var(--text-dim);line-height:1.6}
+.featured .read-more{font-size:12px;color:var(--red-light);font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.featured .read-more:hover{text-decoration:underline}
+
+/* BAR CHARTS */
+.bar-chart{display:flex;flex-direction:column;gap:10px}
+.bar-item{display:flex;flex-direction:column;gap:4px}
+.bar-item .bar-label{display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim)}
+.bar-item .bar-label span:last-child{font-weight:600;color:var(--text)}
+.bar-track{width:100%;height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px}
+
+/* ACTIVITY */
+.activity-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.activity-item:last-child{border-bottom:none}
+.activity-item .dot{width:6px;height:6px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.activity-item .text{font-size:12px;color:var(--text-dim);line-height:1.4}
+.activity-item .text strong{color:var(--text);font-weight:600}
+.activity-item .time{font-size:11px;color:var(--text-muted);margin-top:2px}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">Avento</div>
+  <div class="nav">
+    <a href="#" class="active">Dashboard</a>
+    <a href="#">Events</a>
+    <a href="#">Users</a>
+    <a href="#">Reports</a>
+    <a href="#">Settings</a>
+  </div>
+  <div class="avatar">R</div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="overline">Platform Overview</div>
+    <h1>Your Command Center</h1>
+    <div class="subtitle">Track events, manage users, and monitor performance across the entire Avento platform. Real-time insights at a glance.</div>
+    <div class="badges">
+      <div class="badge"><span class="num">1,247</span> Events</div>
+      <div class="badge"><span class="num">8,432</span> Users</div>
+      <div class="badge"><span class="num">$284K</span> Revenue</div>
+      <div class="badge"><span class="num">34.2%</span> Conversion</div>
+    </div>
+  </div>
+
+  <!-- 3-COL GRID -->
+  <div class="magazine-grid">
+
+    <!-- COL 1: NAV -->
+    <div class="col">
+      <div class="card">
+        <h3>Navigation</h3>
+        <div class="nav-links">
+          <a href="#" class="active"><span class="icon">📊</span> Dashboard</a>
+          <a href="#"><span class="icon">📅</span> Events</a>
+          <a href="#"><span class="icon">👥</span> Users</a>
+          <a href="#"><span class="icon">📋</span> Reports</a>
+          <a href="#"><span class="icon">📁</span> Projects</a>
+          <a href="#"><span class="icon">⚙️</span> Settings</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Quick Actions</h3>
+        <div class="actions">
+          <button class="action-btn"><span class="icon">➕</span> Create Event</button>
+          <button class="action-btn"><span class="icon">👤</span> Add User</button>
+          <button class="action-btn"><span class="icon">📋</span> New Report</button>
+          <button class="action-btn"><span class="icon">📢</span> Announcement</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 2: FEATURED -->
+    <div class="col">
+      <div class="card" style="border:none;background:transparent;padding:0">
+        <div style="display:flex;flex-direction:column;gap:24px">
+          <div class="featured">
+            <div class="thumb"><div style="background:linear-gradient(135deg,#1a0505,#dc2626)"></div></div>
+            <div class="tag">Featured Event</div>
+            <h2>HackFusion 2.0 — The Ultimate Hackathon</h2>
+            <div class="excerpt">48 hours of intense coding, collaboration, and innovation. 342 participants, 56 teams, $12K in prizes. The biggest tech event of the year returns with tracks in AI/ML, Web3, and Sustainability.</div>
+            <a href="#" class="read-more">Read more →</a>
+          </div>
+
+          <div class="featured">
+            <div class="thumb"><div style="background:linear-gradient(135deg,#0a1628,#3b82f6)"></div></div>
+            <div class="tag">Workshop</div>
+            <h2>AI Workshop Series — Deep Learning Fundamentals</h2>
+            <div class="excerpt">A 6-part workshop series covering neural networks, CNNs, RNNs, and transformers. Hands-on sessions with PyTorch and TensorFlow. Led by industry experts from Google and Meta.</div>
+            <a href="#" class="read-more">Read more →</a>
+          </div>
+
+          <div class="featured">
+            <div class="thumb"><div style="background:linear-gradient(135deg,#0a1a0a,#22c55e)"></div></div>
+            <div class="tag">Cultural</div>
+            <h2>Cultural Fest '26 — Ensemble</h2>
+            <div class="excerpt">Three days of music, dance, art, and creativity. 567 registrations and counting. Headliners include Prateek Kuhad and The Local Train. Don't miss the biggest cultural celebration.</div>
+            <a href="#" class="read-more">Read more →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COL 3: STATS -->
+    <div class="col">
+      <div class="card">
+        <h3>Statistics</h3>
+        <div class="bar-chart">
+          <div class="bar-item">
+            <div class="bar-label"><span>HackFusion</span><span>342</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:85%;background:var(--red)"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Cultural Fest</span><span>567</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:95%;background:#ef4444"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>AI Workshop</span><span>189</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:48%;background:#3b82f6"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Startup Pitch</span><span>96</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:24%;background:#22c55e"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Design Thinking</span><span>78</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:20%;background:#f59e0b"></div></div>
+          </div>
+          <div class="bar-item">
+            <div class="bar-label"><span>Cloud Summit</span><span>215</span></div>
+            <div class="bar-track"><div class="bar-fill" style="width:54%;background:#06b6d4"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Recent Activity</h3>
+        <div class="activity-item">
+          <div class="dot" style="background:#22c55e"></div>
+          <div>
+            <div class="text"><strong>Arjun</strong> approved 12 registrations</div>
+            <div class="time">2 min ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="dot" style="background:#3b82f6"></div>
+          <div>
+            <div class="text"><strong>Sneha</strong> created "Blockchain Hackathon"</div>
+            <div class="time">18 min ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="dot" style="background:#f59e0b"></div>
+          <div>
+            <div class="text"><strong>Meera</strong> updated Cultural Fest venue</div>
+            <div class="time">1 hr ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="dot" style="background:#ef4444"></div>
+          <div>
+            <div class="text"><strong>Vikram</strong> flagged scheduling conflict</div>
+            <div class="time">2 hr ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="dot" style="background:#22c55e"></div>
+          <div>
+            <div class="text"><strong>Priya</strong> exported Q3 report</div>
+            <div class="time">3 hr ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="dot" style="background:#3b82f6"></div>
+          <div>
+            <div class="text"><strong>Rohan</strong> sent bulk notification</div>
+            <div class="time">4 hr ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="dot" style="background:#f59e0b"></div>
+          <div>
+            <div class="text"><strong>Divya</strong> updated AI Workshop curriculum</div>
+            <div class="time">5 hr ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

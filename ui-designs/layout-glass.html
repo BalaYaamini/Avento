@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glassmorphism Dashboard — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--glass:rgba(255,255,255,.03);--glass-border:rgba(255,255,255,.06);--glass-hover:rgba(255,255,255,.06);--red:#dc2626;--red-light:#ef4444;--text:#e5e5e5;--text-dim:#737373;--text-muted:#525252;--radius:16px}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;color:var(--text);display:flex;position:relative}
+
+/* BG ORBS */
+body::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(circle at 20% 30%,rgba(220,38,38,.08),transparent 50%),radial-gradient(circle at 80% 70%,rgba(124,58,237,.06),transparent 50%),radial-gradient(circle at 50% 50%,rgba(220,38,38,.03),transparent 60%);z-index:0;pointer-events:none}
+body>*{position:relative;z-index:1}
+
+/* SIDEBAR */
+.sidebar{width:240px;height:100vh;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);background:rgba(255,255,255,.03);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;padding:24px 16px;flex-shrink:0}
+.sidebar .logo{font-size:20px;font-weight:800;color:var(--red);letter-spacing:-.5px;padding:0 12px;margin-bottom:32px}
+.sidebar nav{display:flex;flex-direction:column;gap:4px}
+.sidebar nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:var(--text-dim);text-decoration:none;font-size:13px;font-weight:500;transition:all .2s}
+.sidebar nav a:hover{background:rgba(255,255,255,.05);color:var(--text)}
+.sidebar nav a.active{background:rgba(220,38,38,.1);color:var(--red-light)}
+.sidebar nav a svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.sidebar .bottom{margin-top:auto;display:flex;flex-direction:column;gap:4px}
+.sidebar .user-info{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.03)}
+.sidebar .user-info .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0}
+.sidebar .user-info .details .name{font-size:13px;font-weight:600}
+.sidebar .user-info .details .role{font-size:11px;color:var(--text-dim)}
+
+/* MAIN */
+.main{flex:1;height:100vh;overflow-y:auto;padding:32px 40px;display:flex;flex-direction:column;gap:28px}
+.main::-webkit-scrollbar{width:6px}
+.main::-webkit-scrollbar-track{background:transparent}
+.main::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+
+/* HEADER */
+.header{display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:24px;font-weight:700;letter-spacing:-.5px}
+.header h1 span{color:var(--red-light)}
+.header .right{display:flex;align-items:center;gap:12px}
+.header .search{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--glass-border);border-radius:10px;padding:10px 14px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.header .search svg{width:16px;height:16px;stroke:var(--text-muted);fill:none;stroke-width:2;flex-shrink:0}
+.header .search input{background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;width:200px}
+.header .search input::placeholder{color:var(--text-muted)}
+.header .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;cursor:pointer}
+
+/* GLASS CARD */
+.glass{background:rgba(255,255,255,.03);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--glass-border);border-radius:var(--radius);transition:all .3s ease;box-shadow:0 4px 24px rgba(0,0,0,.2)}
+.glass:hover{background:rgba(255,255,255,.05);border-color:rgba(220,38,38,.15);box-shadow:0 4px 24px rgba(0,0,0,.3),0 0 0 1px rgba(220,38,38,.08)}
+
+/* STAT ROW */
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.stat-card{padding:24px;display:flex;flex-direction:column;gap:10px}
+.stat-card .top{display:flex;justify-content:space-between;align-items:center}
+.stat-card .icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.stat-card .change{font-size:12px;font-weight:500}
+.stat-card .change .up{color:#22c55e}
+.stat-card .value{font-size:28px;font-weight:800;letter-spacing:-1px}
+.stat-card .label{font-size:12px;color:var(--text-dim)}
+
+/* CONTENT */
+.content{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;flex:1}
+
+/* TABLE */
+.table-card{padding:24px;display:flex;flex-direction:column}
+.table-card h3{font-size:15px;font-weight:600;margin-bottom:16px;letter-spacing:-.2px}
+.table-wrap{flex:1;overflow:hidden}
+.table-wrap table{width:100%;border-collapse:collapse}
+.table-wrap th{font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;text-align:left;padding:0 12px 10px;border-bottom:1px solid var(--glass-border)}
+.table-wrap td{font-size:13px;padding:12px;border-bottom:1px solid rgba(255,255,255,.03)}
+.table-wrap tr:last-child td{border-bottom:none}
+.badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-block}
+.badge-live{background:rgba(220,38,38,.12);color:var(--red-light)}
+.badge-active{background:rgba(34,197,94,.1);color:#22c55e}
+.badge-upcoming{background:rgba(59,130,246,.1);color:#3b82f6}
+.badge-ended{background:rgba(255,255,255,.06);color:var(--text-dim)}
+
+/* FEED */
+.feed-card{padding:24px;display:flex;flex-direction:column}
+.feed-card h3{font-size:15px;font-weight:600;margin-bottom:16px;letter-spacing:-.2px}
+.feed{display:flex;flex-direction:column;gap:0}
+.feed-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.feed-item:last-child{border-bottom:none}
+.feed-item .dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.feed-item .content{flex:1;min-width:0}
+.feed-item .text{font-size:13px;line-height:1.5;color:var(--text-dim)}
+.feed-item .text strong{color:var(--text);font-weight:600}
+.feed-item .time{font-size:11px;color:var(--text-muted);margin-top:3px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">Avento</div>
+  <nav>
+    <a href="#" class="active">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+      Events
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      Users
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      Reports
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      Projects
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
+    </a>
+  </nav>
+  <div class="bottom">
+    <div class="user-info">
+      <div class="avatar">R</div>
+      <div class="details">
+        <div class="name">Rahul Kapoor</div>
+        <div class="role">Admin</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="header">
+    <h1>Welcome back, <span>Rahul</span></h1>
+    <div class="right">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search...">
+      </div>
+      <div class="avatar">R</div>
+    </div>
+  </div>
+
+  <!-- STAT CARDS -->
+  <div class="stat-row">
+    <div class="glass stat-card">
+      <div class="top">
+        <div class="icon" style="background:rgba(220,38,38,.12)">📊</div>
+        <div class="change"><span class="up">↑ 12.5%</span></div>
+      </div>
+      <div class="value">1,247</div>
+      <div class="label">Total Events</div>
+    </div>
+    <div class="glass stat-card">
+      <div class="top">
+        <div class="icon" style="background:rgba(59,130,246,.12)">👥</div>
+        <div class="change"><span class="up">↑ 8.3%</span></div>
+      </div>
+      <div class="value">8,432</div>
+      <div class="label">Active Users</div>
+    </div>
+    <div class="glass stat-card">
+      <div class="top">
+        <div class="icon" style="background:rgba(34,197,94,.12)">💰</div>
+        <div class="change"><span class="up">↑ 24.1%</span></div>
+      </div>
+      <div class="value">$284K</div>
+      <div class="label">Revenue</div>
+    </div>
+    <div class="glass stat-card">
+      <div class="top">
+        <div class="icon" style="background:rgba(245,158,11,.12)">🎯</div>
+        <div class="change"><span style="color:var(--red-light)">↓ 2.1%</span></div>
+      </div>
+      <div class="value">34.2%</div>
+      <div class="label">Conversion Rate</div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+    <div class="glass table-card">
+      <h3>Events Overview</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Event</th><th>Date</th><th>Attendees</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td style="font-weight:600">HackFusion 2.0</td><td>Sep 10, 2026</td><td>342</td><td><span class="badge badge-live">Live</span></td></tr>
+            <tr><td style="font-weight:600">AI Workshop Series</td><td>Sep 8, 2026</td><td>189</td><td><span class="badge badge-active">Active</span></td></tr>
+            <tr><td style="font-weight:600">Cultural Fest '26</td><td>Sep 15, 2026</td><td>567</td><td><span class="badge badge-upcoming">Upcoming</span></td></tr>
+            <tr><td style="font-weight:600">Startup Pitch Night</td><td>Sep 5, 2026</td><td>96</td><td><span class="badge badge-live">Live</span></td></tr>
+            <tr><td style="font-weight:600">Design Thinking Workshop</td><td>Sep 1, 2026</td><td>78</td><td><span class="badge badge-ended">Ended</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="glass feed-card">
+      <h3>Activity Feed</h3>
+      <div class="feed">
+        <div class="feed-item">
+          <div class="dot" style="background:#22c55e"></div>
+          <div class="content">
+            <div class="text"><strong>Arjun</strong> approved 12 registrations for HackFusion</div>
+            <div class="time">2 minutes ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#3b82f6"></div>
+          <div class="content">
+            <div class="text"><strong>Sneha</strong> created "Blockchain Hackathon" event</div>
+            <div class="time">18 minutes ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#f59e0b"></div>
+          <div class="content">
+            <div class="text"><strong>Meera</strong> updated venue for Cultural Fest '26</div>
+            <div class="time">1 hour ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#ef4444"></div>
+          <div class="content">
+            <div class="text"><strong>Vikram</strong> flagged scheduling conflict for Sep 15</div>
+            <div class="time">2 hours ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#22c55e"></div>
+          <div class="content">
+            <div class="text"><strong>Priya</strong> exported Q3 report — 94% completion</div>
+            <div class="time">3 hours ago</div>
+          </div>
+        </div>
+        <div class="feed-item">
+          <div class="dot" style="background:#3b82f6"></div>
+          <div class="content">
+            <div class="text"><strong>Rohan</strong> sent bulk notification to 8,400+ users</div>
+            <div class="time">4 hours ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

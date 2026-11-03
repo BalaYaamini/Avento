@@ -15,7 +15,11 @@ const startEventCompletionJob = () => {
         .lt('date', now);
 
       if (error) {
-        console.error('[EventCompletionJob] Error fetching eligible events:', error.message);
+        if (error.message && (error.message.includes('fetch failed') || error.message.includes('ENOTFOUND'))) {
+          console.warn('[EventCompletionJob] Database unreachable (fetch failed). Please check your Supabase project status in dashboard.');
+        } else {
+          console.error('[EventCompletionJob] Error fetching eligible events:', error.message);
+        }
         return;
       }
 

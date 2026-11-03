@@ -3,15 +3,11 @@
 const supabase = require('../config/supabaseClient');
 const jwt = require('jsonwebtoken');
 const { validatePasswordStrength } = require('../utils/passwordValidator');
-const { sendPasswordResetEmail, sendEmailNotification } = require('../services/notificationService');
-
-const COLLEGE_DOMAINS = ['@cse.suh.edu.in', '@aiml.suh.edu.in', '@suh.edu.in'];
+const { sendPasswordResetEmail, sendEmailNotification, emailBrandHeader } = require('../services/notificationService');
 
 const getRoleFromEmail = (email) => {
   const e = email.toLowerCase();
   if (e === 'admin.avento@gmail.com') return 'admin';
-  if (e.endsWith('@cse.suh.edu.in') || e.endsWith('@aiml.suh.edu.in')) return 'student';
-  if (e.endsWith('@suh.edu.in')) return 'faculty';
   return 'student';
 };
 
@@ -293,7 +289,9 @@ exports.login = async (req, res) => {
         rollNumber: profileData?.roll_number || null,
         phone: profileData?.phone || null,
         gender: profileData?.gender || null,
-        collegeName: profileData?.college_name || null,
+        college: profileData?.college_name || profileData?.college || null,
+        collegeName: profileData?.college_name || profileData?.college || null,
+        college_name: profileData?.college_name || profileData?.college || null,
         department: profileData?.department || null,
         degreeProgram: profileData?.degree_program || null,
         yearOfStudy: profileData?.year_of_study || null,
@@ -383,8 +381,9 @@ exports.getProfile = async (req, res) => {
       roll_number: freshProfile?.roll_number || req.user.roll_number || null,
       phone: freshProfile?.phone || req.user.phone || null,
       gender: freshProfile?.gender || req.user.gender || null,
-      collegeName: freshProfile?.college_name || req.user.collegeName || null,
-      college_name: freshProfile?.college_name || req.user.college_name || null,
+      college: freshProfile?.college_name || freshProfile?.college || req.user.college || req.user.collegeName || null,
+      collegeName: freshProfile?.college_name || freshProfile?.college || req.user.collegeName || req.user.college || null,
+      college_name: freshProfile?.college_name || freshProfile?.college || req.user.college_name || req.user.college || null,
       department: freshProfile?.department || req.user.department || null,
       degreeProgram: freshProfile?.degree_program || req.user.degreeProgram || null,
       degree_program: freshProfile?.degree_program || req.user.degree_program || null,
@@ -440,12 +439,10 @@ exports.sendOtp = async (req, res) => {
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
     <tr><td align="center">
       <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
-        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="height:8px;background:linear-gradient(135deg,#06b6d4,#0891b2);"></td></tr>
         <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
-          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
-            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
-          </h1>
-          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Verification Code</p>
+          ${emailBrandHeader('')}
+          <p style="margin:12px 0 0 0;color:#0891b2;font-size:20px;font-weight:600;letter-spacing:1px;">Verification Code</p>
         </td></tr>
         <tr><td style="padding:30px 40px;">
           <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>
@@ -511,18 +508,47 @@ exports.googleLogin = async (req, res) => {
       .eq('id', supaUser.id)
       .maybeSingle();
 
+    // If profile not found by Supabase Auth UID, check by email in case user was pre-imported by admin
+    if (!profileData) {
+      const { data: profileByEmail } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', emailLower)
+        .maybeSingle();
+
+      if (profileByEmail) {
+        profileData = profileByEmail;
+        // If the Supabase Auth UID differs from the imported profile UID, update it to the new auth UID
+        if (profileByEmail.id !== supaUser.id) {
+          try {
+            await supabase
+              .from('profiles')
+              .update({ id: supaUser.id, registration_method: 'google' })
+              .eq('email', emailLower);
+            profileData.id = supaUser.id;
+          } catch (linkIdErr) {
+            console.warn('[Google Login] Profile ID sync notice:', linkIdErr.message);
+          }
+        }
+      }
+    }
+
     if (profileData && profileData.status === 'inactive') {
       return res.status(403).json({ message: 'Account is deactivated. Please contact administrator.' });
     }
 
-    const role = getRoleFromEmail(emailLower);
+    // System Security Policy:
+    // Any new account self-created via "Continue with Google" or registration is ALWAYS strictly a 'student'.
+    // Faculty coordinators and university officials CANNOT self-register; they can ONLY be imported or assigned by an Admin.
+    const defaultNewRole = emailLower === 'admin.avento@gmail.com' ? 'admin' : 'student';
 
     if (!profileData) {
+      // BRAND NEW USER VIA GOOGLE — strictly assign 'student' role
       const newProfile = {
         id: supaUser.id,
         email: emailLower,
         name: fullName,
-        role,
+        role: defaultNewRole, // strictly 'student'
         created_at: new Date().toISOString(),
         first_login: false,
         registration_method: 'google',
@@ -542,19 +568,30 @@ exports.googleLogin = async (req, res) => {
           .eq('id', supaUser.id);
         if (avatarErr) console.warn('[Google Login] Avatar update skipped:', avatarErr.message);
       }
-      profileData = { role, status: 'active', first_login: false };
-    } else if (profileData.registration_method !== 'google') {
-      await supabase
-        .from('profiles')
-        .update({ registration_method: 'google' })
-        .eq('id', supaUser.id);
+      profileData = { ...newProfile, status: 'active' };
+    } else {
+      // PRE-EXISTING PROFILE (e.g. pre-imported by admin as faculty or official)
+      // PRESERVE the existing role! A faculty member imported by admin remains faculty.
+      const updates = {};
+      if (profileData.registration_method !== 'google') {
+        updates.registration_method = 'google';
+      }
+      if (avatarUrl && !profileData.avatar_url) {
+        updates.avatar_url = avatarUrl;
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase
+          .from('profiles')
+          .update(updates)
+          .eq('id', profileData.id);
+      }
     }
 
-    let userRole = profileData.role || role;
+    let userRole = profileData.role || defaultNewRole;
     if (emailLower === 'admin.avento@gmail.com') {
       userRole = 'admin';
       if (profileData.role !== 'admin') {
-        await supabase.from('profiles').update({ role: 'admin' }).eq('id', supaUser.id);
+        await supabase.from('profiles').update({ role: 'admin' }).eq('id', profileData.id);
       }
     }
 
@@ -607,7 +644,9 @@ exports.googleLogin = async (req, res) => {
         rollNumber: profileData?.roll_number || null,
         phone: profileData?.phone || null,
         gender: profileData?.gender || null,
-        collegeName: profileData?.college_name || null,
+        college: profileData?.college_name || profileData?.college || null,
+        collegeName: profileData?.college_name || profileData?.college || null,
+        college_name: profileData?.college_name || profileData?.college || null,
         department: profileData?.department || null,
         degreeProgram: profileData?.degree_program || null,
         yearOfStudy: profileData?.year_of_study || null,
@@ -723,12 +762,10 @@ exports.sendSetPasswordOtp = async (req, res) => {
   <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#F8FAFC;padding:40px 20px;">
     <tr><td align="center">
       <table width="100%" max-width="600" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.08);">
-        <tr><td style="height:8px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);"></td></tr>
+        <tr><td style="height:8px;background:linear-gradient(135deg,#06b6d4,#0891b2);"></td></tr>
         <tr><td style="padding:40px 20px 10px 20px;text-align:center;background-color:#ffffff;">
-          <h1 style="margin:0;font-size:32px;letter-spacing:1px;">
-            <span style="background-color:#F5D76E;color:#1e293b;padding:2px 10px;border-radius:4px;display:inline-block;">AVENTO</span>
-          </h1>
-          <p style="margin:12px 0 0 0;color:#7C3AED;font-size:20px;font-weight:600;letter-spacing:1px;">Set Your Password</p>
+          ${emailBrandHeader('')}
+          <p style="margin:12px 0 0 0;color:#0891b2;font-size:20px;font-weight:600;letter-spacing:1px;">Set Your Password</p>
         </td></tr>
         <tr><td style="padding:30px 40px;">
           <p style="margin:0 0 20px 0;font-size:16px;color:#334155;line-height:1.6;">Hello,</p>

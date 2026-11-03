@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minimal Icon Sidebar — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--surface:#111111;--surface2:#1a1a1a;--red:#dc2626;--red-light:#ef4444;--text:#e5e5e5;--text-dim:#737373;--text-muted:#525252;--radius:12px}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex}
+
+/* SIDEBAR */
+.sidebar{width:72px;height:100vh;background:var(--surface);display:flex;flex-direction:column;align-items:center;padding:16px 0;position:relative;z-index:10;flex-shrink:0}
+.sidebar .logo{width:40px;height:40px;background:var(--red);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;margin-bottom:32px;cursor:pointer}
+.sidebar nav{flex:1;display:flex;flex-direction:column;gap:4px;align-items:center}
+.sidebar nav a{width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;color:var(--text-dim);text-decoration:none;position:relative;transition:all .2s}
+.sidebar nav a:hover,.sidebar nav a.active{background:var(--surface2);color:var(--text)}
+.sidebar nav a.active{color:var(--red)}
+.sidebar nav a svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sidebar nav a .tooltip{position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);background:#222;color:#fff;font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:100}
+.sidebar nav a:hover .tooltip{opacity:1}
+.sidebar .avatar-wrap{margin-top:auto}
+.sidebar .avatar-wrap .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--red),#7c3aed);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;cursor:pointer}
+
+/* MAIN */
+.main{flex:1;height:100vh;overflow-y:auto;padding:32px 40px;display:flex;flex-direction:column;gap:32px}
+.main::-webkit-scrollbar{width:6px}
+.main::-webkit-scrollbar-track{background:transparent}
+.main::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+
+/* HEADER */
+.header{display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:24px;font-weight:700;letter-spacing:-.5px}
+.header .date{font-size:13px;color:var(--text-dim)}
+
+/* STAT GRID */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.stat-card{background:var(--surface);border-radius:var(--radius);padding:28px;display:flex;flex-direction:column;height:250px;position:relative;overflow:hidden;transition:transform .2s}
+.stat-card:hover{transform:translateY(-2px)}
+.stat-card .label{font-size:13px;color:var(--text-dim);font-weight:500;margin-bottom:8px}
+.stat-card .number{font-size:48px;font-weight:800;letter-spacing:-2px;line-height:1}
+.stat-card .number .unit{font-size:24px;font-weight:600;color:var(--text-dim);margin-left:4px}
+.stat-card .sub{font-size:12px;color:var(--text-dim);margin-top:auto;display:flex;align-items:center;gap:6px}
+.stat-card .sub .up{color:#22c55e}
+.stat-card .sub .down{color:var(--red-light)}
+/* SPARKLINE */
+.stat-card .sparkline{position:absolute;bottom:0;left:0;right:0;height:60px;opacity:.4}
+.stat-card .sparkline svg{width:100%;height:100%}
+
+/* TIMELINE */
+.timeline-section{display:flex;flex-direction:column;gap:16px}
+.timeline-section h2{font-size:15px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px}
+.timeline-track{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;scroll-snap-type:x mandatory}
+.timeline-track::-webkit-scrollbar{height:4px}
+.timeline-track::-webkit-scrollbar-track{background:transparent}
+.timeline-track::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.timeline-card{min-width:260px;flex-shrink:0;background:var(--surface);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:10px;scroll-snap-align:start;transition:transform .2s}
+.timeline-card:hover{transform:translateY(-2px)}
+.timeline-card .thumb{width:100%;height:100px;border-radius:8px;overflow:hidden}
+.timeline-card .thumb div{width:100%;height:100%;border-radius:8px}
+.timeline-card .title{font-size:14px;font-weight:600;line-height:1.3}
+.timeline-card .meta{display:flex;justify-content:space-between;align-items:center}
+.timeline-card .date{font-size:12px;color:var(--text-dim)}
+.timeline-card .badge{font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px}
+.badge-live{background:rgba(220,38,38,.15);color:var(--red-light)}
+.badge-upcoming{background:rgba(34,197,94,.12);color:#22c55e}
+.badge-draft{background:rgba(255,255,255,.06);color:var(--text-dim)}
+.badge-active{background:rgba(59,130,246,.12);color:#3b82f6}
+
+/* FAB */
+.fab{position:fixed;bottom:32px;right:32px;width:56px;height:56px;background:var(--red);border-radius:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 32px rgba(220,38,38,.4);transition:transform .2s;z-index:20}
+.fab:hover{transform:scale(1.08)}
+.fab svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2.5;stroke-linecap:round}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">A</div>
+  <nav>
+    <a href="#" class="active">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span class="tooltip">Dashboard</span>
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+      <span class="tooltip">Events</span>
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      <span class="tooltip">Users</span>
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      <span class="tooltip">Reports</span>
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span class="tooltip">Projects</span>
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="tooltip">Settings</span>
+    </a>
+  </nav>
+  <div class="avatar-wrap"><div class="avatar">R</div></div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="header">
+    <div>
+      <h1>Dashboard</h1>
+      <div class="date">Friday, September 11, 2026</div>
+    </div>
+  </div>
+
+  <!-- STAT CARDS -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Total Events</div>
+      <div class="number">1,247<span class="unit"></span></div>
+      <div class="sub"><span class="up">↑ 12.5%</span> vs last month</div>
+      <div class="sparkline"><svg viewBox="0 0 200 60" preserveAspectRatio="none"><polyline points="0,50 20,42 40,45 60,30 80,35 100,22 120,28 140,18 160,20 180,10 200,5" fill="none" stroke="#dc2626" stroke-width="2"/><polyline points="0,50 20,42 40,45 60,30 80,35 100,22 120,28 140,18 160,20 180,10 200,5 200,60 0,60" fill="url(#sparkGrad1)" opacity=".3"/><defs><linearGradient id="sparkGrad1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#dc2626" stop-opacity=".4"/><stop offset="1" stop-color="#dc2626" stop-opacity="0"/></linearGradient></defs></svg></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Active Users</div>
+      <div class="number">8,432<span class="unit"></span></div>
+      <div class="sub"><span class="up">↑ 8.3%</span> vs last month</div>
+      <div class="sparkline"><svg viewBox="0 0 200 60" preserveAspectRatio="none"><polyline points="0,55 20,48 40,52 60,40 80,44 100,35 120,30 140,32 160,25 180,15 200,8" fill="none" stroke="#ef4444" stroke-width="2"/><polyline points="0,55 20,48 40,52 60,40 80,44 100,35 120,30 140,32 160,25 180,15 200,8 200,60 0,60" fill="url(#sparkGrad2)" opacity=".3"/><defs><linearGradient id="sparkGrad2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef4444" stop-opacity=".4"/><stop offset="1" stop-color="#ef4444" stop-opacity="0"/></linearGradient></defs></svg></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Revenue</div>
+      <div class="number">$284K<span class="unit"></span></div>
+      <div class="sub"><span class="up">↑ 24.1%</span> vs last month</div>
+      <div class="sparkline"><svg viewBox="0 0 200 60" preserveAspectRatio="none"><polyline points="0,48 20,50 40,40 60,42 80,35 100,28 120,32 140,20 160,22 180,12 200,6" fill="none" stroke="#dc2626" stroke-width="2"/><polyline points="0,48 20,50 40,40 60,42 80,35 100,28 120,32 140,20 160,22 180,12 200,6 200,60 0,60" fill="url(#sparkGrad3)" opacity=".3"/><defs><linearGradient id="sparkGrad3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#dc2626" stop-opacity=".4"/><stop offset="1" stop-color="#dc2626" stop-opacity="0"/></linearGradient></defs></svg></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Conversion Rate</div>
+      <div class="number">34.2<span class="unit">%</span></div>
+      <div class="sub"><span class="down">↓ 2.1%</span> vs last month</div>
+      <div class="sparkline"><svg viewBox="0 0 200 60" preserveAspectRatio="none"><polyline points="0,20 20,18 40,22 60,28 80,25 100,30 120,35 140,32 160,38 180,42 200,48" fill="none" stroke="#ef4444" stroke-width="2"/><polyline points="0,20 20,18 40,22 60,28 80,25 100,30 120,35 140,32 160,38 180,42 200,48 200,60 0,60" fill="url(#sparkGrad4)" opacity=".3"/><defs><linearGradient id="sparkGrad4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef4444" stop-opacity=".4"/><stop offset="1" stop-color="#ef4444" stop-opacity="0"/></linearGradient></defs></svg></div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="timeline-section">
+    <h2>Recent Events</h2>
+    <div class="timeline-track">
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#1a0505,#dc2626)"></div></div>
+        <div class="title">HackFusion 2.0</div>
+        <div class="meta"><span class="date">Sep 10, 2026</span><span class="badge badge-live">Live</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#0a1628,#3b82f6)"></div></div>
+        <div class="title">AI Workshop Series</div>
+        <div class="meta"><span class="date">Sep 8, 2026</span><span class="badge badge-active">Active</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#0a1a0a,#22c55e)"></div></div>
+        <div class="title">Cultural Fest '26</div>
+        <div class="meta"><span class="date">Sep 5, 2026</span><span class="badge badge-upcoming">Upcoming</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#1a1005,#f59e0b)"></div></div>
+        <div class="title">Startup Pitch Night</div>
+        <div class="meta"><span class="date">Sep 3, 2026</span><span class="badge badge-live">Live</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#150a1a,#a855f7)"></div></div>
+        <div class="title">Design Thinking Workshop</div>
+        <div class="meta"><span class="date">Sep 1, 2026</span><span class="badge badge-draft">Draft</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#0a1515,#06b6d4)"></div></div>
+        <div class="title">Cloud Computing Summit</div>
+        <div class="meta"><span class="date">Aug 28, 2026</span><span class="badge badge-active">Active</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#1a0a0a,#ef4444)"></div></div>
+        <div class="title">Cybersecurity CTF</div>
+        <div class="meta"><span class="date">Aug 25, 2026</span><span class="badge badge-live">Live</span></div>
+      </div>
+      <div class="timeline-card">
+        <div class="thumb"><div style="background:linear-gradient(135deg,#0f1a0a,#84cc16)"></div></div>
+        <div class="title">Blockchain Hackathon</div>
+        <div class="meta"><span class="date">Aug 22, 2026</span><span class="badge badge-upcoming">Upcoming</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FAB -->
+<div class="fab">
+  <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+</div>
+
+</body>
+</html>

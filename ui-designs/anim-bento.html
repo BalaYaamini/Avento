@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Animated Bento — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --card: #161616;
+    --border: #1c1c1c;
+    --text: #fafafa;
+    --text-muted: #a3a3a3;
+    --text-dim: #525252;
+    --accent: #ef4444;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px;
+  }
+
+  /* ── Keyframes ── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  @keyframes barFill {
+    from { width: 0; }
+  }
+
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { box-shadow: 0 0 12px 2px rgba(239,68,68,0.15); }
+  }
+
+  /* ── Bento Grid ── */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: auto;
+    gap: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    opacity: 0;
+    animation: fadeInUp 0.5s ease forwards;
+    transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    cursor: default;
+    overflow: hidden;
+  }
+  .cell:hover {
+    transform: scale(1.02);
+    border-color: rgba(239,68,68,0.25);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  .cell-hero {
+    grid-column: span 2;
+    grid-row: span 2;
+    position: relative;
+    background: linear-gradient(135deg, #161616 0%, #1a0a0a 50%, #161616 100%);
+    background-size: 200% 200%;
+    animation: fadeInUp 0.5s ease forwards, gradientShift 6s ease infinite;
+    animation-delay: 0.1s;
+    min-height: 340px;
+  }
+  .cell-hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 250px; height: 250px;
+    background: radial-gradient(circle, rgba(239,68,68,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: pulse 4s ease-in-out infinite;
+  }
+
+  .hero-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .hero-title {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.2;
+    margin-bottom: 12px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    position: relative;
+    z-index: 1;
+    max-width: 380px;
+  }
+
+  .cell:nth-child(2) { animation-delay: 0.15s; }
+  .cell:nth-child(3) { animation-delay: 0.2s; }
+  .cell:nth-child(4) { animation-delay: 0.25s; }
+  .cell:nth-child(5) { animation-delay: 0.3s; }
+  .cell:nth-child(6) { animation-delay: 0.35s; }
+  .cell:nth-child(7) { animation-delay: 0.4s; }
+  .cell:nth-child(8) { animation-delay: 0.45s; }
+
+  /* ── Stat Cells ── */
+  .cell-stat .stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+  .cell-stat .stat-value {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -1px;
+  }
+  .cell-stat .stat-change {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+
+  /* ── Leaderboard ── */
+  .leaderboard-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+  .leaderboard-item:last-child { border-bottom: none; }
+  .leaderboard-item:hover { background: rgba(255,255,255,0.02); border-radius: 8px; }
+
+  .rank {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .rank.gold { background: rgba(239,68,68,0.15); color: var(--accent); }
+
+  .leader-info { flex: 1; }
+  .leader-name {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .leader-event {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .leader-amount {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* ── Progress Bars ── */
+  .progress-row {
+    margin-bottom: 16px;
+  }
+  .progress-row:last-child { margin-bottom: 0; }
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .progress-label {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .progress-val {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .progress-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--accent);
+    animation: barFill 1.2s ease forwards;
+    animation-delay: 0.6s;
+    width: 0;
+  }
+
+  /* ── Task List ── */
+  .task-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .task-item:last-child { border-bottom: none; }
+
+  .checkbox-wrap {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .checkbox-custom {
+    width: 18px; height: 18px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+  }
+  .checkbox-wrap.checked .checkbox-custom {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .checkbox-custom svg {
+    width: 12px; height: 12px;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.25s ease;
+  }
+  .checkbox-wrap.checked .checkbox-custom svg {
+    opacity: 1;
+    transform: scale(1);
+  }
+  .task-text {
+    font-size: 13px;
+    color: var(--text);
+    transition: color 0.2s;
+  }
+  .checkbox-wrap.checked + .task-text {
+    color: var(--text-dim);
+    text-decoration: line-through;
+  }
+
+  .mini-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: auto;
+    animation: pulse 3s ease-in-out infinite;
+  }
+  .mini-badge.hot { background: rgba(239,68,68,0.12); color: var(--accent); }
+  .mini-badge.new { background: rgba(34,197,94,0.1); color: #22c55e; }
+</style>
+</head>
+<body>
+
+<div class="bento">
+  <!-- Hero -->
+  <div class="cell cell-hero">
+    <div class="hero-label">Dashboard</div>
+    <div class="hero-title">Avento<br>Event Hub</div>
+    <div class="hero-desc">Manage your events, track registrations, and monitor performance — all in one place.</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="cell cell-stat">
+    <div class="stat-label">Total Events</div>
+    <div class="stat-value" data-target="24">0</div>
+    <div class="stat-change">+3 this month</div>
+  </div>
+  <div class="cell cell-stat">
+    <div class="stat-label">Registrations</div>
+    <div class="stat-value" data-target="1847">0</div>
+    <div class="stat-change">+12% vs last month</div>
+  </div>
+
+  <!-- Leaderboard -->
+  <div class="cell" style="grid-column: span 2;">
+    <h3 style="font-size:14px;font-weight:600;margin-bottom:16px;">Top Events</h3>
+    <div class="leaderboard-item">
+      <div class="rank gold">1</div>
+      <div class="leader-info">
+        <div class="leader-name">Tech Summit 2026</div>
+        <div class="leader-event">Mar 15 · Convention Center</div>
+      </div>
+      <div class="leader-amount" data-target="485" data-prefix="$" data-suffix="k">$0k</div>
+    </div>
+    <div class="leaderboard-item">
+      <div class="rank">2</div>
+      <div class="leader-info">
+        <div class="leader-name">AI Conference</div>
+        <div class="leader-event">Apr 05 · Innovation Campus</div>
+      </div>
+      <div class="leader-amount" data-target="320" data-prefix="$" data-suffix="k">$0k</div>
+    </div>
+    <div class="leaderboard-item">
+      <div class="rank">3</div>
+      <div class="leader-info">
+        <div class="leader-name">Design Workshop</div>
+        <div class="leader-event">Mar 22 · Creative Hub</div>
+      </div>
+      <div class="leader-amount" data-target="180" data-prefix="$" data-suffix="k">$0k</div>
+    </div>
+  </div>
+
+  <!-- Capacity -->
+  <div class="cell">
+    <h3 style="font-size:14px;font-weight:600;margin-bottom:18px;">Capacity</h3>
+    <div class="progress-row">
+      <div class="progress-header">
+        <span class="progress-label">Tech Summit</span>
+        <span class="progress-val">85%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="--target:85%"></div></div>
+    </div>
+    <div class="progress-row">
+      <div class="progress-header">
+        <span class="progress-label">AI Conference</span>
+        <span class="progress-val">92%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="--target:92%"></div></div>
+    </div>
+    <div class="progress-row">
+      <div class="progress-header">
+        <span class="progress-label">Design Workshop</span>
+        <span class="progress-val">60%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="--target:60%"></div></div>
+    </div>
+    <div class="progress-row">
+      <div class="progress-header">
+        <span class="progress-label">Startup Meetup</span>
+        <span class="progress-val">100%</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="--target:100%"></div></div>
+    </div>
+  </div>
+
+  <!-- Tasks -->
+  <div class="cell">
+    <h3 style="font-size:14px;font-weight:600;margin-bottom:16px;">Tasks</h3>
+    <div class="task-item">
+      <div class="checkbox-wrap checked" onclick="this.classList.toggle('checked')">
+        <div class="checkbox-custom">
+          <svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+      </div>
+      <span class="task-text" style="text-decoration:line-through;color:var(--text-dim)">Set up payment</span>
+      <span class="mini-badge hot">Hot</span>
+    </div>
+    <div class="task-item">
+      <div class="checkbox-wrap" onclick="this.classList.toggle('checked')">
+        <div class="checkbox-custom">
+          <svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+      </div>
+      <span class="task-text">Design registration form</span>
+      <span class="mini-badge new">New</span>
+    </div>
+    <div class="task-item">
+      <div class="checkbox-wrap" onclick="this.classList.toggle('checked')">
+        <div class="checkbox-custom">
+          <svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+      </div>
+      <span class="task-text">Write confirmation emails</span>
+    </div>
+    <div class="task-item">
+      <div class="checkbox-wrap" onclick="this.classList.toggle('checked')">
+        <div class="checkbox-custom">
+          <svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+      </div>
+      <span class="task-text">Test check-in flow</span>
+    </div>
+    <div class="task-item">
+      <div class="checkbox-wrap" onclick="this.classList.toggle('checked')">
+        <div class="checkbox-custom">
+          <svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+      </div>
+      <span class="task-text">Schedule social posts</span>
+    </div>
+  </div>
+
+  <!-- Mini Stats -->
+  <div class="cell cell-stat">
+    <div class="stat-label">Revenue</div>
+    <div class="stat-value" data-target="42800" data-prefix="$">$0</div>
+    <div class="stat-change">+$8,200 this week</div>
+  </div>
+
+  <div class="cell cell-stat">
+    <div class="stat-label">Active Users</div>
+    <div class="stat-value" data-target="312">0</div>
+    <div class="stat-change">+8% this week</div>
+  </div>
+</div>
+
+<script>
+// Counter animation
+function animateCounters() {
+  document.querySelectorAll('[data-target]').forEach(el => {
+    const target = parseInt(el.dataset.target);
+    const prefix = el.dataset.prefix || '';
+    const suffix = el.dataset.suffix || '';
+    if (!target) return;
+    const duration = 1400;
+    const start = performance.now();
+    function update(now) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(eased * target);
+      el.textContent = prefix + current.toLocaleString() + suffix;
+      if (progress < 1) requestAnimationFrame(update);
+    }
+    requestAnimationFrame(update);
+  });
+}
+
+// Progress bar fill
+function animateProgressBars() {
+  document.querySelectorAll('.progress-fill').forEach(bar => {
+    const target = bar.style.getPropertyValue('--target');
+    setTimeout(() => { bar.style.width = target; }, 500);
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  animateCounters();
+  animateProgressBars();
+});
+</script>
+</body>
+</html>

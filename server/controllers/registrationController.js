@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const supabase = require('../config/supabaseClient');
 const { notifyUser } = require('../services/notificationService');
+const { resyncEventSlotCounts } = require('./slotController');
 
 const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
 
@@ -73,7 +74,7 @@ const fetchCompleteProfile = async (userId, userEmail, reqUser = null) => {
     } catch (e) {}
   }
 
-  const objects = [reqUser, dbById, dbByEmail];
+  const objects = [reqUser, dbByEmail, dbById];
   const merged = {};
   for (const obj of objects) {
     if (!obj) continue;
@@ -85,6 +86,41 @@ const fetchCompleteProfile = async (userId, userEmail, reqUser = null) => {
       }
     }
   }
+
+  // Ensure all standard aliases are populated on merged
+  const cName = merged.college_name || merged.collegeName || merged.college || merged.institution;
+  if (cName) {
+    merged.college = cName;
+    merged.college_name = cName;
+    merged.collegeName = cName;
+  }
+  const rNum = merged.roll_number || merged.rollNumber || merged.roll_no || merged.rollNo;
+  if (rNum) {
+    merged.roll_number = rNum;
+    merged.rollNumber = rNum;
+  }
+  const dProg = merged.degree_program || merged.degreeProgram || merged.program || merged.degree;
+  if (dProg) {
+    merged.degree_program = dProg;
+    merged.degreeProgram = dProg;
+  }
+  const yStudy = merged.year_of_study !== undefined && merged.year_of_study !== null && String(merged.year_of_study).trim() !== ''
+    ? merged.year_of_study
+    : (merged.yearOfStudy || merged.year);
+  if (yStudy) {
+    merged.year_of_study = yStudy;
+    merged.yearOfStudy = yStudy;
+  }
+  const dept = merged.department || merged.dept || merged.branch;
+  if (dept) {
+    merged.department = dept;
+  }
+  const ph = merged.phone || merged.phoneNumber || merged.phone_number;
+  if (ph) {
+    merged.phone = ph;
+    merged.phone_number = ph;
+  }
+
   return merged;
 };
 
@@ -219,10 +255,31 @@ exports.registerForEvent = async (req, res) => {
       return res.status(400).json({ message: 'You are already registered for this event.' });
     }
 
+    const slotId = req.body.slotId || req.body.slot_id;
+
+    if (event.has_slots) {
+      if (!slotId) {
+        return res.status(400).json({ message: 'Please select a time slot to complete your registration.' });
+      }
+
+      // Heal stale stored counts so the capacity check matches live occupancy
+      await resyncEventSlotCounts(eventId);
+
+      // Check and atomically allocate slot
+      const { data: slotAllocRes, error: slotAllocErr } = await supabase.rpc('allocate_event_slot_atomic', {
+        p_slot_id: slotId
+      });
+
+      if (slotAllocErr || !slotAllocRes?.success) {
+        return res.status(409).json({ message: slotAllocRes?.message || 'Selected time slot is full. Please choose another slot.' });
+      }
+    }
+
     const newReg = {
       user_id: userId,
       event_id: eventId,
       status: 'registered',
+      slot_id: event.has_slots ? slotId : null,
       created_at: new Date().toISOString()
     };
 
@@ -232,7 +289,13 @@ exports.registerForEvent = async (req, res) => {
       .select()
       .single();
 
-    if (regErr) throw regErr;
+    if (regErr) {
+      if (event.has_slots && slotId) {
+        await supabase.rpc('release_event_slot_atomic', { p_slot_id: slotId });
+        await resyncEventSlotCounts(eventId);
+      }
+      throw regErr;
+    }
 
     // Update event registered count
     await supabase.rpc('increment_registered_count', { row_id: eventId });
@@ -340,12 +403,82 @@ exports.getMyRegistrations = async (req, res) => {
       .from('event_registrations')
       .select(`
         *,
+        slot:event_slots (*),
         eventId:events (*),
-        teamId:event_teams (*)
+        teamId:event_teams (*, slot:event_slots(*))
       `)
       .eq('user_id', userId);
 
     if (error) throw error;
+
+    // Attach the panel each registration is allocated to (panel allocation
+    // module) so students can see it on their pass / registrations page.
+    // Non-fatal: a failed panel lookup must never break this feed.
+    try {
+      const regIds = (registrations || []).map(r => r.id).filter(Boolean);
+      if (regIds.length > 0) {
+        const { data: panelAssigns } = await supabase
+          .from('panel_assignments')
+          .select('registration_id, panel_id')
+          .in('registration_id', regIds);
+
+        const panelIds = [...new Set((panelAssigns || []).map(a => a.panel_id).filter(Boolean))];
+        const panelById = new Map();
+        const membersByPanel = new Map();
+
+        if (panelIds.length > 0) {
+          const { data: panelRows } = await supabase
+            .from('event_panels')
+            .select('id, name, venue_room')
+            .in('id', panelIds);
+          (panelRows || []).forEach(p => panelById.set(p.id, p));
+
+          const { data: memberRows } = await supabase
+            .from('panel_members')
+            .select('panel_id, user_id')
+            .in('panel_id', panelIds);
+
+          const memberUserIds = [...new Set((memberRows || []).map(m => m.user_id).filter(Boolean))];
+          let memberProfiles = [];
+          if (memberUserIds.length > 0) {
+            const { data: profs } = await supabase
+              .from('profiles')
+              .select('id, name, role')
+              .in('id', memberUserIds);
+            memberProfiles = profs || [];
+          }
+          const memberProfileMap = new Map(memberProfiles.map(p => [p.id, p]));
+          (memberRows || []).forEach(m => {
+            if (!membersByPanel.has(m.panel_id)) membersByPanel.set(m.panel_id, []);
+            const prof = memberProfileMap.get(m.user_id) || {};
+            membersByPanel.get(m.panel_id).push({
+              user_id: m.user_id,
+              name: prof.name || 'Panel Member',
+              role: prof.role || ''
+            });
+          });
+        }
+
+        const panelByReg = new Map();
+        (panelAssigns || []).forEach(a => {
+          if (panelByReg.has(a.registration_id)) return;
+          const panel = panelById.get(a.panel_id);
+          if (!panel) return;
+          panelByReg.set(a.registration_id, {
+            id: panel.id,
+            name: panel.name,
+            venueRoom: panel.venue_room || '',
+            members: membersByPanel.get(panel.id) || []
+          });
+        });
+
+        registrations.forEach(r => {
+          r.panel = panelByReg.get(r.id) || null;
+        });
+      }
+    } catch (panelErr) {
+      console.warn('Notice loading panel allocations for registrations:', panelErr.message);
+    }
 
     // Fetch team members for team registrations
     const enrichedRegistrations = await Promise.all(registrations.map(async (reg) => {
@@ -418,6 +551,26 @@ const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, r
   try {
     const isAdminOrOrganizer = reqUserRoles.includes('admin') || reqUserRoles.includes('organizer') || reqUserRoles.includes('faculty_organizer') || reqUserRoles.includes('faculty');
 
+    if (!isAdminOrOrganizer) {
+      let panelRegIds = [registration.id];
+      if (registration.team_id) {
+        const { data: teamRegRows } = await supabase
+          .from('event_registrations')
+          .select('id')
+          .eq('team_id', registration.team_id);
+        panelRegIds = (teamRegRows || []).map(r => r.id);
+      }
+      const { data: panelLock } = await supabase
+        .from('panel_assignments')
+        .select('id')
+        .in('registration_id', panelRegIds)
+        .limit(1)
+        .maybeSingle();
+      if (panelLock) {
+        return res.status(400).json({ message: 'This registration cannot be cancelled after panel allocation.' });
+      }
+    }
+
     // Fetch event details for count decrements and notifications
     const { data: eventDetails } = await supabase.from('events').select('title, venue, registered_count, registration_deadline').eq('id', registration.event_id).maybeSingle();
     const eventTitle = eventDetails ? eventDetails.title : 'the event';
@@ -453,6 +606,18 @@ const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, r
 
       const { error: delTeamErr } = await supabase.from('event_teams').delete().eq('id', team.id);
       if (delTeamErr) throw delTeamErr;
+
+      // Release slot if team had one
+      if (team.slot_id) {
+        try {
+          await supabase.rpc('release_event_slot_atomic', { p_slot_id: team.slot_id });
+        } catch (slotErr) {
+          console.warn('Error releasing team slot on cancellation:', slotErr.message);
+        }
+      }
+
+      // Reconcile stored slot counts with live occupancy so no slot stays "booked" after cancelling
+      await resyncEventSlotCounts(registration.event_id);
 
       if (eventDetails && teamRegs && team.status === 'registered') {
         await supabase.from('events').update({
@@ -512,6 +677,18 @@ const executeCancellationLogic = async (registration, reqUserId, reqUserRoles, r
 
       const { error: delErr } = await supabase.from('event_registrations').delete().eq('id', registration.id);
       if (delErr) throw delErr;
+
+      // Release slot if registration had one
+      if (registration.slot_id) {
+        try {
+          await supabase.rpc('release_event_slot_atomic', { p_slot_id: registration.slot_id });
+        } catch (slotErr) {
+          console.warn('Error releasing individual slot on cancellation:', slotErr.message);
+        }
+      }
+
+      // Reconcile stored slot counts with live occupancy so no slot stays "booked" after cancelling
+      await resyncEventSlotCounts(registration.event_id);
 
       if (eventDetails) {
         await supabase.from('events').update({
@@ -669,14 +846,15 @@ exports.getEventRegistrations = async (req, res) => {
 
     let registrations = null;
 
-    // Stage 1: Try PostgREST join with profiles & event_teams
+    // Stage 1: Try PostgREST join with profiles, event_teams & event_slots
     try {
       const { data: stage1Data, error: s1Err } = await supabase
         .from('event_registrations')
         .select(`
           *,
           userId:profiles!event_registrations_user_id_fkey(*),
-          teamId:event_teams(*)
+          teamId:event_teams(*, slot:event_slots(*)),
+          slot:event_slots(*)
         `)
         .eq('event_id', eventId)
         .range(0, 4999);
@@ -753,6 +931,44 @@ exports.getEventRegistrations = async (req, res) => {
 
     if (!registrations) {
       registrations = [];
+    }
+
+    // Enrich registrations and teams with event_slots if missing
+    try {
+      const slotIdsToFetch = new Set();
+      (registrations || []).forEach(r => {
+        if (r.slot_id && (!r.slot || typeof r.slot !== 'object')) slotIdsToFetch.add(r.slot_id);
+        if (r.teamId?.slot_id && (!r.teamId.slot || typeof r.teamId.slot !== 'object')) slotIdsToFetch.add(r.teamId.slot_id);
+      });
+
+      if (slotIdsToFetch.size > 0) {
+        const { data: slotsData } = await supabase
+          .from('event_slots')
+          .select('*')
+          .in('id', Array.from(slotIdsToFetch));
+        
+        const slotMap = new Map();
+        (slotsData || []).forEach(s => slotMap.set(s.id, s));
+
+        (registrations || []).forEach(r => {
+          if (!r.slot && r.slot_id) r.slot = slotMap.get(r.slot_id) || null;
+          if (r.teamId && !r.teamId.slot && r.teamId.slot_id) {
+            r.teamId.slot = slotMap.get(r.teamId.slot_id) || null;
+          }
+        });
+      }
+
+      // Link fallback: If registration slot is null but team slot exists, or vice versa
+      (registrations || []).forEach(r => {
+        if (!r.slot && r.teamId?.slot) {
+          r.slot = r.teamId.slot;
+        }
+        if (r.teamId && !r.teamId.slot && r.slot) {
+          r.teamId.slot = r.slot;
+        }
+      });
+    } catch (slotErr) {
+      console.warn('Non-fatal slot enrichment error in getEventRegistrations:', slotErr.message);
     }
 
     // Enrich registrations with persistent file-backed avatars map (gives latest re-upload priority)
@@ -861,10 +1077,9 @@ exports.updatePaymentStatus = async (req, res) => {
         .eq('event_id', registration.event_id).eq('student_id', req.user.id).maybeSingle();
       const { data: member } = await supabase.from('event_members').select('id, organizer_type, role')
         .eq('event_id', registration.event_id).eq('user_id', req.user.id).maybeSingle();
-      allowed = (organizer && (organizer.organizer_role === 'core' || organizer.category === 'Event Head' || organizer.category === 'Faculty Organizer')) ||
-                (member && (member.organizer_type === 'core' || member.role === 'Event Head' || member.role === 'Core Organizer'));
+      allowed = Boolean(organizer || member);
     }
-    if (!allowed) return res.status(403).json({ message: 'Only an admin or core event organizer can verify payments.' });
+    if (!allowed) return res.status(403).json({ message: 'Only an admin or event organizer can verify payments.' });
 
     const updatePayload = {
       payment_status: paymentStatus,
@@ -1085,18 +1300,43 @@ exports.registerTeamForEvent = async (req, res) => {
       return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
     }
 
+    const slotId = req.body.slotId || req.body.slot_id;
+
+    if (event.has_slots) {
+      if (!slotId) {
+        return res.status(400).json({ message: 'Please select a time slot for your team registration.' });
+      }
+
+      // Heal stale stored counts so the capacity check matches live occupancy
+      await resyncEventSlotCounts(eventId);
+
+      // Check and atomically allocate slot
+      const { data: slotAllocRes, error: slotAllocErr } = await supabase.rpc('allocate_event_slot_atomic', {
+        p_slot_id: slotId
+      });
+
+      if (slotAllocErr || !slotAllocRes?.success) {
+        return res.status(409).json({ message: slotAllocRes?.message || 'Selected time slot is full. Please choose another slot.' });
+      }
+    }
+
     // Create Team
     const { data: team, error: teamErr } = await supabase
       .from('event_teams')
       .insert({
         event_id: eventId,
         name: teamName,
-        leader_id: leaderId
+        leader_id: leaderId,
+        slot_id: event.has_slots ? slotId : null
       })
       .select()
       .single();
 
     if (teamErr) {
+      if (event.has_slots && slotId) {
+        await supabase.rpc('release_event_slot_atomic', { p_slot_id: slotId });
+        await resyncEventSlotCounts(eventId);
+      }
       if (teamErr.code === '23505') {
         return res.status(400).json({ message: 'This team name is already taken. Please choose another team name.' });
       }
@@ -1108,6 +1348,7 @@ exports.registerTeamForEvent = async (req, res) => {
       user_id: uid,
       event_id: eventId,
       team_id: team.id,
+      slot_id: event.has_slots ? slotId : null,
       status: 'pending',
       created_at: new Date().toISOString()
     }));
@@ -1116,7 +1357,13 @@ exports.registerTeamForEvent = async (req, res) => {
       .from('event_registrations')
       .insert(registrations);
 
-    if (regErr) throw regErr;
+    if (regErr) {
+      if (event.has_slots && slotId) {
+        await supabase.rpc('release_event_slot_atomic', { p_slot_id: slotId });
+        await resyncEventSlotCounts(eventId);
+      }
+      throw regErr;
+    }
 
     // Save unresolved external email invitations to team_email_invites
     if (externalUnresolvedEmails.length > 0) {
@@ -1836,12 +2083,25 @@ exports.getConfirmedTeams = async (req, res) => {
     }
 
     const teamIds = teams.map(t => t.id);
+    const slotIds = [...new Set(teams.map(t => t.slot_id).filter(Boolean))];
+    let slotMap = new Map();
+    if (slotIds.length > 0) {
+      try {
+        const { data: slotRows } = await supabase
+          .from('event_slots')
+          .select('*')
+          .in('id', slotIds);
+        (slotRows || []).forEach(s => slotMap.set(s.id, s));
+      } catch (sErr) {
+        console.warn('Confirmed teams slot fetch warning:', sErr.message);
+      }
+    }
 
     // Fetch confirmed registrations for these teams with full user profiles
     const { data: registrations, error: regErr } = await supabase
       .from('event_registrations')
       .select(`
-        id, team_id, user_id, attendance_status, created_at,
+        id, team_id, user_id, attendance_status, created_at, slot_id,
         profiles!event_registrations_user_id_fkey(*)
       `)
       .in('team_id', teamIds)
@@ -1852,6 +2112,7 @@ exports.getConfirmedTeams = async (req, res) => {
     // Group by team
     const result = teams.map(team => {
       const teamRegs = registrations.filter(r => r.team_id === team.id);
+      const teamSlot = slotMap.get(team.slot_id) || null;
       const members = teamRegs.map(r => ({
         registrationId: r.id,
         userId: r.user_id,
@@ -1865,7 +2126,9 @@ exports.getConfirmedTeams = async (req, res) => {
         gender: r.profiles?.gender || '',
         phone: r.profiles?.phone || '',
         avatarUrl: r.profiles?.avatar_url || r.profiles?.avatarUrl || null,
-        attendanceStatus: r.attendance_status
+        attendanceStatus: r.attendance_status,
+        slot_id: r.slot_id || team.slot_id || null,
+        slot: teamSlot
       }));
 
       return {
@@ -1873,6 +2136,8 @@ exports.getConfirmedTeams = async (req, res) => {
         name: team.name,
         leaderId: team.leader_id,
         leaderContactNumber: team.leader_contact_number || '',
+        slot_id: team.slot_id || null,
+        slot: teamSlot,
         members: members
       };
     });
@@ -2072,7 +2337,7 @@ exports.addTeamMember = async (req, res) => {
         emailSubject: `Team Invitation – ${event.title}`,
         emailHtml: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-            <h2 style="color: #4f46e5;">New Team Invitation</h2>
+            <h2 style="color: #0891b2;">New Team Invitation</h2>
             <p>You have been invited to join team <strong>${team.name}</strong> for the event <strong>${event.title}</strong>.</p>
             <p><strong>Date:</strong> ${dateStr}</p>
             <p>Please log in to your dashboard to accept or reject this invitation.</p>
@@ -2351,6 +2616,17 @@ exports.adminCancelTeamRegistration = async (req, res) => {
 
     await supabase.from('event_registrations').delete().eq('team_id', teamId);
     await supabase.from('event_teams').delete().eq('id', teamId);
+
+    if (team.slot_id) {
+      try {
+        await supabase.rpc('release_event_slot_atomic', { p_slot_id: team.slot_id });
+      } catch (slotErr) {
+        console.warn('Error releasing team slot in admin cancellation:', slotErr.message);
+      }
+    }
+
+    // Reconcile stored slot counts with live occupancy after the team is removed
+    await resyncEventSlotCounts(eventId);
 
     if (team.status === 'registered') {
       const { data: event } = await supabase.from('events').select('registered_count').eq('id', eventId).single();

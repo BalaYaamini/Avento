@@ -1,4 +1,5 @@
 const axios = require('axios');
+const nodemailer = require('nodemailer');
 const supabase = require('../config/supabaseClient');
 
 let emailCountToday = 0;
@@ -15,6 +16,14 @@ const resetDailyCount = () => {
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'admin.avento@gmail.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Avento';
+
+const EMAIL_LOGO_URL = process.env.EMAIL_LOGO_URL
+  || `${String(process.env.SUPABASE_URL || '').replace(/\/+$/, '')}/storage/v1/object/public/email-assets/logo-mark-cyan.png`;
+
+const emailBrandHeader = (subtitle) => `
+          <img src="${EMAIL_LOGO_URL}" alt="AVENTO logo" width="72" style="display:block;margin:0 auto 12px;width:72px;height:auto;" />
+          <h1 style="margin:0;font-size:28px;font-weight:700;color:#1e293b;letter-spacing:1px;">AVENTO</h1>
+          ${subtitle ? `<p style="margin:5px 0 0;color:#64748b;font-size:14px;">${subtitle}</p>` : ''}`;
 
 if (BREVO_API_KEY) {
   console.log('[EMAIL] Brevo API configured');
@@ -34,13 +43,54 @@ const verifySMTPConnection = async () => {
 // TEMPORARY TESTING TOGGLE: Set to false to re-enable outgoing Brevo email notifications
 const DISABLE_TEAM_EMAIL_NOTIFICATIONS = false;
 
-const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments }) => {
+const SMTP_ENABLED = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+
+const sendSmtpMail = async ({ recipientEmail, subject, htmlBody, attachments, replyTo }) => {
+  const mailAttachments = (Array.isArray(attachments) ? attachments : []).map(a => ({
+    filename: a.name || a.filename || 'attachment',
+    content: typeof a.content === 'string' ? Buffer.from(a.content, 'base64') : a.content,
+    contentType: a.contentType,
+  }));
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: recipientEmail,
+    replyTo: replyTo || undefined,
+    subject,
+    html: htmlBody,
+    text: String(htmlBody || '').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+    attachments: mailAttachments.length > 0 ? mailAttachments : undefined,
+  };
+
+  const makeTransport = (relaxTls) => nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: String(process.env.EMAIL_USER || '').trim(),
+      // Google app passwords are 16 chars but often saved grouped with spaces
+      pass: String(process.env.EMAIL_PASS || '').replace(/\s+/g, ''),
+    },
+    ...(relaxTls ? { tls: { rejectUnauthorized: false } } : {}),
+  });
+
+  try {
+    return await makeTransport(false).sendMail(mailOptions);
+  } catch (err) {
+    const tlsIssue = /self-signed|certificate|unable to verify/i.test(err.message || '');
+    if (!tlsIssue) throw err;
+    // Some networks intercept SMTP-port TLS with their own certificate chain -
+    // retry once with certificate validation relaxed for this transport only.
+    console.warn(`[EMAIL SMTP] TLS verification failed (${err.message}) - retrying with relaxed certificate validation`);
+    return await makeTransport(true).sendMail(mailOptions);
+  }
+};
+
+const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments, replyTo }) => {
   if (DISABLE_TEAM_EMAIL_NOTIFICATIONS) {
     console.log(`[EMAIL TEMPORARILY DISABLED FOR TESTING] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
     return;
   }
 
-  if (!BREVO_API_KEY) {
+  if (!BREVO_API_KEY && !SMTP_ENABLED) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
     return;
   }
@@ -51,33 +101,49 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attach
     return;
   }
 
-  try {
-    const payload = {
-      sender: { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME },
-      to: [{ email: recipientEmail }],
-      subject,
-      htmlContent: htmlBody,
-    };
+  // 1) Brevo API first
+  if (BREVO_API_KEY) {
+    try {
+      const payload = {
+        sender: { email: BREVO_SENDER_EMAIL, name: BREVO_SENDER_NAME },
+        to: [{ email: recipientEmail }],
+        replyTo: replyTo ? { email: replyTo } : undefined,
+        subject,
+        htmlContent: htmlBody,
+      };
 
-    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
-      payload.attachment = attachments;
+      if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+        payload.attachment = attachments;
+      }
+
+      const response = await axios.post('https://api.brevo.com/v3/smtp/email', payload, {
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        timeout: 15000,
+      });
+
+      emailCountToday++;
+      console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | Count: ${emailCountToday}/300`);
+      return response.data;
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message;
+      console.warn(`[EMAIL BREVO FAILED] To: ${recipientEmail} | Error: ${errMsg}${SMTP_ENABLED ? ' - falling back to SMTP' : ''}`);
     }
+  }
 
-    const response = await axios.post('https://api.brevo.com/v3/smtp/email', payload, {
-      headers: {
-        'api-key': BREVO_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      timeout: 15000,
-    });
-
-    emailCountToday++;
-    console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | Count: ${emailCountToday}/300`);
-    return response.data;
-  } catch (err) {
-    const errMsg = err.response?.data?.message || err.message;
-    console.error(`[EMAIL FAILED] To: ${recipientEmail} | Error: ${errMsg}`);
+  // 2) Fallback: Gmail SMTP (works even when the Brevo account blocks this IP)
+  if (SMTP_ENABLED) {
+    try {
+      const info = await sendSmtpMail({ recipientEmail, subject, htmlBody, attachments, replyTo });
+      emailCountToday++;
+      console.log(`[EMAIL SENT via SMTP] To: ${recipientEmail} | Subject: ${subject} | ${info.messageId || ''} | Count: ${emailCountToday}/300`);
+      return { messageId: info.messageId, channel: 'smtp' };
+    } catch (smtpErr) {
+      console.error(`[EMAIL SMTP FAILED] To: ${recipientEmail} | Error: ${smtpErr.message}`);
+    }
   }
 };
 
@@ -87,10 +153,10 @@ const sendPasswordResetEmail = async ({ recipientEmail, resetUrl }) => {
 <html>
 <body style="margin:0;padding:40px 20px;background:#fdfbf7;font-family:Arial,sans-serif;color:#1e293b;">
   <div style="max-width:560px;margin:auto;background:#fff;border-radius:20px;padding:40px;box-shadow:0 4px 20px rgba(0,0,0,.06);">
-    <h1 style="margin:0;color:#1e293b;">AVENTO</h1>
+    ${emailBrandHeader('Smart Campus Event Management')}
     <h2 style="margin:28px 0 12px;">Reset your password</h2>
     <p style="font-size:16px;line-height:1.6;color:#475569;">Use the button below to create a new password. This link expires according to your Supabase Auth settings.</p>
-    <p style="text-align:center;margin:32px 0;"><a href="${resetUrl}" style="display:inline-block;padding:14px 28px;border-radius:12px;background:#8b5cf6;color:#fff;text-decoration:none;font-weight:700;">Reset Password</a></p>
+    <p style="text-align:center;margin:32px 0;"><a href="${resetUrl}" style="display:inline-block;padding:14px 28px;border-radius:12px;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;text-decoration:none;font-weight:700;">Reset Password</a></p>
     <p style="font-size:12px;line-height:1.5;color:#94a3b8;">If you did not request this, you can safely ignore this email.</p>
   </div>
 </body>
@@ -144,7 +210,7 @@ const generateEmailHtml = (title, message, data = {}) => {
     ${data.venue ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Venue</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.venue}</td></tr>` : ''}
     ${data.teamName ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamName}</td></tr>` : ''}
     ${data.teamLeader ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Leader</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamLeader}</td></tr>` : ''}
-    ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#c084fc;">${data.registrationId}</td></tr>` : ''}
+    ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#0891b2;">${data.registrationId}</td></tr>` : ''}
     ${data.status ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Status</strong></td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#10b981;">${data.status}</td></tr>` : ''}
     ${membersHtml}
   </table>
@@ -152,14 +218,14 @@ const generateEmailHtml = (title, message, data = {}) => {
 
   const notesContent = data.instructions || data.customNotes;
   const notesHtml = (notesContent && notesContent !== message) ? `
-<div style="background-color:#f8fafc;border-radius:12px;padding:16px;margin-top:20px;border-left:4px solid #c084fc;">
+<div style="background-color:#f8fafc;border-radius:12px;padding:16px;margin-top:20px;border-left:4px solid #0891b2;">
   <p style="margin:0;font-size:14px;color:#334155;line-height:1.5;white-space:pre-line;"><strong>Note / Guidelines:</strong><br>${notesContent}</p>
 </div>` : '';
 
   let actionBtnText = data.actionButtonText || 'View Event';
   let actionBtnUrl = data.actionButtonUrl || (data.eventId ? `${process.env.CLIENT_URL || 'http://localhost:3000'}/workspace/${data.eventId}` : `${process.env.CLIENT_URL || 'http://localhost:3000'}/registrations`);
-  let btnGradient = 'linear-gradient(135deg,#c084fc,#a78bfa)';
-  let btnShadow = 'rgba(167,139,250,0.4)';
+  let btnGradient = 'linear-gradient(135deg,#06b6d4,#0891b2)';
+  let btnShadow = 'rgba(6,182,212,0.4)';
 
   if (data.isTeamInvite || (data.teamName && !data.isLeader)) {
     actionBtnText = 'Accept Team Invitation';
@@ -182,8 +248,7 @@ const generateEmailHtml = (title, message, data = {}) => {
     <tr><td align="center">
       <table style="max-width:600px;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.05);">
         <tr><td style="padding:40px 40px 20px;text-align:center;">
-          <h1 style="margin:0;font-size:28px;font-weight:700;color:#1e293b;">AVENTO</h1>
-          <p style="margin:5px 0 0;color:#64748b;font-size:14px;">Event Management Platform</p>
+          ${emailBrandHeader('Event Management Platform')}
         </td></tr>
         <tr><td style="padding:0 40px;"><hr style="border:0;border-top:1px solid #f1f5f9;margin:0;"></td></tr>
         <tr><td style="padding:30px 40px;">
@@ -191,7 +256,7 @@ const generateEmailHtml = (title, message, data = {}) => {
           <p style="margin:0 0 25px;font-size:16px;color:#64748b;line-height:1.6;">
             ${data.recipientName ? `Hello ${data.recipientName},<br>` : ''}
           </p>
-          <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #c084fc;white-space:pre-line;">${message}</p>
+          <p style="margin:0;font-size:16px;color:#334155;line-height:1.6;background-color:#f8fafc;padding:16px;border-radius:12px;border-left:4px solid #0891b2;white-space:pre-line;">${message}</p>
           ${eventHtml}${notesHtml}${btnHtml}
         </td></tr>
         <tr><td style="padding:0 40px 30px;">
@@ -225,7 +290,7 @@ const notifyUser = async ({ recipientId, recipientEmail, title, message, type = 
       } catch (e) {}
     }
 
-    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && BREVO_API_KEY;
+    const emailEnabled = process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false' && (BREVO_API_KEY || SMTP_ENABLED);
 
     if (!targetEmail) {
       console.log('[NOTIFY] No email found for user', recipientId);
@@ -257,5 +322,7 @@ module.exports = {
   sendPasswordResetEmail,
   verifySMTPConnection,
   notifyUser,
-  getEmailStats
+  getEmailStats,
+  emailBrandHeader,
+  EMAIL_LOGO_URL
 };

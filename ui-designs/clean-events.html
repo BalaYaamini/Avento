@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clean Events</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #fafafa; display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar { width: 240px; background: #111111; border-right: 1px solid #1c1c1c; padding: 24px 0; position: fixed; height: 100vh; }
+.logo { padding: 0 24px; margin-bottom: 40px; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+.logo span { color: #ef4444; }
+.nav-items { }
+.nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 24px; color: #525252; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border-left: 2px solid transparent; }
+.nav-item:hover { color: #a3a3a3; }
+.nav-item.active { color: #fafafa; border-left-color: #ef4444; background: rgba(239,68,68,0.05); }
+
+/* Main */
+.main { margin-left: 240px; flex: 1; }
+
+/* Hero */
+.hero { background: linear-gradient(180deg, #161616 0%, #0a0a0a 100%); padding: 60px 48px 48px; position: relative; }
+.hero::after { content: ''; position: absolute; top: 0; left: 48px; width: 60px; height: 3px; background: #ef4444; }
+.hero h1 { font-size: 36px; font-weight: 700; letter-spacing: -1px; margin-bottom: 8px; }
+.hero p { color: #525252; font-size: 15px; max-width: 500px; }
+
+/* Filters */
+.filters { padding: 24px 48px; display: flex; gap: 8px; }
+.filter-pill { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; background: #161616; border: 1px solid #1c1c1c; color: #525252; cursor: pointer; transition: all 0.2s; }
+.filter-pill:hover { color: #a3a3a3; border-color: #1a1a1a; }
+.filter-pill.active { color: #fafafa; border-color: #ef4444; background: rgba(239,68,68,0.05); }
+
+/* Events Grid */
+.events-grid { padding: 0 48px 48px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.event-card { background: #161616; border: 1px solid #1c1c1c; border-radius: 12px; overflow: hidden; cursor: pointer; transition: all 0.2s; }
+.event-card:hover { border-color: #2a2a2a; transform: translateY(-2px); }
+.event-image { height: 160px; background: #1a1a1a; position: relative; }
+.event-image::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: #ef4444; }
+.event-body { padding: 20px; }
+.event-category { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #525252; margin-bottom: 8px; }
+.event-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; letter-spacing: -0.3px; }
+.event-meta { display: flex; gap: 16px; margin-bottom: 16px; }
+.event-meta span { font-size: 13px; color: #525252; display: flex; align-items: center; gap: 6px; }
+.event-footer { display: flex; justify-content: space-between; align-items: center; }
+.attendees { font-size: 13px; color: #525252; }
+.btn-register { padding: 8px 16px; background: #ef4444; color: #fafafa; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.btn-register:hover { background: #dc2626; }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo">Avent<span>o</span></div>
+  <nav class="nav-items">
+    <div class="nav-item">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item active">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Events
+    </div>
+    <div class="nav-item">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      Attendees
+    </div>
+    <div class="nav-item">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Revenue
+    </div>
+  </nav>
+</aside>
+
+<main class="main">
+  <div class="hero">
+    <h1>Discover Events</h1>
+    <p>Find and register for upcoming events, workshops, and conferences</p>
+  </div>
+
+  <div class="filters">
+    <div class="filter-pill active">All Events</div>
+    <div class="filter-pill">Technology</div>
+    <div class="filter-pill">Design</div>
+    <div class="filter-pill">Business</div>
+    <div class="filter-pill">Workshop</div>
+  </div>
+
+  <div class="events-grid">
+    <div class="event-card">
+      <div class="event-image"></div>
+      <div class="event-body">
+        <div class="event-category">Technology</div>
+        <div class="event-title">Tech Summit 2026</div>
+        <div class="event-meta">
+          <span>Mar 15, 2026</span>
+          <span>San Francisco, CA</span>
+        </div>
+        <div class="event-footer">
+          <span class="attendees">482 attending</span>
+          <button class="btn-register">Register</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="event-card">
+      <div class="event-image"></div>
+      <div class="event-body">
+        <div class="event-category">Design</div>
+        <div class="event-title">Design Conference</div>
+        <div class="event-meta">
+          <span>Mar 22, 2026</span>
+          <span>New York, NY</span>
+        </div>
+        <div class="event-footer">
+          <span class="attendees">312 attending</span>
+          <button class="btn-register">Register</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="event-card">
+      <div class="event-image"></div>
+      <div class="event-body">
+        <div class="event-category">Business</div>
+        <div class="event-title">Startup Mixer</div>
+        <div class="event-meta">
+          <span>Apr 5, 2026</span>
+          <span>Austin, TX</span>
+        </div>
+        <div class="event-footer">
+          <span class="attendees">156 attending</span>
+          <button class="btn-register">Register</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="event-card">
+      <div class="event-image"></div>
+      <div class="event-body">
+        <div class="event-category">Workshop</div>
+        <div class="event-title">AI Workshop</div>
+        <div class="event-meta">
+          <span>Apr 12, 2026</span>
+          <span>Seattle, WA</span>
+        </div>
+        <div class="event-footer">
+          <span class="attendees">89 attending</span>
+          <button class="btn-register">Register</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="event-card">
+      <div class="event-image"></div>
+      <div class="event-body">
+        <div class="event-category">Technology</div>
+        <div class="event-title">Cloud Native Summit</div>
+        <div class="event-meta">
+          <span>Apr 18, 2026</span>
+          <span>Denver, CO</span>
+        </div>
+        <div class="event-footer">
+          <span class="attendees">267 attending</span>
+          <button class="btn-register">Register</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="event-card">
+      <div class="event-image"></div>
+      <div class="event-body">
+        <div class="event-category">Design</div>
+        <div class="event-title">UX Research Day</div>
+        <div class="event-meta">
+          <span>Apr 25, 2026</span>
+          <span>Portland, OR</span>
+        </div>
+        <div class="event-footer">
+          <span class="attendees">124 attending</span>
+          <button class="btn-register">Register</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

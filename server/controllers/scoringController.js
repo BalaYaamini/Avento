@@ -1,15 +1,152 @@
 const supabase = require('../config/supabaseClient');
+const { sendEmailNotification, sendInAppNotification, emailBrandHeader } = require('../services/notificationService');
+const { buildScoreReportPdf } = require('../services/scoreReportPdf');
+const { buildScoreAnalysisPdf } = require('../services/scoreAnalysisPdf');
+
+const ACTIVE_REG_FILTER = '("cancelled","rejected","expired")';
 
 const eventAccess = async (eventId, user) => {
   const { data: event } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
   if (!event) return { event: null, allowed: false };
-  if (user?.roles?.includes('admin')) return { event, allowed: true };
-  const direct = [event.organizer_id, event.student_organizer_id, event.proposed_by, event.faculty_id, event.created_by]
-    .some(id => String(id || '') === String(user?.id || ''));
+  const userRoles = Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean);
+  if (userRoles.includes('admin') || user?.is_admin === true) return { event, allowed: true };
+  const userIdStr = String(user?.id || '');
+  const direct = [
+    event.organizer_id,
+    event.student_organizer_id,
+    event.proposed_by,
+    event.faculty_id,
+    event.created_by
+  ].some(id => id && String(id) === userIdStr);
   if (direct) return { event, allowed: true };
-  const { data: org } = await supabase.from('event_organizers').select('id').eq('event_id', eventId).eq('student_id', user.id).maybeSingle();
-  const { data: member } = await supabase.from('event_members').select('id').eq('event_id', eventId).eq('user_id', user.id).maybeSingle();
+  const { data: org } = await supabase.from('event_organizers').select('id').eq('event_id', eventId).eq('student_id', user?.id).maybeSingle();
+  const { data: member } = await supabase.from('event_members').select('id').eq('event_id', eventId).eq('user_id', user?.id).maybeSingle();
   return { event, allowed: !!org || !!member };
+};
+
+// ---- Panel-aware student scoring helpers (v52) ----
+
+// Panels of this user for this event + the student registration ids they may score
+const getPanelScoreAccess = async (eventId, userId) => {
+  const panels = [];
+  const registrationIds = new Set();
+  if (!userId) return { panels, registrationIds };
+  try {
+    const { data: memberRows } = await supabase.from('panel_members').select('panel_id').eq('user_id', userId);
+    const panelIds = [...new Set((memberRows || []).map(m => m.panel_id))];
+    if (panelIds.length === 0) return { panels, registrationIds };
+
+    const { data: myPanels } = await supabase
+      .from('event_panels')
+      .select('id, name')
+      .in('id', panelIds)
+      .eq('event_id', eventId);
+    if (!myPanels || myPanels.length === 0) return { panels, registrationIds };
+    panels.push(...myPanels);
+
+    const { data: assigns } = await supabase
+      .from('panel_assignments')
+      .select('registration_id')
+      .in('panel_id', myPanels.map(p => p.id));
+    (assigns || []).forEach(a => registrationIds.add(a.registration_id));
+  } catch (e) {
+    console.warn('getPanelScoreAccess warning:', e.message);
+  }
+  return { panels, registrationIds };
+};
+
+// Active students of the event with profile + panel info (same shape as the panel roster)
+const fetchEventStudents = async (eventId) => {
+  const { data: regs } = await supabase
+    .from('event_registrations')
+    .select('*')
+    .eq('event_id', eventId)
+    .not('status', 'in', ACTIVE_REG_FILTER);
+  const { data: assigns } = await supabase
+    .from('panel_assignments')
+    .select('panel_id, registration_id')
+    .eq('event_id', eventId);
+  const { data: allPanels } = await supabase.from('event_panels').select('id, name').eq('event_id', eventId);
+
+  const userIds = [...new Set((regs || []).map(r => r.user_id).filter(Boolean))];
+  let profiles = [];
+  if (userIds.length > 0) {
+    const { data: profs } = await supabase
+      .from('profiles')
+      .select('id, name, email, roll_number, department')
+      .in('id', userIds);
+    profiles = profs || [];
+  }
+
+  const profileMap = new Map(profiles.map(p => [p.id, p]));
+  const panelMap = new Map((allPanels || []).map(p => [p.id, p.name]));
+  const panelByReg = new Map((assigns || []).map(a => [a.registration_id, a.panel_id]));
+
+  return (regs || []).map(r => {
+    const prof = profileMap.get(r.user_id) || {};
+    const panelId = panelByReg.get(r.id) || null;
+    return {
+      registration_id: r.id,
+      user_id: r.user_id,
+      name: prof.name || 'Unknown Student',
+      email: prof.email || '',
+      roll_number: prof.roll_number || '',
+      department: prof.department || '',
+      panel_id: panelId,
+      panel_name: panelId ? (panelMap.get(panelId) || '') : ''
+    };
+  });
+};
+
+// Totals + competition ranking across all scored students
+const computeStudentTotals = (studentScores) => {
+  const totals = new Map();
+  (studentScores || []).forEach(s => {
+    if (!s.registration_id) return;
+    totals.set(s.registration_id, (totals.get(s.registration_id) || 0) + Number(s.score || 0));
+  });
+  const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  const rankMap = new Map();
+  let currentRank = 0;
+  ranked.forEach(([regId, total], idx) => {
+    if (idx === 0 || total < ranked[idx - 1][1]) currentRank = idx + 1;
+    rankMap.set(regId, currentRank);
+  });
+  return { totals, rankMap };
+};
+
+const buildMyScorecard = (students, studentScores, myRegistrationId) => {
+  if (!myRegistrationId) return null;
+  const { totals, rankMap } = computeStudentTotals(studentScores);
+  const me = students.find(s => s.registration_id === myRegistrationId) || null;
+  return {
+    registration_id: myRegistrationId,
+    student: me,
+    scores: (studentScores || []).filter(s => s.registration_id === myRegistrationId),
+    total: totals.get(myRegistrationId) || 0,
+    rank: rankMap.get(myRegistrationId) || null,
+    total_participants: totals.size
+  };
+};
+
+const fetchStudentComments = async (eventId) => {
+  const { data } = await supabase
+    .from('student_score_comments')
+    .select('registration_id, comment, evaluator_id, updated_at')
+    .eq('event_id', eventId);
+  return data || [];
+};
+
+const getMyRegistrationId = async (eventId, userId) => {
+  if (!userId) return null;
+  const { data: reg } = await supabase
+    .from('event_registrations')
+    .select('id')
+    .eq('event_id', eventId)
+    .eq('user_id', userId)
+    .not('status', 'in', ACTIVE_REG_FILTER)
+    .maybeSingle();
+  return reg ? reg.id : null;
 };
 
 const getScoring = async (req, res) => {
@@ -17,17 +154,116 @@ const getScoring = async (req, res) => {
     const { eventId } = req.params;
     const { event, allowed } = await eventAccess(eventId, req.user);
     if (!event) return res.status(404).json({ message: 'Event not found.' });
-    if (!event.scoring_enabled) return res.json({ enabled: false, visible: false, rounds: [], teams: [] });
-    if (!allowed && !event.scoreboard_visible) return res.status(403).json({ message: 'Scoreboard is not visible.' });
 
-    const { data: rounds, error: roundsErr } = await supabase.from('scoring_rounds').select('*, subrounds:scoring_subrounds(*)').eq('event_id', eventId).order('display_order');
+    const panelAccess = await getPanelScoreAccess(eventId, req.user?.id);
+    const isPanelMember = panelAccess.registrationIds.size > 0;
+
+    if (!event.scoring_enabled) {
+      return res.json({
+        enabled: false,
+        visible: false,
+        canEdit: allowed,
+        isPanelMember,
+        myPanels: panelAccess.panels,
+        myStudentIds: [...panelAccess.registrationIds],
+        rounds: [],
+        teams: [],
+        scores: [],
+        students: [],
+        studentScores: [],
+        studentComments: [],
+        myScorecard: null
+      });
+    }
+
+    // Panel members may read criteria + their students even when the public
+    // scoreboard is hidden; plain participants only get their own scorecard.
+    const canReadFull = allowed || isPanelMember || event.scoreboard_visible;
+    if (!canReadFull) {
+      const students = await fetchEventStudents(eventId);
+      const { data: studentScores } = await supabase
+        .from('scoring_scores')
+        .select('*')
+        .eq('event_id', eventId)
+        .not('registration_id', 'is', null);
+      const myRegistrationId = await getMyRegistrationId(eventId, req.user?.id);
+      return res.json({
+        enabled: true,
+        visible: false,
+        canEdit: false,
+        isPanelMember: false,
+        myPanels: [],
+        myStudentIds: [],
+        rounds: [],
+        teams: [],
+        scores: [],
+        students: [],
+        studentScores: [],
+        studentComments: [],
+        myScorecard: buildMyScorecard(students, studentScores || [], myRegistrationId)
+      });
+    }
+
+    const { data: rounds, error: roundsErr } = await supabase
+      .from('scoring_rounds')
+      .select('*, subrounds:scoring_subrounds(*)')
+      .eq('event_id', eventId)
+      .order('display_order');
     if (roundsErr) throw roundsErr;
-    const { data: teams, error: teamsErr } = await supabase.from('event_teams').select('id, name, status').eq('event_id', eventId).eq('status', 'registered').order('name');
+
+    const { data: teams, error: teamsErr } = await supabase
+      .from('event_teams')
+      .select('id, name, status')
+      .eq('event_id', eventId)
+      .eq('status', 'registered')
+      .order('name');
     if (teamsErr) throw teamsErr;
-    const { data: scores, error: scoresErr } = await supabase.from('scoring_scores').select('*').eq('event_id', eventId);
+
+    const { data: scores, error: scoresErr } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId);
     if (scoresErr) throw scoresErr;
-    res.json({ enabled: true, visible: !!event.scoreboard_visible, canEdit: allowed, rounds: (rounds || []).map(round => ({ ...round, subrounds: (round.subrounds || []).sort((a, b) => a.display_order - b.display_order) })), teams: teams || [], scores: scores || [] });
+
+    const students = await fetchEventStudents(eventId);
+    const studentScores = (scores || []).filter(s => s.registration_id);
+
+    // Scope: organizers and the public scoreboard see everyone; a panel member
+    // with a hidden scoreboard only sees their own panels' students.
+    const scoped = allowed || event.scoreboard_visible;
+    const scopedStudents = scoped
+      ? students
+      : students.filter(s => panelAccess.registrationIds.has(s.registration_id));
+    const scopedStudentScores = scoped
+      ? studentScores
+      : studentScores.filter(s => panelAccess.registrationIds.has(s.registration_id));
+    const studentComments = await fetchStudentComments(eventId);
+    const scopedStudentComments = scoped
+      ? studentComments
+      : studentComments.filter(c => panelAccess.registrationIds.has(c.registration_id));
+
+    const myRegistrationId = await getMyRegistrationId(eventId, req.user?.id);
+
+    res.json({
+      enabled: true,
+      visible: !!event.scoreboard_visible,
+      canEdit: allowed,
+      isPanelMember,
+      myPanels: panelAccess.panels,
+      myStudentIds: [...panelAccess.registrationIds],
+      rounds: (rounds || []).map(round => ({
+        ...round,
+        subrounds: (round.subrounds || []).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      })),
+      teams: teams || [],
+      scores: scores || [],
+      students: scopedStudents,
+      studentScores: scopedStudentScores,
+      studentComments: scopedStudentComments,
+      myScorecard: buildMyScorecard(students, studentScores, myRegistrationId)
+    });
   } catch (err) {
+    console.error('getScoring error:', err);
     res.status(500).json({ message: 'Server error fetching scoring data.', error: err.message });
   }
 };
@@ -144,4 +380,612 @@ const bulkUpdateScores = async (req, res) => {
   }
 };
 
-module.exports = { getScoring, updateConfig, updateScore, bulkUpdateScores };
+// ---- Student score writes (panel members score their own panels' students;
+//      organizers/admins may score anyone) ----
+
+const updateStudentScore = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { registrationId, subroundId, score, comment } = req.body;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const commentProvided = comment !== undefined && comment !== null;
+    const scoreStr = score == null ? '' : String(score).trim();
+    const hasExplicitScore = scoreStr !== '';
+
+    if (!registrationId || !subroundId || (!hasExplicitScore && !commentProvided)) {
+      return res.status(400).json({ message: 'A valid student, subround, and score are required.' });
+    }
+
+    if (!allowed) {
+      const panelAccess = await getPanelScoreAccess(eventId, req.user?.id);
+      if (!panelAccess.registrationIds.has(registrationId)) {
+        return res.status(403).json({ message: 'You can only score students assigned to your panel.' });
+      }
+    }
+
+    const { data: reg } = await supabase
+      .from('event_registrations')
+      .select('id')
+      .eq('id', registrationId)
+      .eq('event_id', eventId)
+      .not('status', 'in', ACTIVE_REG_FILTER)
+      .maybeSingle();
+    if (!reg) return res.status(400).json({ message: 'Invalid student registration.' });
+
+    const { data: subround } = await supabase
+      .from('scoring_subrounds')
+      .select('max_score, scoring_rounds!inner(event_id)')
+      .eq('id', subroundId)
+      .maybeSingle();
+    if (!subround || String(subround.scoring_rounds.event_id) !== String(eventId)) {
+      return res.status(400).json({ message: 'Invalid scoring subround.' });
+    }
+
+    const { data: existing } = await supabase
+      .from('scoring_scores')
+      .select('score, comment')
+      .eq('event_id', eventId)
+      .eq('registration_id', registrationId)
+      .eq('subround_id', subroundId)
+      .maybeSingle();
+
+    let numericScore;
+    if (hasExplicitScore) {
+      numericScore = Number(scoreStr);
+      if (!Number.isFinite(numericScore) || numericScore < 0) {
+        return res.status(400).json({ message: 'A valid student, subround, and score are required.' });
+      }
+      if (numericScore > Number(subround.max_score)) {
+        return res.status(400).json({ message: `Score cannot exceed ${subround.max_score}.` });
+      }
+    } else {
+      const existingScore = existing?.score;
+      numericScore = existingScore == null || existingScore === '' ? null : Number(existingScore);
+      if (!Number.isFinite(numericScore)) numericScore = null;
+    }
+
+    const { data, error } = await supabase.from('scoring_scores').upsert({
+      event_id: eventId,
+      registration_id: registrationId,
+      subround_id: subroundId,
+      score: numericScore,
+      comment: commentProvided ? String(comment).slice(0, 2000) : (existing?.comment ?? ''),
+      evaluator_id: req.user.id,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'registration_id,subround_id' }).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('updateStudentScore error:', err);
+    res.status(500).json({ message: 'Server error saving score.', error: err.message });
+  }
+};
+
+const bulkUpdateStudentScores = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { scores = [] } = req.body;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+    if (!Array.isArray(scores) || scores.length === 0) return res.status(400).json({ message: 'Scores array is required.' });
+
+    const panelAccess = allowed ? null : await getPanelScoreAccess(eventId, req.user?.id);
+
+    const subroundIds = [...new Set(scores.map(s => s.subroundId))];
+    const { data: subrounds } = await supabase
+      .from('scoring_subrounds')
+      .select('id, max_score, scoring_rounds!inner(event_id)')
+      .in('id', subroundIds);
+    const validSubrounds = {};
+    (subrounds || []).forEach(s => {
+      if (String(s.scoring_rounds.event_id) === String(eventId)) validSubrounds[s.id] = Number(s.max_score);
+    });
+
+    const regIds = [...new Set(scores.map(s => s.registrationId).filter(Boolean))];
+    const { data: regs } = await supabase
+      .from('event_registrations')
+      .select('id')
+      .eq('event_id', eventId)
+      .in('id', regIds)
+      .not('status', 'in', ACTIVE_REG_FILTER);
+    const validRegs = new Set((regs || []).map(r => r.id));
+
+    const { data: existingRows } = await supabase
+      .from('scoring_scores')
+      .select('registration_id, subround_id, score, comment')
+      .eq('event_id', eventId)
+      .in('registration_id', regIds);
+    const existingMap = new Map((existingRows || []).map(r => [`${r.registration_id}:${r.subround_id}`, r]));
+
+    const rows = [];
+    const errors = [];
+    scores.forEach(({ registrationId, subroundId, score, comment }) => {
+      const commentProvided = comment !== undefined && comment !== null;
+      const scoreStr = score == null ? '' : String(score).trim();
+      const existing = existingMap.get(`${registrationId}:${subroundId}`) || {};
+
+      let numericScore;
+      if (scoreStr !== '') {
+        numericScore = Number(scoreStr);
+      } else if (commentProvided) {
+        const existingScore = existing.score;
+        numericScore = existingScore == null || existingScore === '' ? null : Number(existingScore);
+        if (!Number.isFinite(numericScore)) numericScore = null;
+      } else {
+        numericScore = 0;
+      }
+
+      if (!registrationId || !subroundId || (numericScore != null && (!Number.isFinite(numericScore) || numericScore < 0))) {
+        errors.push({ registrationId, subroundId, error: 'Invalid score' });
+        return;
+      }
+      if (!validRegs.has(registrationId)) { errors.push({ registrationId, subroundId, error: 'Invalid student' }); return; }
+      if (panelAccess && !panelAccess.registrationIds.has(registrationId)) {
+        errors.push({ registrationId, subroundId, error: 'Student is not on your panel' });
+        return;
+      }
+      if (!(subroundId in validSubrounds)) { errors.push({ registrationId, subroundId, error: 'Invalid subround' }); return; }
+      if (numericScore != null && numericScore > validSubrounds[subroundId]) {
+        errors.push({ registrationId, subroundId, error: `Score exceeds max ${validSubrounds[subroundId]}` });
+        return;
+      }
+      rows.push({
+        event_id: eventId,
+        registration_id: registrationId,
+        subround_id: subroundId,
+        score: numericScore,
+        comment: commentProvided ? String(comment).slice(0, 2000) : (existing.comment ?? ''),
+        evaluator_id: req.user.id,
+        updated_at: new Date().toISOString()
+      });
+    });
+
+    if (rows.length > 0) {
+      const { error } = await supabase.from('scoring_scores').upsert(rows, { onConflict: 'registration_id,subround_id' });
+      if (error) throw error;
+    }
+
+    const { data: updatedScores } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .not('registration_id', 'is', null);
+    res.json({ saved: rows.length, errors, scores: updatedScores || [] });
+  } catch (err) {
+    console.error('bulkUpdateStudentScores error:', err);
+    res.status(500).json({ message: 'Server error bulk saving scores.', error: err.message });
+  }
+};
+
+// ---- Per-student scorecard (v53) ----
+// Editors: full access organizers may score/comment on anyone; panel members
+// only on the students allocated to their panel. Everyone else (incl. the
+// student themselves) gets read-only access.
+
+const getStudentScoreCard = async (req, res) => {
+  try {
+    const { eventId, registrationId } = req.params;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const students = await fetchEventStudents(eventId);
+    const student = students.find(s => s.registration_id === registrationId);
+    if (!student) return res.status(404).json({ message: 'Student not found for this event.' });
+
+    const isSelf = String(student.user_id) === String(req.user?.id);
+    const panelAccess = await getPanelScoreAccess(eventId, req.user?.id);
+    const isMyStudent = panelAccess.registrationIds.has(registrationId);
+    if (!allowed && !isSelf && !isMyStudent) {
+      return res.status(403).json({ message: 'You are not allowed to view this scorecard.' });
+    }
+
+    const { data: rounds, error: roundsErr } = await supabase
+      .from('scoring_rounds')
+      .select('*, subrounds:scoring_subrounds(*)')
+      .eq('event_id', eventId)
+      .order('display_order');
+    if (roundsErr) throw roundsErr;
+
+    const { subroundMeta } = await buildSubroundMeta(eventId);
+    const { data: allStudentScores } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .not('registration_id', 'is', null);
+    const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
+    const { totals, rankMap } = computeStudentTotals(studentScores);
+
+    const { data: commentRow } = await supabase
+      .from('student_score_comments')
+      .select('comment')
+      .eq('event_id', eventId)
+      .eq('registration_id', registrationId)
+      .maybeSingle();
+
+    res.json({
+      enabled: !!event.scoring_enabled,
+      visible: !!event.scoreboard_visible,
+      canEdit: allowed || (isMyStudent && !isSelf),
+      isSelf,
+      student,
+      rounds: (rounds || []).map(round => ({
+        ...round,
+        subrounds: (round.subrounds || []).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      })),
+      scores: studentScores.filter(s => s.registration_id === registrationId),
+      comment: commentRow?.comment || '',
+      total: totals.get(registrationId) || 0,
+      rank: rankMap.get(registrationId) || null,
+      total_participants: totals.size
+    });
+  } catch (err) {
+    console.error('getStudentScoreCard error:', err);
+    res.status(500).json({ message: 'Server error fetching student scorecard.', error: err.message });
+  }
+};
+
+const updateStudentComment = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { registrationId, comment } = req.body;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+    if (!registrationId) return res.status(400).json({ message: 'A student registration is required.' });
+
+    if (!allowed) {
+      const panelAccess = await getPanelScoreAccess(eventId, req.user?.id);
+      if (!panelAccess.registrationIds.has(registrationId)) {
+        return res.status(403).json({ message: 'You can only comment on students assigned to your panel.' });
+      }
+    }
+
+    const { data: reg } = await supabase
+      .from('event_registrations')
+      .select('id')
+      .eq('id', registrationId)
+      .eq('event_id', eventId)
+      .not('status', 'in', ACTIVE_REG_FILTER)
+      .maybeSingle();
+    if (!reg) return res.status(400).json({ message: 'Invalid student registration.' });
+
+    const text = String(comment == null ? '' : comment).slice(0, 5000);
+    const { data, error } = await supabase.from('student_score_comments').upsert({
+      event_id: eventId,
+      registration_id: registrationId,
+      comment: text,
+      evaluator_id: req.user.id,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'event_id,registration_id' }).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('updateStudentComment error:', err);
+    res.status(500).json({ message: 'Server error saving comment.', error: err.message });
+  }
+};
+
+const escHtml = (value) => String(value == null ? '' : value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
+const formatScoreValue = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+};
+
+const safeFileName = (value) => String(value == null ? '' : value)
+  .replace(/[^a-zA-Z0-9_-]+/g, '_')
+  .replace(/^_+|_+$/g, '')
+  .slice(0, 40) || 'report';
+
+const buildSubroundMeta = async (eventId) => {
+  const { data: rounds } = await supabase
+    .from('scoring_rounds')
+    .select('*, subrounds:scoring_subrounds(*)')
+    .eq('event_id', eventId)
+    .order('display_order');
+  const subroundMeta = new Map();
+  const orderedSubs = [];
+  (rounds || []).forEach(r =>
+    [...(r.subrounds || [])]
+      .sort((a, b) => (Number(a.display_order) || 0) - (Number(b.display_order) || 0))
+      .forEach(sr => {
+        const entry = { roundName: r.name, name: sr.name, max: Number(sr.max_score) };
+        subroundMeta.set(sr.id, entry);
+        orderedSubs.push({ id: sr.id, ...entry });
+      })
+  );
+  return { subroundMeta, orderedSubs };
+};
+
+const buildStudentRows = (orderedSubs, ownScores) => {
+  const bySub = new Map((ownScores || []).map(s => [s.subround_id, s]));
+  return orderedSubs.map(sub => {
+    const row = bySub.get(sub.id);
+    return {
+      roundName: sub.roundName,
+      name: sub.name,
+      max: sub.max,
+      score: row ? (row.score == null ? null : Number(row.score)) : null,
+      comment: row?.comment || ''
+    };
+  });
+};
+
+const createReportPdfAttachment = async ({ event, student, rows, total, rank, totalParticipants, comment }) => {
+  const pdfBytes = await buildScoreReportPdf({ event, student, rows, total, rank, totalParticipants, comment });
+  return {
+    name: `Avento_Score_Report_${safeFileName(event.title)}_${safeFileName(student.name)}.pdf`,
+    content: Buffer.from(pdfBytes).toString('base64'),
+    contentType: 'application/pdf'
+  };
+};
+
+// ---- Score reports (HTML email + in-app notification) ----
+
+const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticipants, comment }) => {
+  const rowsHtml = rows.map(r => `
+    <tr>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;">${escHtml(r.roundName)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;">${escHtml(r.name)}${r.comment ? `<div style="margin-top:4px;color:#64748b;font-size:12px;font-style:italic;line-height:1.6;white-space:pre-wrap;">${escHtml(r.comment)}</div>` : ''}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:14px;font-weight:700;text-align:center;">${r.score == null ? '-' : formatScoreValue(r.score)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px;text-align:center;">${r.max == null ? '-' : formatScoreValue(r.max)}</td>
+    </tr>`).join('');
+
+  const commentText = String(comment == null ? '' : comment).trim();
+  const commentHtml = commentText ? `
+        <tr><td style="padding:18px 40px 0;">
+          <table width="100%" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+            <tr><td style="padding:16px 18px;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Evaluator Comments</div>
+              <div style="color:#334155;font-size:14px;line-height:1.7;white-space:pre-wrap;">${escHtml(commentText)}</div>
+            </td></tr>
+          </table>
+        </td></tr>` : '';
+
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:sans-serif;background-color:#fdfbf7;">
+  <table width="100%" style="background-color:#fdfbf7;padding:40px 20px;">
+    <tr><td align="center">
+      <table style="max-width:640px;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.05);">
+        <tr><td style="padding:36px 40px 12px;text-align:center;">
+          ${emailBrandHeader('Evaluation Score Report')}
+        </td></tr>
+        <tr><td style="padding:0 40px;"><hr style="border:0;border-top:1px solid #f1f5f9;"></td></tr>
+        <tr><td style="padding:28px 40px 8px;">
+          <h2 style="margin:0 0 6px;font-size:22px;color:#1e293b;">${escHtml(event.title)}</h2>
+          <p style="margin:0;color:#64748b;font-size:14px;line-height:1.7;">
+            <strong style="color:#334155;">${escHtml(student.name)}</strong><br>
+            ${student.roll_number ? `Roll No: ${escHtml(student.roll_number)}${student.department ? ` &middot; ${escHtml(student.department)}` : ''}<br>` : ''}
+            ${student.panel_name ? `Panel: ${escHtml(student.panel_name)}` : ''}
+          </p>
+        </td></tr>
+        <tr><td style="padding:18px 40px;">
+          <table width="100%" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;border-collapse:collapse;">
+            <tr style="background-color:#f8fafc;">
+              <th style="padding:12px 14px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Round</th>
+              <th style="padding:12px 14px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Criterion</th>
+              <th style="padding:12px 14px;text-align:center;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Score</th>
+              <th style="padding:12px 14px;text-align:center;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Max</th>
+            </tr>
+            ${rowsHtml}
+          </table>
+        </td></tr>
+        <tr><td style="padding:8px 40px 0;">
+          <table width="100%" style="background:linear-gradient(135deg,#06b6d4,#0891b2);border-radius:14px;">
+            <tr>
+              <td style="padding:18px 22px;color:#ffffff;font-size:15px;font-weight:700;">Total Score</td>
+              <td style="padding:18px 22px;color:#ffffff;font-size:22px;font-weight:800;text-align:right;">${formatScoreValue(total)}${rank ? ` <span style="font-size:13px;font-weight:600;opacity:0.9;">(Rank ${rank} of ${totalParticipants})</span>` : ''}</td>
+            </tr>
+          </table>
+        </td></tr>
+        ${commentHtml}
+        <tr><td style="padding:18px 40px 30px;">
+          <p style="margin:0;color:#94a3b8;font-size:11px;text-align:center;">
+            AVENTO - Smart Campus Event Management &middot; Report generated ${new Date().toLocaleString()}
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+};
+
+const sendStudentScoreReports = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { registrationIds } = req.body || {};
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const students = await fetchEventStudents(eventId);
+    const { data: allStudentScores } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .not('registration_id', 'is', null);
+    const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
+    const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
+    const { totals, rankMap } = computeStudentTotals(studentScores);
+    const commentRows = await fetchStudentComments(eventId);
+    const commentMap = new Map(commentRows.map(c => [c.registration_id, c.comment]));
+
+    // Targets: an explicit subset, or every student with at least one score
+    const scoredRegIds = new Set(studentScores.map(s => s.registration_id));
+    let targets;
+    if (Array.isArray(registrationIds) && registrationIds.length > 0) {
+      const wanted = new Set(registrationIds);
+      targets = students.filter(s => wanted.has(s.registration_id));
+    } else {
+      targets = students.filter(s => scoredRegIds.has(s.registration_id));
+    }
+    if (targets.length === 0) {
+      return res.status(400).json({ message: 'No scored students to report.' });
+    }
+
+    const panelAccess = allowed ? null : await getPanelScoreAccess(eventId, req.user?.id);
+    if (!allowed && panelAccess.registrationIds.size === 0) {
+      return res.status(403).json({ message: 'Only organizers or panel members can send score reports.' });
+    }
+
+    const sent = [];
+    const skipped = [];
+    for (const student of targets) {
+      if (panelAccess && !panelAccess.registrationIds.has(student.registration_id)) {
+        skipped.push({ registrationId: student.registration_id, name: student.name, reason: 'Student is not on your panel' });
+        continue;
+      }
+      const own = studentScores.filter(s => s.registration_id === student.registration_id);
+      if (own.length === 0) {
+        skipped.push({ registrationId: student.registration_id, name: student.name, reason: 'No scores entered yet' });
+        continue;
+      }
+
+      const rows = buildStudentRows(orderedSubs, own);
+      const total = totals.get(student.registration_id) || 0;
+      const rank = rankMap.get(student.registration_id) || null;
+      const comment = commentMap.get(student.registration_id) || '';
+
+      try {
+        if (student.email) {
+          let attachments;
+          try {
+            attachments = [await createReportPdfAttachment({ event, student, rows, total, rank, totalParticipants: totals.size, comment })];
+          } catch (pdfErr) {
+            console.warn('Score report PDF generation failed (sending email without attachment):', pdfErr.message);
+          }
+          await sendEmailNotification({
+            recipientEmail: student.email,
+            subject: `Score Report - ${event.title}`,
+            htmlBody: buildScoreReportHtml({ event, student, rows, total, rank, totalParticipants: totals.size, comment }),
+            attachments
+          });
+        }
+        await sendInAppNotification({
+          recipientId: student.user_id,
+          title: `Score report for ${event.title}`,
+          message: `Your evaluation report is ready. Total: ${total}${rank ? ` | Rank: ${rank} of ${totals.size}` : ''}. Open the event to view your full scorecard.`,
+          type: 'info',
+          eventId
+        });
+        sent.push({ registrationId: student.registration_id, name: student.name });
+      } catch (mailErr) {
+        skipped.push({ registrationId: student.registration_id, name: student.name, reason: mailErr.message });
+      }
+    }
+
+    res.json({
+      message: `Sent ${sent.length} score report(s)${skipped.length ? `, ${skipped.length} skipped` : ''}.`,
+      sent,
+      skipped
+    });
+  } catch (err) {
+    console.error('sendStudentScoreReports error:', err);
+    res.status(500).json({ message: 'Server error sending score reports.', error: err.message });
+  }
+};
+
+const getStudentScoreReportPdf = async (req, res) => {
+  try {
+    const { eventId, registrationId } = req.params;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const students = await fetchEventStudents(eventId);
+    const student = students.find(s => s.registration_id === registrationId);
+    if (!student) return res.status(404).json({ message: 'Student not found for this event.' });
+
+    if (!allowed) {
+      const isSelf = String(student.user_id) === String(req.user?.id);
+      const panelAccess = await getPanelScoreAccess(eventId, req.user?.id);
+      if (!isSelf && !panelAccess.registrationIds.has(registrationId)) {
+        return res.status(403).json({ message: 'You are not allowed to download this report.' });
+      }
+    }
+
+    const { data: allStudentScores } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .not('registration_id', 'is', null);
+    const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
+    const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
+    const { totals, rankMap } = computeStudentTotals(studentScores);
+
+    const own = studentScores.filter(s => s.registration_id === student.registration_id);
+    if (own.length === 0) {
+      return res.status(400).json({ message: 'No scores entered for this student yet.' });
+    }
+
+    const rows = buildStudentRows(orderedSubs, own);
+    const total = totals.get(student.registration_id) || 0;
+    const rank = rankMap.get(student.registration_id) || null;
+    const { data: commentRow } = await supabase
+      .from('student_score_comments')
+      .select('comment')
+      .eq('event_id', eventId)
+      .eq('registration_id', registrationId)
+      .maybeSingle();
+
+    const pdfBytes = await buildScoreReportPdf({ event, student, rows, total, rank, totalParticipants: totals.size, comment: commentRow?.comment || '' });
+    const fileName = `Avento_Score_Report_${safeFileName(event.title)}_${safeFileName(student.name)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(Buffer.from(pdfBytes));
+  } catch (err) {
+    console.error('getStudentScoreReportPdf error:', err);
+    return res.status(500).json({ message: 'Server error generating score report.', error: err.message });
+  }
+};
+
+const getScoringAnalysisPdf = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { event, allowed } = await eventAccess(eventId, req.user);
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const panelAccess = allowed ? null : await getPanelScoreAccess(eventId, req.user?.id);
+    if (!allowed && panelAccess.registrationIds.size === 0) {
+      return res.status(403).json({ message: 'Only organizers or panel members can download the score analysis.' });
+    }
+
+    const students = await fetchEventStudents(eventId);
+    const scopedStudents = allowed
+      ? students
+      : students.filter(s => panelAccess.registrationIds.has(s.registration_id));
+
+    const { data: allStudentScores } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .not('registration_id', 'is', null);
+    const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
+    const scopedIds = new Set(scopedStudents.map(s => s.registration_id));
+    const scopedScores = (allStudentScores || [])
+      .filter(s => subroundMeta.has(s.subround_id) && scopedIds.has(s.registration_id));
+
+    if (scopedScores.length === 0) {
+      return res.status(400).json({ message: 'No scores entered yet.' });
+    }
+
+    const pdfBytes = await buildScoreAnalysisPdf({ event, students: scopedStudents, orderedSubs, scores: scopedScores });
+    const fileName = `Avento_Score_Analysis_${safeFileName(event.title)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(Buffer.from(pdfBytes));
+  } catch (err) {
+    console.error('getScoringAnalysisPdf error:', err);
+    return res.status(500).json({ message: 'Server error generating score analysis.', error: err.message });
+  }
+};
+
+module.exports = { getScoring, updateConfig, updateScore, bulkUpdateScores, updateStudentScore, bulkUpdateStudentScores, getStudentScoreCard, updateStudentComment, sendStudentScoreReports, getStudentScoreReportPdf, getScoringAnalysisPdf };

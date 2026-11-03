@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, supabase } from '../context/AuthContext';
 import EventCard from '../components/EventCard';
 import Modal from '../components/Modal';
 import { 
@@ -12,7 +12,10 @@ import {
   PinDoodle,
   CloudDoodle,
   PaperPlaneDoodle,
-  GeometricBlobDoodle
+  GeometricBlobDoodle,
+  RocketDoodle,
+  PaletteDoodle,
+  CoffeeDoodle
 } from '../components/Doodles';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import ScoringBoard from '../components/ScoringBoard';
@@ -101,6 +104,94 @@ const Home = () => {
   const [confirmRegEvent, setConfirmRegEvent] = useState(null);
   const [isConfirmRegOpen, setIsConfirmRegOpen] = useState(false);
 
+  // Slot Selection States
+  const [eventSlots, setEventSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState('');
+  const [selectedTeamSlotId, setSelectedTeamSlotId] = useState('');
+  const [selectedSlotDate, setSelectedSlotDate] = useState('');
+
+  const getEventDateStr = (event) => {
+    if (!event?.date) return '';
+    const d = new Date(event.date);
+    return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+  };
+
+  const slotEvent = confirmRegEvent || teamRegEvent;
+  const slotDateFallback = getEventDateStr(slotEvent);
+
+  const slotDayKey = (slot) => slot.slot_date || slotDateFallback || 'undated';
+
+  const slotDayOptions = useMemo(() => {
+    const keys = new Set(eventSlots.map(slotDayKey));
+    return [...keys].sort();
+  }, [eventSlots, slotDateFallback]);
+
+  const activeSlotDate = slotDayOptions.includes(selectedSlotDate)
+    ? selectedSlotDate
+    : (slotDayOptions[0] || '');
+
+  const isMultiDaySlots = slotDayOptions.length > 1;
+
+  const slotsForActiveDate = eventSlots.filter(slot => slotDayKey(slot) === activeSlotDate);
+
+  // Guard against a selected slot filling up while the modal is open
+  const selectedSlotIsFull = !!eventSlots.find(s => s.id === selectedSlotId)?.is_full;
+  const selectedTeamSlotIsFull = !!eventSlots.find(s => s.id === selectedTeamSlotId)?.is_full;
+
+  const formatSlotDateLabel = (key) => {
+    if (!key || key === 'undated') return 'Date to be announced';
+    const d = new Date(`${key}T00:00:00`);
+    if (isNaN(d.getTime())) return key;
+    return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const handleSlotDateChange = (value) => {
+    setSelectedSlotDate(value);
+    setSelectedSlotId('');
+    setSelectedTeamSlotId('');
+  };
+
+  const fetchSlotsForEvent = async (eventId, { silent = false } = {}) => {
+    try {
+      if (!silent) setLoadingSlots(true);
+      const res = await axios.get(`/api/slots/event/${eventId}`);
+      setEventSlots(res.data.slots || []);
+    } catch (err) {
+      console.error('Error fetching event slots:', err);
+      if (!silent) setEventSlots([]);
+    } finally {
+      if (!silent) setLoadingSlots(false);
+    }
+  };
+
+  // Keep slot availability live while a registration modal is open: any booking,
+  // slot change or organizer edit on this event refreshes the list for every viewer
+  useEffect(() => {
+    const activeEvent = isConfirmRegOpen ? confirmRegEvent : (isTeamRegOpen ? teamRegEvent : null);
+    if (!activeEvent?.has_slots) return undefined;
+    const eventId = activeEvent._id || activeEvent.id;
+    if (!eventId) return undefined;
+
+    const channel = supabase
+      .channel(`live-slots-${eventId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_slots', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotsForEvent(eventId, { silent: true })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'event_registrations', filter: `event_id=eq.${eventId}` },
+        () => fetchSlotsForEvent(eventId, { silent: true })
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isConfirmRegOpen, isTeamRegOpen, confirmRegEvent?._id, confirmRegEvent?.id, teamRegEvent?._id, teamRegEvent?.id]);
+
   // Join Team Request States
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [joinEvent, setJoinEvent] = useState(null);
@@ -185,6 +276,13 @@ const Home = () => {
       return;
     }
 
+    if (event.has_slots) {
+      fetchSlotsForEvent(event._id || event.id);
+      setSelectedSlotId('');
+      setSelectedTeamSlotId('');
+      setSelectedSlotDate('');
+    }
+
     if (event.registration_type === 'team') {
       setTeamRegEvent(event);
       setTeamName('');
@@ -193,11 +291,24 @@ const Home = () => {
       setExternalInviteEmail('');
       setIsTeamRegOpen(true);
     } else {
-      if (!user.phone || !user.college || !user.gender) {
-        setFeedback({ type: 'error', message: 'Please complete your profile (phone, college, gender) before registering.' });
-        setTimeout(() => setFeedback(null), 4000);
+      const userPhone = user?.phone || user?.phoneNumber || user?.phone_number;
+      const userCollege = user?.college || user?.collegeName || user?.college_name;
+      const userGender = user?.gender;
+
+      const missing = [];
+      if (!userPhone) missing.push('10-digit Phone Number');
+      if (!userCollege) missing.push('College / Institution Name');
+      if (!userGender) missing.push('Gender');
+
+      if (missing.length > 0) {
+        setProfileIncompleteModalData({
+          eventId: event._id || event.id,
+          message: `Please complete your profile details (${missing.join(', ')}) before registering for events.`,
+          missingFields: missing
+        });
         return;
       }
+
       setConfirmRegEvent(event);
       setIsConfirmRegOpen(true);
     }
@@ -205,8 +316,9 @@ const Home = () => {
 
   const handleConfirmRegister = async (eventId) => {
     setIsConfirmRegOpen(false);
+    const chosenSlot = selectedSlotId;
     setConfirmRegEvent(null);
-    await handleRegister(eventId);
+    await handleRegister(eventId, chosenSlot);
   };
 
   // Cancellation Confirmation Modal States
@@ -233,15 +345,36 @@ const Home = () => {
     }
   };
 
-  const categories = ['All', 'Technical', 'Cultural', 'Sports', 'Workshop', 'Seminar'];
+  const searchInputRef = useRef(null);
 
-  const categoryIcons = {
-    All: null,
-    Technical: null,
-    Cultural: null,
-    Sports: null,
-    Workshop: null,
-    Seminar: null
+  // Keyboard shortcut listener: press '/' or 'Ctrl+K' / 'Cmd+K' to focus search input
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if ((e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) &&
+          document.activeElement.tagName !== 'INPUT' &&
+          document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const categoriesList = [
+    { id: 'All', label: 'All Events', icon: <SparkleDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Technical', label: 'Technical', icon: <RocketDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Cultural', label: 'Cultural', icon: <PaletteDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Sports', label: 'Sports', icon: <StarDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Workshop', label: 'Workshop', icon: <ArrowDoodle className="w-3.5 h-3.5" /> },
+    { id: 'Seminar', label: 'Seminar', icon: <CoffeeDoodle className="w-3.5 h-3.5" /> }
+  ];
+
+  const isFiltering = !!search || !!category || status !== 'published';
+  const handleClearFilters = () => {
+    setSearch('');
+    setCategory('');
+    setStatus('published');
   };
 
   const fetchEvents = async () => {
@@ -260,7 +393,7 @@ const Home = () => {
       setEvents(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to fetch events. Please try again.');
+      setError(err.response?.data?.message || 'Failed to fetch events. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -307,11 +440,13 @@ const Home = () => {
     }
   }, [events]);
 
-  const handleRegister = async (eventId) => {
+  const handleRegister = async (eventId, slotId) => {
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
-      await axios.post('/api/registrations', { eventId });
+      const payload = { eventId };
+      if (slotId) payload.slotId = slotId;
+      await axios.post('/api/registrations', payload);
       setFeedback({ type: 'success', message: 'Successfully registered for the event! Check My Registrations page.' });
       await Promise.all([fetchEvents(), fetchMyRegistrations()]);
     } catch (err) {
@@ -334,6 +469,12 @@ const Home = () => {
     e.preventDefault();
     const eventId = teamRegEvent._id || teamRegEvent.id;
     
+    if (teamRegEvent.has_slots && !selectedTeamSlotId) {
+      setFeedback({ type: 'error', message: 'Please select a time slot for your team registration.' });
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
     const leaderCount = teamRegEvent.team_leader_registration_required !== false ? 1 : 0;
     const totalMembers = externalInvites.length + leaderCount;
     const minSize = teamRegEvent.min_team_size || 1;
@@ -353,12 +494,17 @@ const Home = () => {
     setRegisteringIds(prev => ({ ...prev, [eventId]: true }));
     setFeedback(null);
     try {
-      const teamRes = await axios.post('/api/registrations/team', {
+      const teamPayload = {
         eventId,
         teamName,
         memberIds: [],
         externalInvites
-      });
+      };
+      if (teamRegEvent.has_slots && selectedTeamSlotId) {
+        teamPayload.slotId = selectedTeamSlotId;
+      }
+
+      const teamRes = await axios.post('/api/registrations/team', teamPayload);
 
       const teamId = teamRes.data?.team?.id;
       if (teamId && externalInvites.length > 0) {
@@ -413,6 +559,14 @@ const Home = () => {
       }
 
       return true;
+    });
+  };
+
+  const isPanelLocked = (eventId) => {
+    return myRegistrations.some(reg => {
+      const rawId = reg.event_id;
+      const joinedId = reg.eventId && typeof reg.eventId === 'object' ? reg.eventId._id || reg.eventId.id : reg.eventId;
+      return (String(rawId) === String(eventId) || String(joinedId) === String(eventId)) && !!reg.panel;
     });
   };
 
@@ -586,68 +740,151 @@ const Home = () => {
           </div>
         )}
 
-        {/* ── Filter Controls ── */}
-        <div className="animate-fade-in-up delay-300 polaroid p-4 sm:p-6 mb-10 flex flex-col lg:flex-row items-center justify-between gap-5 relative z-20 mx-auto max-w-5xl -mt-8 rotate-1">
-          <div className="absolute -top-3 left-10 tape tape-2 !w-24"></div>
-          
-          {/* Search Input */}
-          <div className="relative w-full lg:w-80 group">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-text-secondary group-focus-within:text-pastel-lavender transition-colors duration-300">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </span>
-            <input
-              type="text"
-              placeholder="Search events..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white text-text-primary placeholder-text-secondary border-2 border-gray-200 rounded-2xl py-3 pl-12 pr-4 text-sm font-quicksand font-bold focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300"
-            />
+        {/* ── Enhanced Search & Filter Command Deck ── */}
+        <div className="animate-fade-in-up delay-300 polaroid p-4 sm:p-6 mb-10 relative z-20 mx-auto max-w-5xl -mt-8 shadow-xl hover:shadow-2xl transition-all duration-300">
+          {/* Scrapbook Decorative Tape & Doodles */}
+          <div className="absolute -top-3.5 left-10 tape tape-1 !w-28 shadow-xs"></div>
+          <div className="absolute -top-3 -right-2 z-10 hidden sm:block animate-bounce-gentle">
+            <SparkleDoodle className="w-8 h-8 text-pastel-coral" />
           </div>
 
-          {/* Category Chips */}
-          <div className="flex flex-wrap gap-2 w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat === 'All' ? '' : cat)}
-                className={`text-xs font-bold px-5 py-2.5 rounded-2xl transition-all duration-300 border-2 whitespace-nowrap font-quicksand ${
-                  (cat === 'All' && !category) || (cat === category)
-                    ? 'bg-pastel-lavender/20 text-pastel-lavender border-pastel-lavender shadow-sm scale-105'
-                    : 'bg-white text-text-secondary border-gray-200 hover:text-text-primary hover:border-pastel-lavender/50 hover:bg-pastel-lavender/5 hover:-translate-y-1'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          <div className="flex flex-col gap-4">
+            {/* Top Tier: Search Box + Status Filter + Quick Reset */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Search Box with icon and shortcut */}
+              <div className="relative flex-1 group">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors duration-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search events by title, keyword, venue..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full bg-slate-50/90 hover:bg-white focus:bg-white text-text-primary placeholder-slate-400 border-2 border-slate-200/90 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 rounded-2xl py-3 pl-11 pr-20 text-sm font-quicksand font-bold transition-all duration-200 shadow-xs"
+                />
+                
+                {/* Clear search or shortcut key badge */}
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3 gap-1.5">
+                  {search ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                      title="Clear search"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <span className="hidden md:inline-flex items-center px-2 py-0.5 text-[10px] font-mono font-bold text-slate-400 bg-white border border-slate-200 rounded-md shadow-2xs pointer-events-none">
+                      /
+                    </span>
+                  )}
+                </div>
+              </div>
 
-          {/* Status Dropdown */}
-          <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
-            <label className="text-[10px] font-bold text-text-secondary uppercase tracking-[0.15em] font-quicksand">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="bg-white text-text-primary border-2 border-gray-200 rounded-2xl px-4 py-2.5 text-xs font-bold font-quicksand focus:outline-none focus:border-pastel-lavender focus:ring-4 focus:ring-pastel-lavender/20 transition-all duration-300 cursor-pointer"
-            >
-              <option value="published">Open for Reg</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="completed">Completed</option>
-              <option value="">All Events</option>
-            </select>
+              {/* Status Selector & Clear Filter Pill */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="relative flex-1 sm:flex-initial">
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full sm:w-auto appearance-none bg-slate-50/90 hover:bg-white text-text-primary border-2 border-slate-200/90 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 rounded-2xl py-3 pl-4 pr-10 text-xs font-bold font-quicksand transition-all duration-200 cursor-pointer shadow-xs"
+                  >
+                    <option value="published">🟢 Open for Reg</option>
+                    <option value="">⚡ All Statuses</option>
+                    <option value="completed">🏁 Completed</option>
+                    <option value="cancelled">🔴 Cancelled</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {isFiltering && (
+                  <button
+                    onClick={handleClearFilters}
+                    className="shrink-0 px-3.5 py-3 rounded-2xl text-xs font-bold font-quicksand bg-rose-50 text-rose-700 hover:bg-rose-100 border-2 border-rose-200 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    title="Reset all filters"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    <span>Reset</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Tier: Category Pills + Live Result Counter */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+              {/* Category Pills */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none -mx-1 px-1">
+                {categoriesList.map((cat) => {
+                  const isSelected = (cat.id === 'All' && !category) || (cat.id === category);
+                  
+                  const activeClassMap = {
+                    All: 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-md scale-[1.03]',
+                    Technical: 'bg-cyan-600 text-white border-cyan-600 shadow-md shadow-cyan-600/25 scale-[1.03]',
+                    Cultural: 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/25 scale-[1.03]',
+                    Sports: 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/25 scale-[1.03]',
+                    Workshop: 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/25 scale-[1.03]',
+                    Seminar: 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/25 scale-[1.03]',
+                  };
+
+                  const inactiveClassMap = {
+                    All: 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300',
+                    Technical: 'bg-white hover:bg-cyan-50/60 text-cyan-800 border-cyan-200 hover:border-cyan-400',
+                    Cultural: 'bg-white hover:bg-rose-50/60 text-rose-800 border-rose-200 hover:border-rose-400',
+                    Sports: 'bg-white hover:bg-emerald-50/60 text-emerald-800 border-emerald-200 hover:border-emerald-400',
+                    Workshop: 'bg-white hover:bg-amber-50/60 text-amber-800 border-amber-200 hover:border-amber-400',
+                    Seminar: 'bg-white hover:bg-indigo-50/60 text-indigo-800 border-indigo-200 hover:border-indigo-400',
+                  };
+
+                  const currentClass = isSelected
+                    ? (activeClassMap[cat.id] || 'bg-cyan-600 text-white border-cyan-600')
+                    : (inactiveClassMap[cat.id] || 'bg-white text-slate-700 border-slate-200');
+
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setCategory(cat.id === 'All' ? '' : cat.id)}
+                      className={`text-xs font-bold px-3.5 sm:px-4 py-2 rounded-xl transition-all duration-200 border-2 whitespace-nowrap font-quicksand flex items-center gap-1.5 shrink-0 cursor-pointer ${currentClass} hover:-translate-y-0.5`}
+                    >
+                      <span className="shrink-0">{cat.icon}</span>
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Event count indicator */}
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500 font-quicksand shrink-0 self-end md:self-center">
+                <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                <span>
+                  {loading ? 'Searching events...' : `${events.length} event${events.length === 1 ? '' : 's'} found`}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* ── Events Grid ── */}
         {loading ? (
-          <div className="grid w-full grid-cols-1 gap-8">
+          <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="polaroid h-[420px] animate-pulse overflow-hidden">
-                <div className="h-48 bg-gray-200 rounded-xl mb-4" />
-                <div className="space-y-3 px-2">
+              <div key={i} className="polaroid h-[380px] animate-pulse overflow-hidden">
+                <div className="h-44 bg-gray-200 rounded-xl mb-3" />
+                <div className="space-y-2.5 px-2">
                   <div className="h-3 w-24 bg-pastel-coral/50 rounded-full" />
-                  <div className="h-6 w-3/4 bg-gray-200 rounded-full" />
+                  <div className="h-5 w-3/4 bg-gray-200 rounded-full" />
                   <div className="h-3 w-full bg-gray-100 rounded-full" />
                   <div className="h-3 w-2/3 bg-gray-100 rounded-full" />
                 </div>
@@ -671,10 +908,22 @@ const Home = () => {
               <SparkleDoodle className="h-10 w-10 text-pastel-yellow" />
             </div>
             <h3 className="text-2xl font-bold text-text-primary mb-2 font-heading">No Events Found</h3>
-            <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">There are no events matching your search or filters at the moment.</p>
+            <p className="text-sm text-text-secondary max-w-sm mx-auto font-body">
+              {isFiltering 
+                ? 'No events match your current search criteria. Try adjusting or clearing your filters.' 
+                : 'There are no events matching your search or filters at the moment.'}
+            </p>
+            {isFiltering && (
+              <button
+                onClick={handleClearFilters}
+                className="mt-5 btn-primary px-6 py-2.5 text-xs font-bold rounded-2xl shadow-pastel-glow cursor-pointer"
+              >
+                Clear All Filters
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid w-full grid-cols-1 gap-8">
+          <div className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((evt, index) => (
               <EventCard
                 key={evt._id || evt.id}
@@ -690,7 +939,7 @@ const Home = () => {
                 isSubmitting={registeringIds[evt._id || evt.id]}
                 onViewOrganizers={() => handleViewOrganizers(evt)}
                 onViewScores={() => setScoreEvent(evt)}
-                onCancelRegister={() => openConfirmCancel(evt)}
+                cancelDisabled={isPanelLocked(evt._id || evt.id)} onCancelRegister={() => openConfirmCancel(evt)}
               />
             ))}
           </div>
@@ -723,7 +972,7 @@ const Home = () => {
                       <h4 className="text-sm font-bold text-slate-800">{org.name}</h4>
                       <p className="text-[10px] text-slate-600 font-medium mt-0.5">{org.department} &bull; {org.email}</p>
                     </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-400 border border-violet-500/15">
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-800 border border-cyan-200">
                       {org.category}
                     </span>
                   </div>
@@ -751,7 +1000,7 @@ const Home = () => {
                   alt={confirmRegEvent.title}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-violet-500 text-white uppercase tracking-wider">
+                <span className="absolute top-3 left-3 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-slate-900/85 text-white border border-white/20 uppercase tracking-wider shadow-md">
                   {confirmRegEvent.category}
                 </span>
               </div>
@@ -768,7 +1017,9 @@ const Home = () => {
                 <div>
                   <span className="block text-[9px] font-bold text-slate-600 uppercase tracking-wider">Date</span>
                   <span className="font-semibold text-slate-800">
-                    {new Date(confirmRegEvent.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    {isMultiDaySlots && confirmRegEvent.has_slots
+                      ? `${formatSlotDateLabel(slotDayOptions[0])} – ${formatSlotDateLabel(slotDayOptions[slotDayOptions.length - 1])}`
+                      : new Date(confirmRegEvent.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                   </span>
                 </div>
                 <div>
@@ -786,6 +1037,101 @@ const Home = () => {
                   <span className="font-semibold text-slate-800">{confirmRegEvent.proposerName}</span>
                 </div>
               </div>
+
+              {/* Slot Selection for Individual Registration */}
+              {confirmRegEvent.has_slots && (
+                <div className="space-y-3 pt-3 border-t border-slate-200/20">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                      Book a Slot in 2 Steps
+                    </label>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Pick a date first, then choose one of the available time slots below.
+                    </p>
+                  </div>
+                  {loadingSlots ? (
+                    <div className="p-4 text-center text-xs text-slate-400 animate-pulse">Loading available time slots...</div>
+                  ) : eventSlots.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                      No time slots configured yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-violet-600 text-white text-[9px] font-extrabold">1</span>
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                            {isMultiDaySlots ? 'Select a Date *' : 'Event Date'}
+                          </span>
+                        </div>
+                        {isMultiDaySlots ? (
+                          <select
+                            value={activeSlotDate}
+                            onChange={(e) => handleSlotDateChange(e.target.value)}
+                            className="w-full bg-white text-slate-800 border-2 border-violet-400 rounded-xl px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-600 transition-all"
+                          >
+                            {slotDayOptions.map(dayKey => (
+                              <option key={dayKey} value={dayKey}>
+                                {formatSlotDateLabel(dayKey)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800">
+                            {formatSlotDateLabel(activeSlotDate)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-violet-600 text-white text-[9px] font-extrabold">2</span>
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Select a Time Slot *</span>
+                        </div>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {slotsForActiveDate.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                              No slots available on this date.
+                            </div>
+                          ) : slotsForActiveDate.map(slot => {
+                            const isSelected = selectedSlotId === slot.id;
+                            const isFull = slot.is_full;
+                            return (
+                              <div
+                                key={slot.id}
+                                onClick={() => !isFull && setSelectedSlotId(slot.id)}
+                                className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
+                                  isFull
+                                    ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'border-violet-500 bg-violet-50/90 dark:bg-violet-950/40 font-bold ring-2 ring-violet-500/20'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
+                                }`}
+                              >
+                                <div>
+                                  <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                    <span>{slot.slot_name}</span>
+                                    <span className="text-[11px] font-semibold text-slate-500">
+                                      ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                                    </span>
+                                  </div>
+                                  {slot.venue_room && (
+                                    <div className="text-[10px] text-slate-400 mt-0.5">{slot.venue_room}</div>
+                                  )}
+                                </div>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
+                                }`}>
+                                  {isFull ? 'Full' : `${slot.slots_remaining} Seats Left`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Student Details */}
               <div className="bg-slate-500/5 border border-slate-200/10 p-3 rounded-xl text-xs space-y-1">
@@ -814,8 +1160,9 @@ const Home = () => {
                 </button>
                 <button
                   type="button"
+                  disabled={confirmRegEvent.has_slots && (!selectedSlotId || selectedSlotIsFull)}
                   onClick={() => handleConfirmRegister(confirmRegEvent._id || confirmRegEvent.id)}
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
                   Register Now
                 </button>
@@ -843,7 +1190,7 @@ const Home = () => {
                   alt={teamRegEvent.title}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute top-3 left-3 text-[9px] font-bold px-2 py-0.5 rounded bg-fuchsia-500 text-white uppercase tracking-wider">
+                <span className="absolute top-3 left-3 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-slate-900/85 text-white border border-white/20 uppercase tracking-wider shadow-md">
                   {teamRegEvent.category}
                 </span>
               </div>
@@ -858,11 +1205,11 @@ const Home = () => {
                     />
                   </div>
                 )}
-                <div className="flex gap-2 mt-1">
-                  <p className="text-[10px] text-teal-600 font-bold uppercase tracking-wider border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 rounded inline-block">
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <p className="text-[10px] text-cyan-800 font-bold uppercase tracking-wider border border-cyan-300 bg-cyan-50 px-2 py-0.5 rounded inline-block">
                     Minimum Members: {teamRegEvent.min_team_size || 1}
                   </p>
-                  <p className="text-[10px] text-fuchsia-600 font-bold uppercase tracking-wider border border-fuchsia-500/20 bg-fuchsia-500/10 px-2 py-0.5 rounded inline-block">
+                  <p className="text-[10px] text-cyan-800 font-bold uppercase tracking-wider border border-cyan-300 bg-cyan-50 px-2 py-0.5 rounded inline-block">
                     Maximum Members: {teamRegEvent.max_team_size} 
                   </p>
                 </div>
@@ -886,7 +1233,7 @@ const Home = () => {
                       className={`w-full bg-white/60 text-slate-800 border rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none transition-all duration-300 ${
                         nameUnavailable
                           ? 'border-red-500/80 focus:border-red-500/80' 
-                          : 'border-slate-300/50 focus:border-fuchsia-500/60'
+                          : 'border-slate-300/50 focus:border-cyan-500/60'
                       }`}
                     />
                     {isCheckingName && (
@@ -905,6 +1252,101 @@ const Home = () => {
                   )}
                 </div>
 
+                {/* Slot Selection for Team Registration */}
+                {teamRegEvent.has_slots && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em]">
+                        Book a Slot in 2 Steps
+                      </label>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Pick a date first, then choose one of the available time slots below.
+                      </p>
+                    </div>
+                    {loadingSlots ? (
+                      <div className="p-4 text-center text-xs text-slate-400 animate-pulse">Loading available time slots...</div>
+                    ) : eventSlots.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                        No time slots configured yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-fuchsia-600 text-white text-[9px] font-extrabold">1</span>
+                            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                              {isMultiDaySlots ? 'Select a Date *' : 'Event Date'}
+                            </span>
+                          </div>
+                          {isMultiDaySlots ? (
+                            <select
+                              value={activeSlotDate}
+                              onChange={(e) => handleSlotDateChange(e.target.value)}
+                              className="w-full bg-white text-slate-800 border-2 border-fuchsia-400 rounded-xl px-3.5 py-2.5 text-sm font-bold focus:outline-none focus:border-fuchsia-600 transition-all"
+                            >
+                              {slotDayOptions.map(dayKey => (
+                                <option key={dayKey} value={dayKey}>
+                                  {formatSlotDateLabel(dayKey)}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800">
+                              {formatSlotDateLabel(activeSlotDate)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-fuchsia-600 text-white text-[9px] font-extrabold">2</span>
+                            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Select a Time Slot *</span>
+                          </div>
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {slotsForActiveDate.length === 0 ? (
+                              <div className="p-3 text-center text-xs text-amber-600 bg-amber-50 rounded-xl border border-amber-200">
+                                No slots available on this date.
+                              </div>
+                            ) : slotsForActiveDate.map(slot => {
+                              const isSelected = selectedTeamSlotId === slot.id;
+                              const isFull = slot.is_full;
+                              return (
+                                <div
+                                  key={slot.id}
+                                  onClick={() => !isFull && setSelectedTeamSlotId(slot.id)}
+                                  className={`p-3 rounded-xl border text-xs transition cursor-pointer flex items-center justify-between ${
+                                    isFull
+                                      ? 'opacity-50 bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                                      : isSelected
+                                      ? 'border-fuchsia-500 bg-fuchsia-50/90 dark:bg-fuchsia-950/40 font-bold ring-2 ring-fuchsia-500/20'
+                                      : 'border-slate-200 dark:border-slate-700 bg-white/70 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="font-extrabold text-slate-800 dark:text-white flex items-center gap-1.5">
+                                      <span>{slot.slot_name}</span>
+                                      <span className="text-[11px] font-semibold text-slate-500">
+                                        ({slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)})
+                                      </span>
+                                    </div>
+                                    {slot.venue_room && (
+                                      <div className="text-[10px] text-slate-400 mt-0.5">{slot.venue_room}</div>
+                                    )}
+                                  </div>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    isFull ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600'
+                                  }`}>
+                                    {isFull ? 'Full' : `${slot.slots_remaining} Teams/Seats Left`}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Invite Team Members by Email */}
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
@@ -916,14 +1358,14 @@ const Home = () => {
                       placeholder="Full Name"
                       value={externalInviteName}
                       onChange={(e) => setExternalInviteName(e.target.value)}
-                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                     <input
                       type="email"
                       placeholder="Email"
                       value={externalInviteEmail}
                       onChange={(e) => setExternalInviteEmail(e.target.value)}
-                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                      className="flex-1 bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
                     />
                     <button
                       type="button"
@@ -954,9 +1396,9 @@ const Home = () => {
                   </h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {teamRegEvent.team_leader_registration_required !== false && (
-                      <div className="flex items-center justify-between p-2.5 bg-fuchsia-500/5 rounded-lg border border-fuchsia-500/10">
+                      <div className="flex items-center justify-between p-2.5 bg-cyan-500/5 rounded-lg border border-cyan-500/10">
                         <div className="text-sm font-semibold text-slate-800">
-                          {user?.fullName || user?.name} <span className="text-[10px] ml-1 text-fuchsia-500 font-bold uppercase">(Leader)</span>
+                          {user?.fullName || user?.name} <span className="text-[10px] ml-1 text-cyan-500 font-bold uppercase">(Leader)</span>
                         </div>
                       </div>
                     )}
@@ -977,8 +1419,8 @@ const Home = () => {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
-                    <p className="text-xs text-indigo-700 font-medium">
+                  <div className="mt-3 p-3 bg-cyan-50/50 border border-cyan-100 rounded-xl">
+                    <p className="text-xs text-cyan-700 font-medium">
                       <strong className="font-bold">Note:</strong> Upon creating the team, invited members will receive an email to join. They must sign up on Avento and accept the invitation. Once the minimum required members accept, you can confirm the team.
                     </p>
                   </div>
@@ -1007,8 +1449,8 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable}
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-fuchsia-500/15 disabled:opacity-50"
+                  disabled={registeringIds[teamRegEvent._id || teamRegEvent.id] || (externalInvites.length + (teamRegEvent.team_leader_registration_required !== false ? 1 : 0) < teamRegEvent.min_team_size) || isCheckingName || nameUnavailable || (teamRegEvent.has_slots && (!selectedTeamSlotId || selectedTeamSlotIsFull))}
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50"
                 >
                   {registeringIds[teamRegEvent._id || teamRegEvent.id] ? 'Creating Team...' : 'Create Team & Send Invites'}
                 </button>
@@ -1077,7 +1519,7 @@ const Home = () => {
                   required
                   value={selectedJoinCategory}
                   onChange={(e) => setSelectedJoinCategory(e.target.value)}
-                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 cursor-pointer text-slate-700"
+                  className="w-full bg-white/60 text-slate-700 border border-slate-300/50 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 cursor-pointer text-slate-700"
                 >
                   {[
                     'Technical Team',
@@ -1106,7 +1548,7 @@ const Home = () => {
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-violet-500/15"
+                  className="btn-primary px-6 py-2.5 text-xs font-display font-bold rounded-xl text-white shadow-lg shadow-cyan-500/15"
                 >
                   Submit Request
                 </button>
@@ -1171,7 +1613,7 @@ const Home = () => {
                       window.location.href = '/profile';
                     }
                   }}
-                  className="px-5 py-2 text-xs font-bold rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <span>Complete Profile Now</span>
                   <span>→</span>

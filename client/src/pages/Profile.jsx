@@ -232,8 +232,8 @@ const Profile = () => {
 
   // ── Shared style helpers ──
   const labelCls = "block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2";
-  const inputCls = "w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300";
-  const selectCls = "w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 appearance-none cursor-pointer";
+  const inputCls = "w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300";
+  const selectCls = "w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 appearance-none cursor-pointer";
   const readOnlyCls = "w-full bg-white/30 text-slate-600 border border-slate-300/30 rounded-xl px-4 py-2.5 text-sm font-body cursor-not-allowed select-all";
   const hintCls = "mt-1.5 text-[10px] text-slate-500 font-medium";
 
@@ -242,8 +242,8 @@ const Profile = () => {
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
         
         <div className="text-center mb-10 animate-fade-in-up">
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-violet-500/15 to-pink-500/15 flex items-center justify-center mx-auto mb-4 border border-violet-500/15">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-cyan-500/15 to-pink-500/15 flex items-center justify-center mx-auto mb-4 border border-cyan-500/15">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
@@ -264,15 +264,15 @@ const Profile = () => {
         )}
 
         {/* Photo Section */}
-        <div className="animate-fade-in-up delay-75 glass-panel rounded-2xl p-6 mb-4 shadow-2xl shadow-violet-500/5">
+        <div className="animate-fade-in-up delay-75 glass-panel rounded-2xl p-6 mb-4 shadow-2xl shadow-cyan-500/5">
           <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-4">Profile Photo</label>
           <div className="flex items-center gap-6">
             <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
               {avatarUrl ? (
-                <img src={avatarUrl} alt="Profile" className="w-20 h-20 rounded-2xl object-cover border-2 border-violet-200" />
+                <img src={avatarUrl} alt="Profile" className="w-20 h-20 rounded-2xl object-cover border-2 border-cyan-200" />
               ) : (
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/15 to-pink-500/15 flex items-center justify-center border-2 border-dashed border-violet-300">
-                  <svg className="w-8 h-8 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500/15 to-pink-500/15 flex items-center justify-center border-2 border-dashed border-cyan-300">
+                  <svg className="w-8 h-8 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
                 </div>
@@ -306,12 +306,12 @@ const Profile = () => {
         </div>
 
         {/* Profile Form */}
-        <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-8 shadow-2xl shadow-violet-500/5">
+        <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-8 shadow-2xl shadow-cyan-500/5">
           <form onSubmit={handleSubmit} className="space-y-6">
             
             {/* Section 1: Account & Contact */}
             <div className="space-y-4">
-              <h3 className="text-xs font-bold text-violet-600 uppercase tracking-widest border-b border-violet-100 pb-2">
+              <h3 className="text-xs font-bold text-cyan-600 uppercase tracking-widest border-b border-cyan-100 pb-2">
                 Personal Information
               </h3>
 
@@ -391,7 +391,7 @@ const Profile = () => {
 
             {/* Section 2: Academic Details */}
             <div className="space-y-4 pt-2">
-              <h3 className="text-xs font-bold text-violet-600 uppercase tracking-widest border-b border-violet-100 pb-2">
+              <h3 className="text-xs font-bold text-cyan-600 uppercase tracking-widest border-b border-cyan-100 pb-2">
                 Academic & Institution Details
               </h3>
 
@@ -418,7 +418,7 @@ const Profile = () => {
                 {/* Account Role */}
                 <div>
                   <label className={labelCls}>Account Role</label>
-                  <div className="bg-white/30 border border-slate-300/30 rounded-xl px-4 py-2.5 text-sm font-bold text-violet-600 capitalize cursor-not-allowed">
+                  <div className="bg-white/30 border border-slate-300/30 rounded-xl px-4 py-2.5 text-sm font-bold text-cyan-600 capitalize cursor-not-allowed">
                     {user?.roles?.includes('admin') ? 'Admin' :
                      (user?.roles?.includes('faculty') || user?.roles?.includes('faculty_organizer')) ? 'Faculty' :
                      user?.roles?.includes('student') ? 'Student' : '—'}
@@ -503,7 +503,7 @@ const Profile = () => {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full btn-primary py-3.5 rounded-xl text-sm font-display font-bold text-white shadow-lg shadow-violet-500/15 disabled:opacity-50 mt-6 transition-all hover:scale-[1.01]"
+              className="w-full btn-primary py-3.5 rounded-xl text-sm font-display font-bold text-white shadow-lg shadow-cyan-500/15 disabled:opacity-50 mt-6 transition-all hover:scale-[1.01]"
             >
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
@@ -517,8 +517,8 @@ const Profile = () => {
             </button>
           </form>
         </div>
-        <Link to="/scoring-events" className="mt-5 flex items-center justify-between rounded-2xl border border-violet-200 bg-violet-50/60 p-5 transition hover:bg-violet-100">
-          <div><h2 className="font-display text-sm font-bold text-violet-800">Event Scoring</h2><p className="mt-1 text-xs text-violet-600">View scoreboards published for participants.</p></div><span className="text-xl font-bold text-violet-600">→</span>
+        <Link to="/scoring-events" className="mt-5 flex items-center justify-between rounded-2xl border border-cyan-200 bg-cyan-50/60 p-5 transition hover:bg-cyan-100">
+          <div><h2 className="font-display text-sm font-bold text-cyan-800">Event Scoring</h2><p className="mt-1 text-xs text-cyan-600">View scoreboards published for participants.</p></div><span className="text-xl font-bold text-cyan-600">→</span>
         </Link>
 
       </div>
@@ -581,7 +581,7 @@ const Profile = () => {
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white z-10">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-600 font-bold">
+                <div className="h-9 w-9 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-600 font-bold">
                   ✂️
                 </div>
                 <div>
@@ -625,7 +625,7 @@ const Profile = () => {
                   step={0.1}
                   aria-labelledby="Zoom"
                   onChange={(e) => setZoom(Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
+                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
                 />
                 <span className="text-xs font-bold text-slate-500">+</span>
               </div>
@@ -643,7 +643,7 @@ const Profile = () => {
                   type="button"
                   onClick={handleSaveCroppedImage}
                   disabled={uploadingPhoto}
-                  className="flex-1 btn-primary py-2.5 rounded-xl text-xs font-display font-bold text-white shadow-lg shadow-violet-500/15 flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 btn-primary py-2.5 rounded-xl text-xs font-display font-bold text-white shadow-lg shadow-cyan-500/15 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {uploadingPhoto ? (
                     <span>Saving...</span>
@@ -772,7 +772,7 @@ const Profile = () => {
                     'Only you in the photo — no group pictures'
                   ].map((item, i) => (
                     <div key={i} className="flex items-start gap-2">
-                      <span className="text-violet-500 text-xs mt-0.5">•</span>
+                      <span className="text-cyan-500 text-xs mt-0.5">•</span>
                       <p className="text-[11px] text-slate-600 font-medium">{item}</p>
                     </div>
                   ))}
@@ -785,7 +785,7 @@ const Profile = () => {
               <button onClick={() => setShowGuideModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-display font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
                 Cancel
               </button>
-              <button onClick={handleProceedUpload} className="flex-1 btn-primary py-2.5 rounded-xl text-sm font-display font-bold text-white shadow-lg shadow-violet-500/15 flex items-center justify-center gap-2">
+              <button onClick={handleProceedUpload} className="flex-1 btn-primary py-2.5 rounded-xl text-sm font-display font-bold text-white shadow-lg shadow-cyan-500/15 flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>

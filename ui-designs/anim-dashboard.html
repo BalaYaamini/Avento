@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Animated Dashboard — Avento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --card: #161616;
+    --border: #1c1c1c;
+    --text: #fafafa;
+    --text-muted: #a3a3a3;
+    --text-dim: #525252;
+    --accent: #ef4444;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Keyframes ── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  @keyframes barFill {
+    from { width: 0; }
+  }
+
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { box-shadow: 0 0 12px 2px rgba(239,68,68,0.15); }
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 240px;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 10;
+  }
+
+  .logo {
+    padding: 0 24px 28px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    opacity: 0;
+    animation: slideInLeft 0.5s ease forwards;
+  }
+  .logo span { color: var(--accent); }
+
+  .sidebar-section {
+    margin-bottom: 8px;
+  }
+  .sidebar-label {
+    padding: 0 24px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    opacity: 0;
+    animation: slideInLeft 0.4s ease forwards;
+    animation-delay: 0.1s;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 24px;
+    font-size: 14px;
+    color: var(--text-muted);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: color 0.2s;
+    opacity: 0;
+    animation: slideInLeft 0.4s ease forwards;
+  }
+  .nav-item::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.04);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+  }
+  .nav-item:hover::before { transform: scaleX(1); }
+  .nav-item:hover { color: var(--text); }
+
+  .nav-item.active {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .nav-item.active::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 0 2px 2px 0;
+    animation: slideInLeft 0.3s ease forwards;
+  }
+
+  .nav-icon {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .nav-item:nth-child(1) { animation-delay: 0.15s; }
+  .nav-item:nth-child(2) { animation-delay: 0.2s; }
+  .nav-item:nth-child(3) { animation-delay: 0.25s; }
+  .nav-item:nth-child(4) { animation-delay: 0.3s; }
+  .nav-item:nth-child(5) { animation-delay: 0.35s; }
+  .nav-item:nth-child(6) { animation-delay: 0.4s; }
+
+  /* ── Main ── */
+  .main {
+    flex: 1;
+    margin-left: 240px;
+    padding: 32px;
+    min-height: 100vh;
+  }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    opacity: 0;
+    animation: fadeInUp 0.5s ease forwards;
+  }
+  .topbar h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--border);
+    border: 2px solid var(--accent);
+  }
+
+  /* ── Stat Cards ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    opacity: 0;
+    animation: fadeInUp 0.5s ease forwards;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    cursor: default;
+  }
+  .stat-card:nth-child(1) { animation-delay: 0.1s; }
+  .stat-card:nth-child(2) { animation-delay: 0.2s; }
+  .stat-card:nth-child(3) { animation-delay: 0.3s; }
+  .stat-card:nth-child(4) { animation-delay: 0.4s; }
+
+  .stat-card:hover {
+    transform: scale(1.02);
+    border-color: rgba(239,68,68,0.3);
+    box-shadow: 0 0 20px rgba(239,68,68,0.06);
+  }
+
+  .stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+  }
+  .stat-change {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── Tables & Activity ── */
+  .content-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 20px;
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    opacity: 0;
+    animation: fadeInUp 0.5s ease forwards;
+    animation-delay: 0.35s;
+  }
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .panel-header span {
+    font-size: 12px;
+    color: var(--accent);
+    cursor: pointer;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  th {
+    text-align: left;
+    padding: 10px 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 20px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+  tr { opacity: 0; animation: fadeInUp 0.4s ease forwards; }
+  tr:nth-child(1) { animation-delay: 0.4s; }
+  tr:nth-child(2) { animation-delay: 0.45s; }
+  tr:nth-child(3) { animation-delay: 0.5s; }
+  tr:nth-child(4) { animation-delay: 0.55s; }
+  tr:nth-child(5) { animation-delay: 0.6s; }
+
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .status-dot.green { background: #22c55e; }
+  .status-dot.yellow { background: #eab308; }
+  .status-dot.red { background: var(--accent); }
+
+  .progress-track {
+    width: 100px;
+    height: 5px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--accent);
+    animation: barFill 1s ease forwards;
+    animation-delay: 0.7s;
+    width: 0;
+  }
+
+  /* ── Activity Feed ── */
+  .activity-panel {
+    opacity: 0;
+    animation: fadeInUp 0.5s ease forwards;
+    animation-delay: 0.45s;
+  }
+  .activity-list { padding: 0; }
+  .activity-item {
+    display: flex;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    opacity: 0;
+    animation: fadeInUp 0.4s ease forwards;
+    transition: background 0.2s;
+  }
+  .activity-item:hover { background: rgba(255,255,255,0.02); }
+  .activity-item:nth-child(1) { animation-delay: 0.5s; }
+  .activity-item:nth-child(2) { animation-delay: 0.55s; }
+  .activity-item:nth-child(3) { animation-delay: 0.6s; }
+  .activity-item:nth-child(4) { animation-delay: 0.65s; }
+  .activity-item:nth-child(5) { animation-delay: 0.7s; }
+
+  .activity-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 5px;
+    flex-shrink: 0;
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  .activity-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .activity-text strong { color: var(--text); font-weight: 500; }
+  .activity-time {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="logo">Avent<span>o</span></div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">Main</div>
+    <div class="nav-item active"><div class="nav-icon"></div>Dashboard</div>
+    <div class="nav-item"><div class="nav-icon"></div>Events</div>
+    <div class="nav-item"><div class="nav-icon"></div>Registrations</div>
+    <div class="nav-item"><div class="nav-icon"></div>Attendees</div>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">System</div>
+    <div class="nav-item"><div class="nav-icon"></div>Settings</div>
+    <div class="nav-item"><div class="nav-icon"></div>Logout</div>
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main">
+  <div class="topbar">
+    <h1>Dashboard</h1>
+    <div class="topbar-right">
+      <span style="font-size:13px;color:var(--text-muted)">Welcome back, Charan</span>
+      <div class="avatar"></div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Events</div>
+      <div class="stat-value" data-target="24" data-suffix="">0</div>
+      <div class="stat-change">+3 this month</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Registrations</div>
+      <div class="stat-value" data-target="1847" data-suffix="">0</div>
+      <div class="stat-change">+12% vs last month</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Revenue</div>
+      <div class="stat-value" data-target="42800" data-prefix="$" data-suffix="">0</div>
+      <div class="stat-change">+$8,200 this week</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Capacity Used</div>
+      <div class="stat-value" data-target="78" data-suffix="%">0</div>
+      <div class="stat-change">Across all venues</div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content-grid">
+    <!-- Table -->
+    <div class="panel">
+      <div class="panel-header">
+        <h3>Upcoming Events</h3>
+        <span>View All</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Capacity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight:500;color:var(--text)">Tech Summit 2026</td>
+            <td style="color:var(--text-muted)">Mar 15, 2026</td>
+            <td><span class="status"><span class="status-dot green"></span>Active</span></td>
+            <td>
+              <div class="progress-track"><div class="progress-fill" style="--target:85%"></div></div>
+              <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:inline-block">85%</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:500;color:var(--text)">Design Workshop</td>
+            <td style="color:var(--text-muted)">Mar 22, 2026</td>
+            <td><span class="status"><span class="status-dot yellow"></span>Pending</span></td>
+            <td>
+              <div class="progress-track"><div class="progress-fill" style="--target:60%"></div></div>
+              <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:inline-block">60%</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:500;color:var(--text)">AI Conference</td>
+            <td style="color:var(--text-muted)">Apr 05, 2026</td>
+            <td><span class="status"><span class="status-dot green"></span>Active</span></td>
+            <td>
+              <div class="progress-track"><div class="progress-fill" style="--target:92%"></div></div>
+              <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:inline-block">92%</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:500;color:var(--text)">Startup Meetup</td>
+            <td style="color:var(--text-muted)">Apr 12, 2026</td>
+            <td><span class="status"><span class="status-dot red"></span>Sold Out</span></td>
+            <td>
+              <div class="progress-track"><div class="progress-fill" style="--target:100%"></div></div>
+              <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:inline-block">100%</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:500;color:var(--text)">Music Festival</td>
+            <td style="color:var(--text-muted)">Apr 20, 2026</td>
+            <td><span class="status"><span class="status-dot yellow"></span>Draft</span></td>
+            <td>
+              <div class="progress-track"><div class="progress-fill" style="--target:35%"></div></div>
+              <span style="font-size:11px;color:var(--text-dim);margin-top:4px;display:inline-block">35%</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Activity Feed -->
+    <div class="panel activity-panel">
+      <div class="panel-header">
+        <h3>Activity</h3>
+        <span>View All</span>
+      </div>
+      <div class="activity-list">
+        <div class="activity-item">
+          <div class="activity-dot"></div>
+          <div>
+            <div class="activity-text"><strong>New registration</strong> for Tech Summit 2026</div>
+            <div class="activity-time">2 minutes ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="animation-delay:0.3s"></div>
+          <div>
+            <div class="activity-text"><strong>Payment received</strong> — $250 from attendee #1842</div>
+            <div class="activity-time">8 minutes ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="animation-delay:0.6s"></div>
+          <div>
+            <div class="activity-text"><strong>Event updated</strong> — Design Workshop venue changed</div>
+            <div class="activity-time">15 minutes ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="animation-delay:0.9s"></div>
+          <div>
+            <div class="activity-text"><strong>New comment</strong> on AI Conference page</div>
+            <div class="activity-time">32 minutes ago</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-dot" style="animation-delay:1.2s"></div>
+          <div>
+            <div class="activity-text"><strong>Capacity alert</strong> — Startup Meetup is 100% full</div>
+            <div class="activity-time">1 hour ago</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// Counter animation
+function animateCounters() {
+  document.querySelectorAll('.stat-value[data-target]').forEach(el => {
+    const target = parseInt(el.dataset.target);
+    const prefix = el.dataset.prefix || '';
+    const suffix = el.dataset.suffix || '';
+    const duration = 1500;
+    const start = performance.now();
+
+    function update(now) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(eased * target);
+      el.textContent = prefix + current.toLocaleString() + suffix;
+      if (progress < 1) requestAnimationFrame(update);
+    }
+    requestAnimationFrame(update);
+  });
+}
+
+// Progress bar fill
+function animateProgressBars() {
+  document.querySelectorAll('.progress-fill').forEach(bar => {
+    const target = bar.style.getPropertyValue('--target');
+    setTimeout(() => { bar.style.width = target; }, 600);
+  });
+}
+
+// Start on load
+window.addEventListener('DOMContentLoaded', () => {
+  animateCounters();
+  animateProgressBars();
+});
+</script>
+</body>
+</html>

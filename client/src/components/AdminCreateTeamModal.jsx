@@ -114,7 +114,7 @@ const AdminCreateTeamModal = ({ isOpen, onClose, events = [], preSelectedEventId
               required
               value={selectedEventId}
               onChange={(e) => setSelectedEventId(e.target.value)}
-              className="w-full bg-white/60 text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-violet-500"
+              className="w-full bg-white/60 text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-cyan-500"
             >
               <option value="">-- Choose Team Event --</option>
               {teamEvents.map(evt => (
@@ -135,7 +135,7 @@ const AdminCreateTeamModal = ({ isOpen, onClose, events = [], preSelectedEventId
             placeholder="e.g. Admin Designated Team Alpha"
             value={teamName}
             onChange={(e) => setTeamName(e.target.value)}
-            className="w-full bg-white/60 text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-violet-500"
+            className="w-full bg-white/60 text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-cyan-500"
           />
         </div>
 
@@ -153,7 +153,7 @@ const AdminCreateTeamModal = ({ isOpen, onClose, events = [], preSelectedEventId
                 setLeaderId(newLeader);
                 setSelectedMemberIds(prev => prev.filter(id => id !== newLeader));
               }}
-              className="w-full bg-white/60 text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-violet-500"
+              className="w-full bg-white/60 text-slate-800 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-cyan-500"
             >
               <option value="">-- Choose Team Leader --</option>
               {eligibleStudents.map(student => (
@@ -178,7 +178,7 @@ const AdminCreateTeamModal = ({ isOpen, onClose, events = [], preSelectedEventId
                   <label
                     key={student.id}
                     className={`flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
-                      isChecked ? 'bg-violet-50 border-violet-300 text-violet-900 font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                      isChecked ? 'bg-cyan-50 border-cyan-300 text-cyan-900 font-bold' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -186,7 +186,7 @@ const AdminCreateTeamModal = ({ isOpen, onClose, events = [], preSelectedEventId
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => handleToggleMember(student.id)}
-                        className="rounded text-violet-600 focus:ring-violet-500"
+                        className="rounded text-cyan-600 focus:ring-cyan-500"
                       />
                       <span>{student.fullName || student.name} ({student.roll_number || student.email})</span>
                     </div>

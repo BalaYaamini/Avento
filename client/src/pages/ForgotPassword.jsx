@@ -38,7 +38,7 @@ const ForgotPassword = () => {
       setMessage(`Password reset link sent to ${emailLower}. Please check your inbox.`);
     } catch (err) {
       setStatus('error');
-      setMessage(err.message || 'Failed to send reset link. Please try again.');
+      setMessage(err.response?.data?.message || err.message || 'Failed to send reset link. Please try again.');
     }
   };
 

@@ -260,7 +260,7 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
                 accept=".xlsx,.xls,.csv"
                 onChange={handleFileChange}
                 ref={fileInputRef}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 transition-all cursor-pointer border-2 border-dashed border-violet-200 rounded-2xl p-2"
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100 transition-all cursor-pointer border-2 border-dashed border-cyan-200 rounded-2xl p-2"
               />
             </div>
           )}
@@ -272,7 +272,7 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
           )}
 
           {status === 'idle' && message && (
-            <div className="p-4 bg-violet-50 border-2 border-violet-200 text-slate-700 rounded-2xl text-sm font-bold flex items-center gap-2">
+            <div className="p-4 bg-cyan-50 border-2 border-cyan-200 text-slate-700 rounded-2xl text-sm font-bold flex items-center gap-2">
               <span>{message}</span>
             </div>
           )}
@@ -327,7 +327,7 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {previewData.slice(0, 15).map((row, i) => (
-                      <tr key={i} className="hover:bg-violet-50/30">
+                      <tr key={i} className="hover:bg-cyan-50/30">
                         <td className="px-3 py-2 font-mono text-slate-500">{row.rowNum}</td>
                         <td className="px-3 py-2 font-bold text-slate-700">{row.teamName}</td>
                         {subroundMeta.map(s => (
@@ -352,7 +352,7 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
           {status === 'success' ? (
             <>
               <button onClick={resetState} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 border-2 border-slate-200 hover:bg-slate-100 transition-colors">Import More</button>
-              <button onClick={handleClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 shadow-lg transition-colors">Done</button>
+              <button onClick={handleClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-700 shadow-lg transition-colors">Done</button>
             </>
           ) : (
             <>
@@ -360,7 +360,7 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
               <button
                 onClick={handleImport}
                 disabled={status === 'importing' || status === 'error' || previewData.length === 0}
-                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 shadow-lg disabled:opacity-50 flex items-center gap-2 transition-colors"
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-700 shadow-lg disabled:opacity-50 flex items-center gap-2 transition-colors"
               >
                 {status === 'importing' ? (
                   <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Importing...</>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clean Bento</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #fafafa; min-height: 100vh; }
+
+/* Top Bar */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-bottom: 1px solid #1c1c1c; }
+.logo { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+.logo span { color: #ef4444; }
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.search { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #161616; border: 1px solid #1c1c1c; border-radius: 8px; }
+.search input { background: none; border: none; color: #fafafa; font-size: 14px; font-family: 'Inter', sans-serif; outline: none; width: 200px; }
+.search input::placeholder { color: #525252; }
+.avatar { width: 36px; height: 36px; background: #161616; border: 1px solid #1c1c1c; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #a3a3a3; }
+
+/* Bento Grid */
+.bento { padding: 32px; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: auto auto auto; gap: 16px; }
+
+/* Hero Card */
+.hero-card { grid-column: span 2; background: #161616; border: 1px solid #1f1f1f; border-radius: 12px; padding: 32px; }
+.hero-card .badge { display: inline-block; padding: 4px 10px; background: rgba(239,68,68,0.1); color: #ef4444; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+.hero-card h2 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+.hero-card p { color: #525252; font-size: 14px; margin-bottom: 24px; max-width: 400px; line-height: 1.6; }
+.hero-stats { display: flex; gap: 32px; }
+.hero-stat .value { font-size: 20px; font-weight: 700; }
+.hero-stat .label { font-size: 12px; color: #525252; margin-top: 2px; }
+
+/* Leaderboard */
+.leaderboard { grid-column: span 2; background: #161616; border: 1px solid #1f1f1f; border-radius: 12px; padding: 24px; }
+.leaderboard h3 { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+.leader-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1f1f1f; }
+.leader-item:last-child { border-bottom: none; }
+.leader-rank { width: 24px; font-size: 14px; font-weight: 700; color: #525252; }
+.leader-avatar { width: 32px; height: 32px; background: #1a1a1a; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #a3a3a3; }
+.leader-info { flex: 1; }
+.leader-name { font-size: 14px; font-weight: 500; }
+.leader-events { font-size: 12px; color: #525252; }
+.leader-score { font-size: 14px; font-weight: 600; }
+
+/* Mini Stats */
+.mini-stat { background: #161616; border: 1px solid #1f1f1f; border-radius: 12px; padding: 20px; }
+.mini-stat .label { font-size: 12px; color: #525252; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.mini-stat .value { font-size: 24px; font-weight: 700; }
+.mini-stat .change { font-size: 12px; color: #525252; margin-top: 4px; }
+
+/* Table Card */
+.table-card { grid-column: span 2; background: #161616; border: 1px solid #1f1f1f; border-radius: 12px; overflow: hidden; }
+.table-header { padding: 20px 24px; border-bottom: 1px solid #1f1f1f; display: flex; justify-content: space-between; align-items: center; }
+.table-header h3 { font-size: 16px; font-weight: 600; }
+table { width: 100%; }
+th { text-align: left; padding: 12px 24px; font-size: 12px; font-weight: 500; color: #525252; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #1f1f1f; }
+td { padding: 14px 24px; font-size: 14px; border-bottom: 1px solid #1f1f1f; }
+tr:last-child td { border-bottom: none; }
+.badge-live { padding: 3px 8px; background: rgba(239,68,68,0.1); color: #ef4444; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge-ended { padding: 3px 8px; background: rgba(82,82,82,0.2); color: #525252; border-radius: 4px; font-size: 11px; font-weight: 500; }
+
+/* Tasks Card */
+.tasks-card { grid-column: span 2; background: #161616; border: 1px solid #1f1f1f; border-radius: 12px; padding: 24px; }
+.tasks-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+.task-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1f1f1f; }
+.task-item:last-child { border-bottom: none; }
+.task-check { width: 16px; height: 16px; border: 2px solid #1c1c1c; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.task-check.done { background: #ef4444; border-color: #ef4444; }
+.task-check.done::after { content: '✓'; font-size: 10px; color: #fafafa; }
+.task-text { font-size: 14px; flex: 1; }
+.task-text.done { text-decoration: line-through; color: #525252; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">Avent<span>o</span></div>
+  <div class="topbar-right">
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search...">
+    </div>
+    <div class="avatar">JD</div>
+  </div>
+</div>
+
+<div class="bento">
+  <div class="hero-card">
+    <span class="badge">Live</span>
+    <h2>Tech Summit 2026</h2>
+    <p>The premier technology conference bringing together innovators, developers, and industry leaders.</p>
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="value">482</div>
+        <div class="label">Attendees</div>
+      </div>
+      <div class="hero-stat">
+        <div class="value">$24.1K</div>
+        <div class="label">Revenue</div>
+      </div>
+      <div class="hero-stat">
+        <div class="value">18</div>
+        <div class="label">Sessions</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="leaderboard">
+    <h3>Top Organizers</h3>
+    <div class="leader-item">
+      <span class="leader-rank">1</span>
+      <div class="leader-avatar">SC</div>
+      <div class="leader-info">
+        <div class="leader-name">Sarah Chen</div>
+        <div class="leader-events">24 events</div>
+      </div>
+      <span class="leader-score">1,847</span>
+    </div>
+    <div class="leader-item">
+      <span class="leader-rank">2</span>
+      <div class="leader-avatar">MJ</div>
+      <div class="leader-info">
+        <div class="leader-name">Mike Johnson</div>
+        <div class="leader-events">18 events</div>
+      </div>
+      <span class="leader-score">1,203</span>
+    </div>
+    <div class="leader-item">
+      <span class="leader-rank">3</span>
+      <div class="leader-avatar">ED</div>
+      <div class="leader-info">
+        <div class="leader-name">Emily Davis</div>
+        <div class="leader-events">12 events</div>
+      </div>
+      <span class="leader-score">892</span>
+    </div>
+    <div class="leader-item">
+      <span class="leader-rank">4</span>
+      <div class="leader-avatar">AK</div>
+      <div class="leader-info">
+        <div class="leader-name">Alex Kim</div>
+        <div class="leader-events">9 events</div>
+      </div>
+      <span class="leader-score">654</span>
+    </div>
+  </div>
+
+  <div class="mini-stat">
+    <div class="label">Total Events</div>
+    <div class="value">24</div>
+    <div class="change">+3 this month</div>
+  </div>
+  <div class="mini-stat">
+    <div class="label">Revenue</div>
+    <div class="value">$48.2K</div>
+    <div class="change">+12% vs last month</div>
+  </div>
+  <div class="mini-stat">
+    <div class="label">Attendees</div>
+    <div class="value">1,847</div>
+    <div class="change">+186 new</div>
+  </div>
+  <div class="mini-stat">
+    <div class="label">Satisfaction</div>
+    <div class="value">92%</div>
+    <div class="change">+2% improvement</div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-header">
+      <h3>Upcoming Events</h3>
+      <span style="color:#525252;font-size:13px">View all</span>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Event</th><th>Date</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tech Summit 2026</td>
+          <td style="color:#a3a3a3">Mar 15</td>
+          <td><span class="badge-live">Live</span></td>
+        </tr>
+        <tr>
+          <td>Design Conference</td>
+          <td style="color:#a3a3a3">Mar 22</td>
+          <td><span class="badge-live">Live</span></td>
+        </tr>
+        <tr>
+          <td>Startup Mixer</td>
+          <td style="color:#a3a3a3">Apr 5</td>
+          <td><span class="badge-ended">Upcoming</span></td>
+        </tr>
+        <tr>
+          <td>AI Workshop</td>
+          <td style="color:#a3a3a3">Apr 12</td>
+          <td><span class="badge-ended">Upcoming</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tasks-card">
+    <h3>Quick Tasks</h3>
+    <div class="task-item">
+      <div class="task-check done"></div>
+      <span class="task-text done">Confirm venue booking</span>
+    </div>
+    <div class="task-item">
+      <div class="task-check done"></div>
+      <span class="task-text done">Send speaker invites</span>
+    </div>
+    <div class="task-item">
+      <div class="task-check"></div>
+      <span class="task-text">Finalize agenda</span>
+    </div>
+    <div class="task-item">
+      <div class="task-check"></div>
+      <span class="task-text">Set up registration page</span>
+    </div>
+    <div class="task-item">
+      <div class="task-check"></div>
+      <span class="task-text">Order promotional materials</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

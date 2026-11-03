@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { SparkleDoodle } from './Doodles';
 
-const Modal = ({ isOpen, onClose, title, subtitle, children }) => {
+const Modal = ({ isOpen, onClose, title, subtitle, maxWidth = "max-w-[780px]", children }) => {
   // Prevent background scrolling when open
   useEffect(() => {
     if (isOpen) {
@@ -16,13 +17,15 @@ const Modal = ({ isOpen, onClose, title, subtitle, children }) => {
 
   if (!isOpen) return null;
 
-  return (
+  // Portal to body so the fixed overlay is positioned against the viewport,
+  // not an ancestor with backdrop-blur/transform (which would clip/misalign it).
+  return createPortal(
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-pastel-lavender/10 backdrop-blur-md animate-fade-in"
       onClick={onClose}
     >
       <div 
-        className="relative w-[calc(100%-32px)] sm:w-[calc(100%-40px)] max-w-[780px] bg-white dark:bg-slate-900 border-2 border-pastel-lavender/30 rounded-2xl sm:rounded-[2rem] shadow-[0_10px_40px_rgba(184,168,255,0.15)] flex flex-col max-h-[90vh] overflow-hidden animate-fade-in-scale"
+        className={`relative w-[calc(100%-32px)] sm:w-[calc(100%-40px)] ${maxWidth} bg-white dark:bg-slate-900 border-2 border-pastel-lavender/30 rounded-2xl sm:rounded-[2rem] shadow-[0_10px_40px_rgba(184,168,255,0.15)] flex flex-col max-h-[90vh] overflow-hidden animate-fade-in-scale`}
         onClick={(e) => e.stopPropagation()}
       >
         <SparkleDoodle className="absolute bottom-12 right-12 w-8 h-8 text-pastel-coral opacity-20 animate-pulse pointer-events-none" />
@@ -48,7 +51,8 @@ const Modal = ({ isOpen, onClose, title, subtitle, children }) => {
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

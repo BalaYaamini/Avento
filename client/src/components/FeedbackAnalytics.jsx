@@ -30,7 +30,7 @@ const RatingCard = ({ title, value, max = 5 }) => {
 
       <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
         <div 
-          className="bg-violet-500 h-1.5 rounded-full transition-all duration-1000" 
+          className="bg-cyan-500 h-1.5 rounded-full transition-all duration-1000" 
           style={{ width: `${percentage}%` }}
         ></div>
       </div>
@@ -65,7 +65,7 @@ const FeedbackAnalytics = ({ eventId }) => {
   if (loading) {
     return (
       <div className="flex justify-center items-center h-40">
-        <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full" />
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -99,9 +99,9 @@ const FeedbackAnalytics = ({ eventId }) => {
           <div className="text-xs font-bold text-amber-500 uppercase">Pending</div>
           <div className="text-2xl font-black text-amber-500 mt-1">{participation.pending || 0}</div>
         </div>
-        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-violet-400 border-slate-200 dark:border-slate-800">
-          <div className="text-xs font-bold text-violet-500 uppercase">Response Rate</div>
-          <div className="text-2xl font-black text-violet-500 mt-1">{participation.responseRate || 0}%</div>
+        <div className="scrapbook-panel p-4 rounded-xl border-t-4 border-t-cyan-400 border-slate-200 dark:border-slate-800">
+          <div className="text-xs font-bold text-cyan-500 uppercase">Response Rate</div>
+          <div className="text-2xl font-black text-cyan-500 mt-1">{participation.responseRate || 0}%</div>
         </div>
       </div>
 
@@ -171,10 +171,10 @@ const FeedbackAnalytics = ({ eventId }) => {
                     return (
                       <div key={tq.id} className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+                          <h4 className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
                             {tq.label}
                           </h4>
-                          <span className="text-[10px] font-bold bg-violet-500/10 text-violet-500 border border-violet-500/20 px-2 py-0.5 rounded-md">
+                          <span className="text-[10px] font-bold bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 px-2 py-0.5 rounded-md">
                             {resps.length} Responses
                           </span>
                         </div>

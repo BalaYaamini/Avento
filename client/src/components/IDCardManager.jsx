@@ -21,8 +21,8 @@ const resolveStudentAvatarUrl = (url) => {
     return str;
   }
 
-  const driveMatch = str.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || 
-                     str.match(/[?&]id=([a-zA-Z0-9_-]+)/) || 
+  const driveMatch = str.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                     str.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
                      str.match(/\/d\/([a-zA-Z0-9_-]+)/);
 
   if (driveMatch && driveMatch[1]) {
@@ -41,16 +41,16 @@ const IDCardManager = ({ eventId, event }) => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
+
   // Photo Import state
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  
+
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all, mapped, missing
-  
+
   // ID Card Generation & Visual Template Editor state
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [isSingleCardModalOpen, setIsSingleCardModalOpen] = useState(false);
@@ -290,7 +290,7 @@ const IDCardManager = ({ eventId, event }) => {
                             cachedAvatars[cleanEmailRoll];
 
         const finalPhoto = user.avatar_url || user.avatarUrl || reg.avatar_url || reg.avatarUrl || cachedPhoto || null;
-        
+
         return {
           registrationId: reg.registrationId || reg.id || user.id || reg.user_id,
           userId: user.id || reg.user_id,
@@ -375,7 +375,7 @@ const IDCardManager = ({ eventId, event }) => {
 
     try {
       // Check if an Excel sheet format was uploaded (.xlsx, .xls, .csv)
-      const excelFile = selectedFiles.find(f => 
+      const excelFile = selectedFiles.find(f =>
         f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv')
       );
 
@@ -447,9 +447,9 @@ const IDCardManager = ({ eventId, event }) => {
 
             if (!rollNumber) {
               // Roll numbers contain digits or alphanumeric ID patterns (e.g., 2401100cse0001, 2401100)
-              const rollCandidate = values.find(v => 
-                !v.startsWith('http://') && 
-                !v.startsWith('https://') && 
+              const rollCandidate = values.find(v =>
+                !v.startsWith('http://') &&
+                !v.startsWith('https://') &&
                 !v.includes('drive.google') &&
                 (/\d/.test(v) || /^[a-zA-Z0-9_-]{4,25}$/.test(v))
               );
@@ -480,19 +480,19 @@ const IDCardManager = ({ eventId, event }) => {
               if (!Array.isArray(rowArr) || rowArr.length < 2) return;
               const cells = rowArr.map(c => String(c || '').trim()).filter(Boolean);
 
-              const linkCell = cells.find(c => 
-                c.startsWith('http://') || 
-                c.startsWith('https://') || 
-                c.includes('drive.google.com') || 
+              const linkCell = cells.find(c =>
+                c.startsWith('http://') ||
+                c.startsWith('https://') ||
+                c.includes('drive.google.com') ||
                 c.includes('drive.google') ||
                 c.includes('docs.google') ||
                 /^[a-zA-Z0-9_-]{25,}$/.test(c)
               );
 
-              const rollCell = cells.find(c => 
-                c !== linkCell && 
-                !c.startsWith('http://') && 
-                !c.startsWith('https://') && 
+              const rollCell = cells.find(c =>
+                c !== linkCell &&
+                !c.startsWith('http://') &&
+                !c.startsWith('https://') &&
                 !c.includes('drive.google') &&
                 (/\d/.test(c) || /^[a-zA-Z0-9_-]{4,25}$/.test(c))
               );
@@ -665,7 +665,7 @@ const IDCardManager = ({ eventId, event }) => {
     const emailStr = String(student.email || '').toLowerCase();
     const term = String(searchTerm || '').toLowerCase();
 
-    const matchesSearch = 
+    const matchesSearch =
       nameStr.includes(term) ||
       rollStr.includes(term) ||
       emailStr.includes(term);
@@ -811,7 +811,7 @@ const IDCardManager = ({ eventId, event }) => {
 
       const mimeType = format === 'jpeg' || format === 'jpg' ? 'image/jpeg' : 'image/png';
       const image = canvas.toDataURL(mimeType, 0.95);
-      
+
       const link = document.createElement('a');
       link.href = image;
       link.download = `${filename}.${format}`;
@@ -826,7 +826,7 @@ const IDCardManager = ({ eventId, event }) => {
   if (loading) {
     return (
       <div className="flex flex-col justify-center items-center py-16 gap-3">
-        <div className="animate-spin w-10 h-10 border-4 border-fuchsia-500 border-t-transparent rounded-full" />
+        <div className="animate-spin w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full" />
         <span className="text-sm font-medium text-slate-500">Loading student registration data...</span>
       </div>
     );
@@ -1020,12 +1020,12 @@ const IDCardManager = ({ eventId, event }) => {
       {/* Non-Printable Management Chrome & Student Table */}
       <div className="no-print space-y-8">
         {/* Header & Stats Banner */}
-        <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-white/10 relative overflow-hidden">
-          <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-fuchsia-500/10 rounded-full blur-3xl" />
+        <div className="bg-gradient-to-br from-cyan-900 via-cyan-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-white/10 relative overflow-hidden">
+          <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-bold text-fuchsia-300 border border-white/15 mb-3">
-                <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-pulse" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-bold text-cyan-300 border border-white/15 mb-3">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
                 Admin ID Card Workspace
               </div>
               <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Student ID Cards Generator</h2>
@@ -1034,7 +1034,7 @@ const IDCardManager = ({ eventId, event }) => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsBatchViewOpen(!isBatchViewOpen)}
-                className="px-5 py-2.5 bg-gradient-to-r from-fuchsia-500 to-indigo-600 hover:from-fuchsia-600 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-fuchsia-500/25 transition-all duration-300 flex items-center gap-2 cursor-pointer"
+                className="px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-cyan-500/25 transition-all duration-300 flex items-center gap-2 cursor-pointer"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -1094,7 +1094,7 @@ const IDCardManager = ({ eventId, event }) => {
         />
 
         {/* Upload Custom ID Card Background Template Box (PNG or JPG) */}
-        <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border-2 border-indigo-500/40 text-white space-y-3 shadow-md">
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-cyan-950 via-slate-900 to-slate-950 border-2 border-cyan-500/40 text-white space-y-3 shadow-md">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h4 className="text-sm font-black text-white flex items-center gap-2">
@@ -1108,7 +1108,7 @@ const IDCardManager = ({ eventId, event }) => {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => templateInputRef.current?.click()}
-                className="px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-fuchsia-600 hover:from-indigo-600 hover:to-fuchsia-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 transition-all"
+                className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 transition-all"
               >
                 <span>🖼️</span> {idTemplateUrl ? 'Change Template (PNG/JPG)' : 'Upload ID Template (PNG/JPG)'}
               </button>
@@ -1134,10 +1134,10 @@ const IDCardManager = ({ eventId, event }) => {
 
         {/* Interactive Visual Canvas Drag-and-Drop Editor for Placeholder Placement */}
         {idTemplateUrl && (
-          <div className="p-6 rounded-3xl bg-slate-900 border-2 border-fuchsia-500/40 text-white space-y-6 shadow-xl animate-fade-in">
+          <div className="p-6 rounded-3xl bg-slate-900 border-2 border-cyan-500/40 text-white space-y-6 shadow-xl animate-fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
               <div>
-                <h4 className="text-base font-black text-fuchsia-400 flex items-center gap-2">
+                <h4 className="text-base font-black text-cyan-400 flex items-center gap-2">
                   Interactive Visual ID Layout Editor
                 </h4>
                 <p className="text-xs text-slate-300 mt-0.5">
@@ -1166,7 +1166,7 @@ const IDCardManager = ({ eventId, event }) => {
               <div className="lg:col-span-7 flex justify-center">
                 <div
                   ref={editorCanvasRef}
-                  className="relative rounded-3xl border-4 border-fuchsia-500/50 shadow-2xl overflow-hidden select-none bg-cover bg-center"
+                  className="relative rounded-3xl border-4 border-cyan-500/50 shadow-2xl overflow-hidden select-none bg-cover bg-center"
                   style={{
                     width: '360px',
                     height: '500px',
@@ -1184,7 +1184,7 @@ const IDCardManager = ({ eventId, event }) => {
                       onMouseDown={(e) => handlePlaceholderMouseDown(e, 'STUDENT_PHOTO')}
                       onClick={() => setActivePlaceholder('STUDENT_PHOTO')}
                       className={`absolute cursor-move border-2 transition-all flex items-center justify-center ${
-                        activePlaceholder === 'STUDENT_PHOTO' ? 'border-fuchsia-400 ring-4 ring-fuchsia-400/40 z-30' : 'border-dashed border-white/60 z-20'
+                        activePlaceholder === 'STUDENT_PHOTO' ? 'border-cyan-400 ring-4 ring-cyan-400/40 z-30' : 'border-dashed border-white/60 z-20'
                       } rounded-2xl bg-black/30 backdrop-blur-xs overflow-hidden`}
                       style={{
                         left: `${idConfig.STUDENT_PHOTO.x}px`,
@@ -1217,7 +1217,7 @@ const IDCardManager = ({ eventId, event }) => {
                       onMouseDown={(e) => handlePlaceholderMouseDown(e, 'STUDENT_NAME')}
                       onClick={() => setActivePlaceholder('STUDENT_NAME')}
                       className={`absolute cursor-move border transition-all px-3 py-1 rounded-lg ${
-                        activePlaceholder === 'STUDENT_NAME' ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/40 z-30 bg-fuchsia-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
+                        activePlaceholder === 'STUDENT_NAME' ? 'border-cyan-400 ring-2 ring-cyan-400/40 z-30 bg-cyan-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
                       }`}
                       style={{
                         left: `${idConfig.STUDENT_NAME.x}px`,
@@ -1241,7 +1241,7 @@ const IDCardManager = ({ eventId, event }) => {
                       onMouseDown={(e) => handlePlaceholderMouseDown(e, 'COLLEGE_NAME')}
                       onClick={() => setActivePlaceholder('COLLEGE_NAME')}
                       className={`absolute cursor-move border transition-all px-2.5 py-1 rounded-lg ${
-                        activePlaceholder === 'COLLEGE_NAME' ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/40 z-30 bg-fuchsia-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
+                        activePlaceholder === 'COLLEGE_NAME' ? 'border-cyan-400 ring-2 ring-cyan-400/40 z-30 bg-cyan-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
                       }`}
                       style={{
                         left: `${idConfig.COLLEGE_NAME.x}px`,
@@ -1265,7 +1265,7 @@ const IDCardManager = ({ eventId, event }) => {
                       onMouseDown={(e) => handlePlaceholderMouseDown(e, 'TEAM_NAME')}
                       onClick={() => setActivePlaceholder('TEAM_NAME')}
                       className={`absolute cursor-move border transition-all px-2.5 py-1 rounded-lg ${
-                        activePlaceholder === 'TEAM_NAME' ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/40 z-30 bg-fuchsia-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
+                        activePlaceholder === 'TEAM_NAME' ? 'border-cyan-400 ring-2 ring-cyan-400/40 z-30 bg-cyan-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
                       }`}
                       style={{
                         left: `${idConfig.TEAM_NAME.x}px`,
@@ -1289,7 +1289,7 @@ const IDCardManager = ({ eventId, event }) => {
                       onMouseDown={(e) => handlePlaceholderMouseDown(e, 'DEPARTMENT')}
                       onClick={() => setActivePlaceholder('DEPARTMENT')}
                       className={`absolute cursor-move border transition-all px-2.5 py-1 rounded-lg ${
-                        activePlaceholder === 'DEPARTMENT' ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/40 z-30 bg-fuchsia-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
+                        activePlaceholder === 'DEPARTMENT' ? 'border-cyan-400 ring-2 ring-cyan-400/40 z-30 bg-cyan-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
                       }`}
                       style={{
                         left: `${idConfig.DEPARTMENT.x}px`,
@@ -1313,7 +1313,7 @@ const IDCardManager = ({ eventId, event }) => {
                       onMouseDown={(e) => handlePlaceholderMouseDown(e, 'DEGREE_PROGRAM')}
                       onClick={() => setActivePlaceholder('DEGREE_PROGRAM')}
                       className={`absolute cursor-move border transition-all px-2.5 py-1 rounded-lg ${
-                        activePlaceholder === 'DEGREE_PROGRAM' ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/40 z-30 bg-fuchsia-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
+                        activePlaceholder === 'DEGREE_PROGRAM' ? 'border-cyan-400 ring-2 ring-cyan-400/40 z-30 bg-cyan-950/80' : 'border-dashed border-white/40 z-20 bg-black/50'
                       }`}
                       style={{
                         left: `${idConfig.DEGREE_PROGRAM.x}px`,
@@ -1346,7 +1346,7 @@ const IDCardManager = ({ eventId, event }) => {
                         onClick={() => setActivePlaceholder(key)}
                         className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                           activePlaceholder === key
-                            ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-md'
+                            ? 'bg-cyan-600 text-white border-cyan-400 shadow-md'
                             : 'bg-slate-900 text-slate-300 border-white/10 hover:bg-slate-800'
                         }`}
                       >
@@ -1357,9 +1357,9 @@ const IDCardManager = ({ eventId, event }) => {
                 </div>
 
                 {activePlaceholder && idConfig[activePlaceholder] && (
-                  <div className="bg-slate-950 p-5 rounded-2xl border border-fuchsia-500/30 space-y-4 text-xs">
+                  <div className="bg-slate-950 p-5 rounded-2xl border border-cyan-500/30 space-y-4 text-xs">
                     <div className="flex items-center justify-between gap-2">
-                      <h5 className="font-black text-fuchsia-400 text-sm">
+                      <h5 className="font-black text-cyan-400 text-sm">
                         Editing: {idConfig[activePlaceholder].label}
                       </h5>
 
@@ -1380,7 +1380,7 @@ const IDCardManager = ({ eventId, event }) => {
                           value={idConfig[activePlaceholder].x}
                           onChange={(e) => updatePlaceholderProp(activePlaceholder, 'x', Number(e.target.value))}
                           style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                          className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                          className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                         />
                       </div>
 
@@ -1391,7 +1391,7 @@ const IDCardManager = ({ eventId, event }) => {
                           value={idConfig[activePlaceholder].y}
                           onChange={(e) => updatePlaceholderProp(activePlaceholder, 'y', Number(e.target.value))}
                           style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                          className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                          className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                         />
                       </div>
                     </div>
@@ -1404,7 +1404,7 @@ const IDCardManager = ({ eventId, event }) => {
                           value={idConfig.STUDENT_PHOTO.size || 100}
                           onChange={(e) => updatePlaceholderProp('STUDENT_PHOTO', 'size', Number(e.target.value))}
                           style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                          className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                          className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                         />
                       </div>
                     ) : (
@@ -1417,7 +1417,7 @@ const IDCardManager = ({ eventId, event }) => {
                               value={idConfig[activePlaceholder].fontSize || 14}
                               onChange={(e) => updatePlaceholderProp(activePlaceholder, 'fontSize', Number(e.target.value))}
                               style={{ backgroundColor: '#0f172a', color: '#ffffff' }}
-                              className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                              className="w-full border border-slate-700 rounded-xl px-3 py-1.5 font-mono text-sm font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                             />
                           </div>
 
@@ -1444,7 +1444,7 @@ const IDCardManager = ({ eventId, event }) => {
                                 onClick={() => updatePlaceholderProp(activePlaceholder, 'align', align)}
                                 className={`flex-1 py-1.5 text-xs font-bold rounded-xl capitalize border cursor-pointer ${
                                   idConfig[activePlaceholder].align === align
-                                    ? 'bg-fuchsia-600 text-white border-fuchsia-400'
+                                    ? 'bg-cyan-600 text-white border-cyan-400'
                                     : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
                                 }`}
                               >
@@ -1477,13 +1477,13 @@ const IDCardManager = ({ eventId, event }) => {
               placeholder="Search name, roll no, email..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-fuchsia-500 w-48 sm:w-64"
+              className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-cyan-500 w-48 sm:w-64"
             />
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-fuchsia-500"
+              className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:border-cyan-500"
             >
               <option value="all">All Students ({totalRegistered})</option>
               <option value="mapped">Mapped Photos ({mappedCount})</option>
@@ -1521,15 +1521,15 @@ const IDCardManager = ({ eventId, event }) => {
                             src={resolveStudentAvatarUrl(student.avatarUrl)}
                             alt={student.name}
                             referrerPolicy="no-referrer"
-                            className="w-11 h-11 rounded-full object-cover border-2 border-fuchsia-500 shadow-sm"
+                            className="w-11 h-11 rounded-full object-cover border-2 border-cyan-500 shadow-sm"
                             onError={(e) => handleImageError(e, student.avatarUrl)}
                           />
-                          <div className="hidden w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold items-center justify-center text-sm shadow-sm">
+                          <div className="hidden w-11 h-11 rounded-full bg-gradient-to-br from-cyan-500 to-cyan-600 text-white font-bold items-center justify-center text-sm shadow-sm">
                             {student.name.charAt(0).toUpperCase()}
                           </div>
                         </div>
                       ) : (
-                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-cyan-500 to-cyan-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
                           {student.name.charAt(0).toUpperCase()}
                         </div>
                       )}
@@ -1563,7 +1563,7 @@ const IDCardManager = ({ eventId, event }) => {
                             setSelectedStudentId(student.registrationId || student.id || student.userId || student.studentId);
                             setIsSingleCardModalOpen(true);
                           }}
-                          className="px-3 py-1.5 bg-gradient-to-r from-fuchsia-500/10 to-indigo-500/10 hover:from-fuchsia-500 hover:to-indigo-600 text-fuchsia-600 hover:text-white dark:text-fuchsia-400 font-bold text-xs rounded-xl border border-fuchsia-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                          className="px-3 py-1.5 bg-gradient-to-r from-cyan-500/10 to-cyan-500/10 hover:from-cyan-500 hover:to-cyan-600 text-cyan-600 hover:text-white dark:text-cyan-400 font-bold text-xs rounded-xl border border-cyan-500/20 transition-all cursor-pointer flex items-center gap-1.5"
                         >
                           <span>📱</span> View ID & QR Pass
                         </button>
@@ -1603,7 +1603,7 @@ const IDCardManager = ({ eventId, event }) => {
             <div className="flex flex-wrap lg:flex-nowrap items-center justify-center gap-8 py-2 single-card-print-grid">
               {/* Side 1: Front ID Card */}
               <div className="space-y-2 text-center">
-                <span className="text-xs font-bold text-fuchsia-400 uppercase tracking-wider block">
+                <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">
                   Front Side (ID Details)
                 </span>
                 <div
@@ -1636,11 +1636,11 @@ const IDCardManager = ({ eventId, event }) => {
                           src={resolveStudentAvatarUrl(selectedStudentForCard.avatarUrl)}
                           alt={selectedStudentForCard.name}
                           referrerPolicy="no-referrer"
-                          className="w-full h-full rounded-2xl object-cover border-2 border-fuchsia-400 shadow-xl"
+                          className="w-full h-full rounded-2xl object-cover border-2 border-cyan-400 shadow-xl"
                           onError={(e) => handleImageError(e, selectedStudentForCard.avatarUrl)}
                         />
                       ) : (
-                        <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20 shadow-xl">
+                        <div className="w-full h-full rounded-2xl bg-gradient-to-br from-cyan-600 to-cyan-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20 shadow-xl">
                           {selectedStudentForCard.name.charAt(0).toUpperCase()}
                         </div>
                       )}
@@ -1788,7 +1788,7 @@ const IDCardManager = ({ eventId, event }) => {
                       <img src="/logo.png?v=3" alt="Avento Logo" className="h-6 w-auto object-contain" />
                       <span className="text-xs font-black tracking-wider uppercase text-slate-900">AVENTO</span>
                     </div>
-                    <span className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    <span className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-cyan-50 text-cyan-700 border border-cyan-200">
                       OFFICIAL EVENT ENTRY PASS
                     </span>
                     <h4 className="text-sm font-black text-slate-900 line-clamp-1 pt-0.5">
@@ -1841,15 +1841,15 @@ const IDCardManager = ({ eventId, event }) => {
 
                 <button
                   onClick={() => downloadCardAsImage('single-card-back', `ID-Back-QR-${selectedStudentForCard.name.replace(/\s+/g, '_')}`, 'png')}
-                  className="px-3 py-2 bg-indigo-500/10 hover:bg-indigo-500 text-indigo-600 hover:text-white dark:text-indigo-400 border border-indigo-500/20 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  className="px-3 py-2 bg-cyan-500/10 hover:bg-cyan-500 text-cyan-600 hover:text-white dark:text-cyan-400 border border-cyan-500/20 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
                   title="Download Back QR Pass as PNG Image"
                 >
                   <span>📱</span> Download Back QR Pass (PNG)
                 </button>
 
                 <button
-                  onClick={handlePrintSingleCard}
-                  className="px-4 py-2 bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+onClick={handlePrintSingleCard}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-700 hover:to-cyan-800 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
                   title="Print or Save Two-Sided Pass as PDF Document"
                 >
                   <span>🖨️</span> Print Two-Sided Pass
@@ -1862,8 +1862,8 @@ const IDCardManager = ({ eventId, event }) => {
 
       {/* Batch ID Cards View / Printable Grid */}
       {isBatchViewOpen && (() => {
-        const displayList = (showAllForPrint || batchPageSize === 'all') 
-          ? students 
+        const displayList = (showAllForPrint || batchPageSize === 'all')
+          ? students
           : students.slice((batchPage - 1) * Number(batchPageSize), batchPage * Number(batchPageSize));
 
         const totalBatchPages = batchPageSize === 'all' ? 1 : Math.ceil(students.length / Number(batchPageSize));
@@ -1891,7 +1891,7 @@ const IDCardManager = ({ eventId, event }) => {
                     value={batchPage}
                     onChange={e => setBatchPage(Number(e.target.value))}
                     disabled={batchPageSize === 'all'}
-                    className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer"
+                    className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer"
                   >
                     {Array.from({ length: totalBatchPages }, (_, i) => {
                       const pSize = Number(batchPageSize) || 50;
@@ -1954,7 +1954,7 @@ const IDCardManager = ({ eventId, event }) => {
             <div className="space-y-8 id-card-print-pages-container">
               {chunkArray(displayList, 2).map((pageStudents, pageIdx) => (
                 <div key={pageIdx} className="id-card-print-page space-y-3">
-                  <div className="no-print flex items-center justify-between text-xs font-bold text-fuchsia-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2 w-full max-w-3xl">
+                  <div className="no-print flex items-center justify-between text-xs font-bold text-cyan-400 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800 pb-2 w-full max-w-3xl">
                     <span>📄 Printed Page {pageIdx + 1} (2 Participants • 4 Cards per Page)</span>
                     <span className="text-slate-400 font-mono font-normal">({pageStudents.length} Participants • {pageStudents.length * 2} Cards)</span>
                   </div>
@@ -1994,11 +1994,11 @@ const IDCardManager = ({ eventId, event }) => {
                                   loading="eager"
                                   decoding="async"
                                   referrerPolicy="no-referrer"
-                                  className="w-full h-full rounded-2xl object-cover border-2 border-fuchsia-400 shadow-md"
+                                  className="w-full h-full rounded-2xl object-cover border-2 border-cyan-400 shadow-md"
                                   onError={(e) => handleImageError(e, student.avatarUrl)}
                                 />
                               ) : (
-                                <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20">
+                                <div className="w-full h-full rounded-2xl bg-gradient-to-br from-cyan-600 to-cyan-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20">
                                   {student.name.charAt(0).toUpperCase()}
                                 </div>
                               )}
@@ -2118,7 +2118,7 @@ const IDCardManager = ({ eventId, event }) => {
                               <img src="/logo.png?v=3" alt="Avento Logo" className="h-6 w-auto object-contain" />
                               <span className="text-xs font-black tracking-wider uppercase text-slate-900">AVENTO</span>
                             </div>
-                            <span className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <span className="inline-block px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase bg-cyan-50 text-cyan-700 border border-cyan-200">
                               OFFICIAL EVENT ENTRY PASS
                             </span>
                             <h4 className="text-sm font-black text-slate-900 line-clamp-1 pt-0.5">
@@ -2187,11 +2187,11 @@ const IDCardManager = ({ eventId, event }) => {
                 src={resolveStudentAvatarUrl(selectedStudentForCard.avatarUrl)}
                 alt={selectedStudentForCard.name}
                 referrerPolicy="no-referrer"
-                className="w-full h-full rounded-2xl object-cover border-2 border-fuchsia-400 shadow-md"
+                className="w-full h-full rounded-2xl object-cover border-2 border-cyan-400 shadow-md"
                 onError={(e) => handleImageError(e, selectedStudentForCard.avatarUrl)}
               />
             ) : (
-              <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20">
+              <div className="w-full h-full rounded-2xl bg-gradient-to-br from-cyan-600 to-cyan-600 text-white font-black text-3xl flex items-center justify-center border-2 border-white/20">
                 {(selectedStudentForCard.name || 'S').charAt(0).toUpperCase()}
               </div>
             )}
@@ -2320,7 +2320,7 @@ class IDCardErrorBoundary extends React.Component {
               this.setState({ hasError: false, error: null });
               window.location.reload();
             }}
-            className="px-6 py-2.5 bg-gradient-to-r from-fuchsia-600 to-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-fuchsia-500/25 transition-all cursor-pointer"
+            className="px-6 py-2.5 bg-gradient-to-r from-cyan-600 to-cyan-600 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-cyan-500/25 transition-all cursor-pointer"
           >
             Reload ID Cards Workspace
           </button>

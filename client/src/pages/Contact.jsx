@@ -81,8 +81,8 @@ const Contact = () => {
         
         {/* Header */}
         <div className="text-center mb-16 animate-fade-in-up">
-          <span className="inline-flex items-center gap-2 text-[10px] font-bold px-4 py-1.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 uppercase tracking-[0.15em] mb-5">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+          <span className="inline-flex items-center gap-2 text-[10px] font-bold px-4 py-1.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 uppercase tracking-[0.15em] mb-5">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
             Contact Support
           </span>
           <h1 className="font-display text-4xl sm:text-5xl font-black text-text-primary mt-4 mb-5 tracking-tight">
@@ -101,7 +101,7 @@ const Contact = () => {
               className="animate-fade-in-up glass-panel glass-panel-hover p-6 rounded-2xl flex items-start gap-4 group"
               style={{ animationDelay: `${i * 100 + 100}ms` }}
             >
-              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-violet-500/15 to-pink-500/15 text-violet-400 flex items-center justify-center flex-shrink-0 border border-violet-500/15 group-hover:shadow-lg group-hover:shadow-violet-500/10 transition-all duration-300 group-hover:scale-110">
+              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-cyan-500/15 to-pink-500/15 text-cyan-400 flex items-center justify-center flex-shrink-0 border border-cyan-500/15 group-hover:shadow-lg group-hover:shadow-cyan-500/10 transition-all duration-300 group-hover:scale-110">
                 {card.icon}
               </div>
               <div>
@@ -128,7 +128,7 @@ const Contact = () => {
                   value={formData.name}
                   onChange={handleChange}
                   placeholder="Student Name"
-                  className={`w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 ${user ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  className={`w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 ${user ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
               </div>
               <div>
@@ -141,7 +141,7 @@ const Contact = () => {
                   value={formData.email}
                   onChange={handleChange}
                   placeholder="student@university.edu"
-                  className={`w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 ${user ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  className={`w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 ${user ? 'opacity-70 cursor-not-allowed' : ''}`}
                 />
               </div>
             </div>
@@ -154,7 +154,7 @@ const Contact = () => {
                 value={formData.subject}
                 onChange={handleChange}
                 placeholder="Registration Issue / Club Registration request"
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300"
+                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
               />
             </div>
             <div>
@@ -166,7 +166,7 @@ const Contact = () => {
                 value={formData.message}
                 onChange={handleChange}
                 placeholder="Type your message here..."
-                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-violet-500/60 transition-all duration-300 resize-none"
+                className="w-full bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 resize-none"
               />
             </div>
 
@@ -178,7 +178,7 @@ const Contact = () => {
                   ? 'bg-emerald-600 shadow-lg shadow-emerald-500/20' 
                   : status === 'error'
                   ? 'bg-red-500 shadow-lg shadow-red-500/20'
-                  : 'btn-primary shadow-lg shadow-violet-500/15'
+                  : 'btn-primary shadow-lg shadow-cyan-500/15'
               }`}
             >
               {status === 'sending' ? (
