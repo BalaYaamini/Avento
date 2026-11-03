@@ -28,4 +28,10 @@ router.delete('/event/:eventId/periods/:periodId', authMiddleware, attendanceCon
 // Update certificate eligibility threshold
 router.put('/event/:eventId/certificate-threshold', authMiddleware, attendanceController.updateCertificateThreshold);
 
+// Update attendance mode ('qr' | 'manual')
+router.put('/event/:eventId/attendance-mode', authMiddleware, attendanceController.updateAttendanceMode);
+
+// Manually mark attendance (Present/Absent) for one or more registrations
+router.post('/event/:eventId/manual', authMiddleware, attendanceController.markManualAttendance);
+
 module.exports = router;

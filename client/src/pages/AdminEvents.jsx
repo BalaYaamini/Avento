@@ -687,7 +687,7 @@ const AdminEvents = () => {
                                 </Link>
 
                                 {/* Scan QR */}
-                                {(evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && new Date(evt.date) >= new Date() && (
+                                {(evt.status === 'active' || evt.status === 'published' || evt.status === 'completed') && evt.attendance_mode !== 'manual' && new Date(evt.date) >= new Date() && (
                                   <button
                                     type="button"
                                     onClick={() => {

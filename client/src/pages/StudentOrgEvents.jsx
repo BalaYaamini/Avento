@@ -1084,7 +1084,7 @@ const StudentOrgEvents = () => {
                           )}
 
                           {/* Secondary: Scan QR if published */}
-                          {['approved', 'published', 'active', 'completed'].includes(evt.status) && new Date(evt.date) >= new Date() && (
+                          {['approved', 'published', 'active', 'completed'].includes(evt.status) && evt.attendance_mode !== 'manual' && new Date(evt.date) >= new Date() && (
                             <button
                               onClick={() => {
                                 setScanFeedback(null);
@@ -1214,7 +1214,7 @@ const StudentOrgEvents = () => {
                             <td className="px-6 py-4 text-right space-x-2 flex justify-end">
                               {(evt.status === 'approved' || evt.status === 'published' || evt.status === 'active' || evt.status === 'completed') ? (
                                 <>
-                                  {new Date(evt.date) >= new Date() && (
+                                  {new Date(evt.date) >= new Date() && evt.attendance_mode !== 'manual' && (
                                     <button
                                       onClick={() => {
                                         setScanFeedback(null);

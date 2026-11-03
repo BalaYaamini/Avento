@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 
 // Helper to convert Date object or string into Local YYYY-MM-DDTHH:mm for datetime-local input
 const toLocalISOString = (dateInput) => {
@@ -18,6 +19,25 @@ const toLocalISOString = (dateInput) => {
 const cleanPeriodTitle = (name) => {
   if (!name) return '';
   return String(name).replace(/🍔/g, '').replace(/\[Food Coupon Included\]/gi, '').trim();
+};
+
+const formatAttendanceTimestamp = (ts) => {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '—';
+
+  const day = String(d.getDate()).padStart(2, '0');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+
+  return `${day}-${month}-${year} ${hours}:${minutes} ${ampm}`;
 };
 
 export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
@@ -50,6 +70,12 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   // Threshold form
   const [thresholdForm, setThresholdForm] = useState({ minCheckpoints: '', minPercentage: 75 });
   const [savingThreshold, setSavingThreshold] = useState(false);
+
+  // Attendance mode (QR vs Manual) + manual marking state
+  const [savingMode, setSavingMode] = useState(false);
+  const [manualBusyId, setManualBusyId] = useState(null);
+  const [markingAll, setMarkingAll] = useState(false);
+  const markLockRef = useRef(0);
   
   // Countdown timer state
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -57,7 +83,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   const fetchPeriodicData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`/api/attendance/event/${eventId}/periods`);
+      const res = await axios.get(`/api/attendance/event/${eventId}/periods?_t=${Date.now()}`);
       if (res.data.success) {
         setData(res.data);
         setSecondsLeft(res.data.timeRemainingSeconds || 0);
@@ -240,6 +266,125 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
     }
   };
 
+  const handleToggleAttendanceMode = async (mode) => {
+    if (savingMode || mode === attendanceMode) return;
+    try {
+      setSavingMode(true);
+      const res = await axios.put(`/api/attendance/event/${eventId}/attendance-mode`, { mode });
+      alert(res.data.message || 'Attendance mode updated.');
+      await fetchPeriodicData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error updating attendance mode.');
+    } finally {
+      setSavingMode(false);
+    }
+  };
+
+  const applyMarkedRows = (updatedRows) => {
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) return;
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        participantProgress: (prev.participantProgress || []).map(p => {
+          const row = updatedRows.find(u => u.id === p.registrationId);
+          return row ? { ...p, attendanceStatus: row.attendance_status || p.attendanceStatus } : p;
+        })
+      };
+    });
+  };
+
+  const handleManualMark = async (participant, targetStatus) => {
+    if (manualBusyId || markingAll) return;
+    const nowTs = Date.now();
+    if (markLockRef.current && nowTs - markLockRef.current < 1500) return;
+
+    const isCurrentlyPresent = participant.attendanceStatus === 'Present';
+    const nextStatus = targetStatus || (isCurrentlyPresent ? 'Absent' : 'Present');
+
+    if (nextStatus === 'Absent' && isCurrentlyPresent) {
+      if (!window.confirm(`Mark ${participant.name} as Absent? This will remove their Present status.`)) return;
+    }
+
+    markLockRef.current = nowTs;
+    setManualBusyId(participant.registrationId);
+    try {
+      const res = await axios.post(`/api/attendance/event/${eventId}/manual`, {
+        registrationId: participant.registrationId,
+        status: nextStatus
+      });
+      applyMarkedRows(res.data?.updated);
+      await fetchPeriodicData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error marking attendance.');
+    } finally {
+      setManualBusyId(null);
+    }
+  };
+
+  const handleMarkAllPresent = async () => {
+    if (manualBusyId || markingAll) return;
+    const nowTs = Date.now();
+    if (markLockRef.current && nowTs - markLockRef.current < 1500) return;
+
+    const pending = filteredParticipants.filter(p => p.attendanceStatus !== 'Present');
+    if (pending.length === 0) {
+      alert('All listed participants are already marked Present.');
+      return;
+    }
+    if (!window.confirm(`Mark ${pending.length} participant${pending.length === 1 ? '' : 's'} as Present?`)) return;
+
+    markLockRef.current = nowTs;
+    try {
+      setMarkingAll(true);
+      const res = await axios.post(`/api/attendance/event/${eventId}/manual`, {
+        registrationIds: pending.map(p => p.registrationId),
+        status: 'Present'
+      });
+      applyMarkedRows(res.data?.updated);
+      await fetchPeriodicData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error marking attendance.');
+    } finally {
+      setMarkingAll(false);
+    }
+  };
+
+  const handleExportAttendance = () => {
+    if (!participantProgress || participantProgress.length === 0) {
+      alert('No participants to export.');
+      return;
+    }
+
+    const exportData = participantProgress.map((p, index) => {
+      const isPresent = p.attendanceStatus === 'Present';
+      return {
+        'S.No': index + 1,
+        'Name': p.name,
+        'Roll Number': p.rollNumber,
+        'Email ID': p.email,
+        'Attendance Status': isPresent ? 'Present' : 'Absent',
+        'Attendance Marked At': isPresent ? formatAttendanceTimestamp(p.attendanceTimestamp) : '—'
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Manual Attendance');
+
+    worksheet['!cols'] = [
+      { wch: 8 },  // S.No
+      { wch: 25 }, // Name
+      { wch: 20 }, // Roll Number
+      { wch: 30 }, // Email ID
+      { wch: 20 }, // Attendance Status
+      { wch: 25 }  // Attendance Marked At
+    ];
+
+    const sanitizedTitle = (event.title || 'Event').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    XLSX.writeFile(workbook, `${sanitizedTitle}_manual_attendance.xlsx`);
+  };
+
   if (loading && !data) {
     return (
       <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
@@ -262,6 +407,10 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   } = data || {};
 
   const currentIntervalHours = event.period_interval_hours || 4;
+  const attendanceMode = event.attendance_mode || 'qr';
+  const isManualMode = attendanceMode === 'manual';
+  const manualPresentCount = participantProgress.filter(p => p.attendanceStatus === 'Present').length;
+  const manualAbsentCount = participantProgress.length - manualPresentCount;
 
   const filteredParticipants = participantProgress.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -320,7 +469,17 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
               </div>
             )}
 
-            {onScanClick && (
+            {isManualMode ? (
+              <button
+                onClick={() => setActiveTab('manual')}
+                className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-amber-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 whitespace-nowrap"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Mark Attendance Manually
+              </button>
+            ) : onScanClick && (
               <button
                 onClick={onScanClick}
                 className="px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-emerald-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2 whitespace-nowrap"
@@ -522,6 +681,18 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
           >
             Manage Time Periods ({periods.length})
           </button>
+          {isManualMode && (
+            <button
+              onClick={() => setActiveTab('manual')}
+              className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                activeTab === 'manual'
+                  ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              Manual Attendance ({manualPresentCount}/{participantProgress.length})
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('settings')}
             className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
@@ -900,9 +1071,175 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
         </div>
       )}
 
+      {/* ── TAB: Manual Attendance (only in manual mode) ────────────────── */}
+      {activeTab === 'manual' && isManualMode && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">Manual Attendance</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Mark participants as Present or Absent manually. QR scanning is disabled for this event.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-center">
+                <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Present</div>
+                <div className="text-lg font-black text-emerald-600 dark:text-emerald-300">{manualPresentCount}</div>
+              </div>
+              <div className="px-3.5 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-center">
+                <div className="text-[10px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wider">Absent</div>
+                <div className="text-lg font-black text-red-600 dark:text-red-300">{manualAbsentCount}</div>
+              </div>
+              <button
+                onClick={handleExportAttendance}
+                disabled={participantProgress.length === 0}
+                className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md transition-all whitespace-nowrap flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export Excel
+              </button>
+              <button
+                onClick={handleMarkAllPresent}
+                disabled={markingAll || manualBusyId !== null}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md shadow-amber-500/20 transition-all whitespace-nowrap"
+              >
+                {markingAll ? 'Marking...' : 'Mark All Present'}
+              </button>
+            </div>
+          </div>
+
+          <div className="relative w-full sm:w-80">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Search name, roll no, email..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none dark:text-white"
+            />
+            <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          {filteredParticipants.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+              No participants match your search.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredParticipants.map(p => {
+                const isPresent = p.attendanceStatus === 'Present';
+                return (
+                  <div
+                    key={p.registrationId}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${isPresent ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                        {(p.name || 'P').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 dark:text-white truncate">{p.name}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          {p.rollNumber} · {p.email}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 self-start sm:self-auto">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isPresent ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300'}`}>
+                        {isPresent ? 'Present' : 'Absent'}
+                      </span>
+                      <button
+                        onClick={() => handleManualMark(p, isPresent ? 'Absent' : 'Present')}
+                        disabled={manualBusyId !== null || markingAll}
+                        className={`px-4 py-2 rounded-xl font-black text-xs transition-all disabled:opacity-50 ${
+                          isPresent
+                            ? 'bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/60'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20'
+                        }`}
+                      >
+                        {manualBusyId === p.registrationId ? 'Saving...' : (isPresent ? 'Mark Absent' : 'Mark Present')}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── TAB 4: Certificate Threshold Settings ───────────────────────── */}
       {activeTab === 'settings' && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm max-w-xl space-y-6">
+        <>
+          {/* Attendance Mode Toggle */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm max-w-xl space-y-4">
+            <div>
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">Attendance Mode</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Choose how attendance is captured for this event. QR Based enables pass scanning; Manual lets organizers mark Present/Absent directly.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleToggleAttendanceMode('qr')}
+                disabled={savingMode}
+                className={`p-4 rounded-2xl border-2 text-left transition-all disabled:opacity-60 ${
+                  !isManualMode
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 shadow-md shadow-emerald-500/10'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className={`w-5 h-5 ${!isManualMode ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                  </svg>
+                  <span className={`text-sm font-black ${!isManualMode ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'}`}>QR Based Attendance</span>
+                  {!isManualMode && (
+                    <span className="ml-auto px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[9px] font-black uppercase tracking-wider">Active</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                  Participants show their event pass QR; organizers scan to mark attendance.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleToggleAttendanceMode('manual')}
+                disabled={savingMode}
+                className={`p-4 rounded-2xl border-2 text-left transition-all disabled:opacity-60 ${
+                  isManualMode
+                    ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40 shadow-md shadow-amber-500/10'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className={`w-5 h-5 ${isManualMode ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className={`text-sm font-black ${isManualMode ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-300'}`}>Manual Attendance</span>
+                  {isManualMode && (
+                    <span className="ml-auto px-2 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black uppercase tracking-wider">Active</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                  Organizers mark participants Present/Absent from the roster. QR scanning is disabled.
+                </p>
+              </button>
+            </div>
+
+            {savingMode && (
+              <p className="text-xs font-bold text-cyan-600 dark:text-cyan-400 animate-pulse">Updating attendance mode...</p>
+            )}
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm max-w-xl space-y-6">
           <div>
             <h3 className="text-lg font-black text-slate-900 dark:text-white">Certificate Eligibility Criteria</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">Configure minimum required checkpoints or percentage for students to qualify for event certificates.</p>
@@ -948,7 +1285,8 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
               {savingThreshold ? 'Saving Settings...' : 'Save Certificate Criteria'}
             </button>
           </form>
-        </div>
+          </div>
+        </>
       )}
 
       {/* ── Custom Period Modal ─────────────────────────────────────────── */}

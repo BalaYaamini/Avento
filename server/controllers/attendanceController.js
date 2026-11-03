@@ -169,6 +169,11 @@ exports.verifyQrToken = async (req, res) => {
     const isOwner = await checkIsEventOrganizer(event, req.user);
     if (!isOwner) return res.status(403).json({ message: 'Access denied. Organizer permissions required to mark attendance.' });
 
+    // Attendance mode guard: QR scanning is disabled when the event uses manual attendance
+    if (event.attendance_mode === 'manual') {
+      return res.status(400).json({ message: 'QR attendance is disabled for this event. Please mark attendance manually.' });
+    }
+
     // Fetch student profile info
     const { data: studentProfile } = await supabase
       .from('profiles')
@@ -380,7 +385,7 @@ exports.getEventPeriodicAttendance = async (req, res) => {
     // Fetch total registrations
     const { data: registrations } = await supabase
       .from('event_registrations')
-      .select('id, user_id, status, attendance_status, profiles:user_id(id, name, email, roll_number)')
+      .select('id, user_id, status, attendance_status, attendance_timestamp, profiles:user_id(id, name, email, roll_number)')
       .eq('event_id', eventId)
       .in('status', ['registered', 'accepted', 'pending']);
 
@@ -454,6 +459,8 @@ exports.getEventPeriodicAttendance = async (req, res) => {
         name: reg.profiles?.name || 'Participant',
         rollNumber: reg.profiles?.roll_number || 'N/A',
         email: reg.profiles?.email || 'N/A',
+        attendanceStatus: reg.attendance_status || 'Absent',
+        attendanceTimestamp: reg.attendance_timestamp || null,
         markedCount,
         totalPeriods: totalPeriodsCount,
         progressStr: `${markedCount}/${totalPeriodsCount}`,
@@ -474,6 +481,7 @@ exports.getEventPeriodicAttendance = async (req, res) => {
         title: event.title,
         date: event.date,
         end_date: effectiveEndDate,
+        attendance_mode: event.attendance_mode || 'qr',
         periodic_attendance_enabled: event.periodic_attendance_enabled,
         period_interval_hours: event.period_interval_hours || 4,
         min_certificate_checkpoints: minCheckpoints,
@@ -732,6 +740,125 @@ exports.updateCertificateThreshold = async (req, res) => {
   } catch (err) {
     console.error('Error updating certificate threshold:', err);
     return res.status(500).json({ message: 'Server error updating settings.', error: err.message });
+  }
+};
+
+// Update attendance mode ('qr' | 'manual') for an event
+exports.updateAttendanceMode = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { mode } = req.body;
+
+    if (!['qr', 'manual'].includes(mode)) {
+      return res.status(400).json({ message: "Invalid attendance mode. Must be 'qr' or 'manual'." });
+    }
+
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOwner = await checkIsEventOrganizer(event, req.user);
+    if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
+
+    const { data: updatedEvent, error } = await supabase
+      .from('events')
+      .update({ attendance_mode: mode })
+      .eq('id', eventId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return res.json({
+      success: true,
+      message: mode === 'manual' ? 'Manual attendance enabled. QR scanning is now disabled.' : 'QR-based attendance enabled. Manual marking is now disabled.',
+      attendance_mode: updatedEvent.attendance_mode
+    });
+  } catch (err) {
+    console.error('Error updating attendance mode:', err);
+    return res.status(500).json({ message: 'Server error updating attendance mode.', error: err.message });
+  }
+};
+
+// Manually mark attendance (Present/Absent) for one or more registrations
+exports.markManualAttendance = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { registrationId, registrationIds, status } = req.body;
+
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (normalizedStatus !== 'present' && normalizedStatus !== 'absent') {
+      return res.status(400).json({ message: "Invalid status. Must be 'Present' or 'Absent'." });
+    }
+    const newStatus = normalizedStatus === 'present' ? 'Present' : 'Absent';
+
+    const ids = Array.isArray(registrationIds) && registrationIds.length > 0
+      ? registrationIds
+      : (registrationId ? [registrationId] : []);
+
+    if (ids.length === 0) return res.status(400).json({ message: 'Registration ID is required.' });
+
+    const { data: event } = await supabase.from('events').select('*').eq('id', eventId).single();
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isOwner = await checkIsEventOrganizer(event, req.user);
+    if (!isOwner) return res.status(403).json({ message: 'Access denied.' });
+
+    if (event.attendance_mode !== 'manual') {
+      return res.status(400).json({ message: 'Manual attendance is disabled for this event. Use QR-based attendance.' });
+    }
+
+    // Validate all registrations belong to this event (and capture their current state)
+    const { data: regs, error: regError } = await supabase
+      .from('event_registrations')
+      .select('id, event_id, user_id, attendance_status')
+      .in('id', ids)
+      .eq('event_id', eventId);
+
+    if (regError) throw regError;
+
+    const foundIds = (regs || []).map(r => r.id);
+    const missingIds = ids.filter(id => !foundIds.includes(id));
+    if (missingIds.length > 0) {
+      return res.status(404).json({ message: 'One or more registrations were not found for this event.', missingIds });
+    }
+
+    const updatePayload = {
+      attendance_status: newStatus,
+      attendance_timestamp: newStatus === 'Present' ? new Date().toISOString() : null
+    };
+
+    const { data: updated, error } = await supabase
+      .from('event_registrations')
+      .update(updatePayload)
+      .in('id', foundIds)
+      .eq('event_id', eventId)
+      .select('id, user_id, attendance_status, attendance_timestamp');
+
+    if (error) throw error;
+
+    const updatedList = updated || [];
+    const results = (regs || []).map(r => {
+      const after = updatedList.find(u => u.id === r.id);
+      return {
+        registrationId: r.id,
+        userId: r.user_id,
+        before: r.attendance_status || 'Absent',
+        after: after ? after.attendance_status : (r.attendance_status || 'Absent')
+      };
+    });
+
+    return res.json({
+      success: true,
+      message: updatedList.length > 0
+        ? `${updatedList.length} participant${updatedList.length === 1 ? '' : 's'} marked as ${newStatus}.`
+        : 'No registration rows were updated.',
+      warning: updatedList.length === 0 ? 'No registration rows were updated.' : undefined,
+      status: newStatus,
+      updated: updatedList,
+      results
+    });
+  } catch (err) {
+    console.error('Error marking manual attendance:', err);
+    return res.status(500).json({ message: 'Server error marking attendance.', error: err.message });
   }
 };
 

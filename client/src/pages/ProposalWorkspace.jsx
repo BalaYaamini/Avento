@@ -63,6 +63,9 @@ const ProposalWorkspace = () => {
   const [posterFile, setPosterFile] = useState(null);
   const [posterPreview, setPosterPreview] = useState('');
 
+  // Attendance mode (QR vs Manual) state
+  const [savingAttendanceMode, setSavingAttendanceMode] = useState(false);
+
   // Team state
   const [team, setTeam] = useState([]);
 
@@ -274,6 +277,19 @@ ${proposer}`
       alert(err.response?.data?.message || 'Failed to save event details.');
     } finally {
       setSavingDetails(false);
+    }
+  };
+
+  const handleChangeAttendanceMode = async (mode) => {
+    if (savingAttendanceMode || mode === (event?.attendance_mode || 'qr')) return;
+    try {
+      setSavingAttendanceMode(true);
+      await axios.put(`/api/attendance/event/${proposalId}/attendance-mode`, { mode });
+      await fetchWorkspace(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update attendance mode.');
+    } finally {
+      setSavingAttendanceMode(false);
     }
   };
 
@@ -1395,6 +1411,71 @@ ${proposer}`
                   </div>
                 </div>
               )}
+
+              {/* Attendance Mode (QR vs Manual) */}
+              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-200/60 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-display font-bold text-sm text-slate-800 uppercase tracking-wider">Attendance Mode</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Choose how attendance is captured for this event. Configure this before publishing — QR pass scanning or manual marking by organizers.
+                    </p>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 border ${(event.attendance_mode || 'qr') === 'manual' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
+                    {(event.attendance_mode || 'qr') === 'manual' ? 'Manual Active' : 'QR Active'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleChangeAttendanceMode('qr')}
+                    disabled={savingAttendanceMode || !(isCreator || isFaculty || user?.roles?.includes('admin'))}
+                    className={`p-4 rounded-2xl border-2 text-left transition-all disabled:opacity-60 ${(event.attendance_mode || 'qr') !== 'manual'
+                      ? 'border-emerald-500 bg-emerald-50/70 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className={`h-4 w-4 shrink-0 ${(event.attendance_mode || 'qr') !== 'manual' ? 'text-emerald-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <rect x="3" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                        <rect x="14" y="3" width="7" height="7" rx="1.5" strokeWidth="2" />
+                        <rect x="14" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                        <rect x="3" y="14" width="7" height="7" rx="1.5" strokeWidth="2" />
+                      </svg>
+                      <span className={`text-xs font-bold ${(event.attendance_mode || 'qr') !== 'manual' ? 'text-emerald-700' : 'text-slate-700'}`}>QR Based Attendance</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5">
+                      Participants show their event pass QR code; organizers scan it at the venue to mark attendance.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleChangeAttendanceMode('manual')}
+                    disabled={savingAttendanceMode || !(isCreator || isFaculty || user?.roles?.includes('admin'))}
+                    className={`p-4 rounded-2xl border-2 text-left transition-all disabled:opacity-60 ${(event.attendance_mode || 'qr') === 'manual'
+                      ? 'border-amber-500 bg-amber-50/70 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className={`h-4 w-4 shrink-0 ${(event.attendance_mode || 'qr') === 'manual' ? 'text-amber-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span className={`text-xs font-bold ${(event.attendance_mode || 'qr') === 'manual' ? 'text-amber-700' : 'text-slate-700'}`}>Manual Attendance</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5">
+                      Organizers mark participants Present/Absent from the roster manually. QR scanning is disabled for this event.
+                    </p>
+                  </button>
+                </div>
+
+                {savingAttendanceMode && (
+                  <p className="text-xs font-bold text-cyan-600 animate-pulse">Updating attendance mode...</p>
+                )}
+                {!(isCreator || isFaculty || user?.roles?.includes('admin')) && (
+                  <p className="text-[11px] text-slate-400">Only the event creator, faculty coordinator, or admin can change the attendance mode.</p>
+                )}
+              </div>
             </div>
           )}
 

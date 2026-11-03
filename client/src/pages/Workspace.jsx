@@ -548,7 +548,7 @@ const Workspace = () => {
           <p className="text-text-secondary">Manage tasks and coordinate with your team</p>
         </div>
         <div className="flex items-center gap-3">
-          {isModuleAllowed('periodic_attendance') && (
+          {isModuleAllowed('periodic_attendance') && event?.attendance_mode !== 'manual' && (
             <button
               type="button"
               onClick={() => {
@@ -644,7 +644,7 @@ const Workspace = () => {
                   </button>
                 )}
 
-          {isModuleAllowed('periodic_attendance') && (
+          {isModuleAllowed('periodic_attendance') && event?.attendance_mode !== 'manual' && (
             <button
               type="button"
               onClick={() => {

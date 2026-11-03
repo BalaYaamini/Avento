@@ -280,7 +280,7 @@ const FacultyOrgEvents = () => {
                             </Link>
                           )}
 
-                          {['approved', 'published', 'active'].includes(evt.status) && (
+                          {['approved', 'published', 'active'].includes(evt.status) && evt.attendance_mode !== 'manual' && (
                             <button
                               onClick={() => {
                                 setScanFeedback(null);
