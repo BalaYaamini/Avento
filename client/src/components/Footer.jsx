@@ -59,7 +59,7 @@ const Footer = () => {
             <div className="space-y-3">
               <p className="text-sm font-body text-slate-400 font-medium">Contact Us</p>
               <p className="text-sm text-slate-400">
-                Email: <a href="mailto:admin.avento@gmail.com" className="text-slate-300 hover:text-white transition-colors cursor-pointer border-b border-transparent hover:border-white">admin.avento@gmail.com</a>
+                Email: <a href="mailto:admin.avento@gmail.com" className="text-slate-300 hover:text-white transition-colors cursor-pointer border-b border-transparent hover:border-white break-all">admin.avento@gmail.com</a>
               </p>
               <p className="text-sm text-slate-400">Call: <span className="text-slate-300">9849808611 / 8008075869</span></p>
             </div>

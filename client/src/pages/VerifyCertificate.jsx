@@ -60,7 +60,7 @@ const VerifyCertificate = () => {
           <div className="bg-white/80 backdrop-blur-xl border border-slate-200/80 rounded-3xl p-12 text-center shadow-xl">
             <div className="w-12 h-12 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
             <h3 className="text-lg font-bold text-slate-800">Verifying Certificate...</h3>
-            <p className="text-sm text-slate-500 mt-1">Checking secure database record for ID: <span className="font-mono text-indigo-600 font-medium">{certificateId}</span></p>
+            <p className="text-sm text-slate-500 mt-1">Checking secure database record for ID: <span className="font-mono text-indigo-600 font-medium break-all">{certificateId}</span></p>
           </div>
         )}
 
@@ -85,7 +85,7 @@ const VerifyCertificate = () => {
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100/80 gap-1">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Certificate ID</span>
-                <span className="text-sm font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg w-fit">
+                <span className="text-sm font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg w-fit break-all">
                   {certData.certificateId || certificateId}
                 </span>
               </div>
@@ -167,7 +167,7 @@ const VerifyCertificate = () => {
             <p className="text-sm text-slate-600 mb-6 font-medium">
               {errorMsg}
             </p>
-            <div className="inline-block bg-slate-100 px-4 py-2 rounded-xl text-xs font-mono text-slate-500 border border-slate-200">
+            <div className="inline-block bg-slate-100 px-4 py-2 rounded-xl text-xs font-mono text-slate-500 border border-slate-200 break-all">
               Query ID: {certificateId}
             </div>
             <div className="mt-8 pt-4 border-t border-slate-100">

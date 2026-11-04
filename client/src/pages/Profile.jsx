@@ -306,7 +306,7 @@ const Profile = () => {
         </div>
 
         {/* Profile Form */}
-        <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-8 shadow-2xl shadow-cyan-500/5">
+          <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl p-5 sm:p-8 shadow-2xl shadow-cyan-500/5">
           <form onSubmit={handleSubmit} className="space-y-6">
             
             {/* Section 1: Account & Contact */}
@@ -362,8 +362,8 @@ const Profile = () => {
                   <label className={labelCls}>
                     Email Address
                   </label>
-                  <div className={readOnlyCls}>
-                    {user?.email || '—'}
+                  <div className={`${readOnlyCls} break-all`}>
+                    {user?.email || '�?"'}
                   </div>
                   <p className={hintCls}>Email cannot be changed.</p>
                 </div>

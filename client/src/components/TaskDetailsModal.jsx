@@ -136,7 +136,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, organizers, hasFullAccess, cu
             {task.description || <span className="text-slate-400 italic">No description provided.</span>}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
               <span className="block text-slate-500 mb-1 text-xs uppercase font-semibold">Assigned To</span>
               {(() => {

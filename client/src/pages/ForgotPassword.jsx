@@ -57,7 +57,7 @@ const ForgotPassword = () => {
       </div>
 
       <div className="w-full max-w-md relative z-10 animate-fade-in-up">
-        <div className="polaroid -rotate-1 p-8">
+          <div className="polaroid -rotate-1 p-5 sm:p-8">
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-3 !w-32"></div>
           
           {/* Header */}

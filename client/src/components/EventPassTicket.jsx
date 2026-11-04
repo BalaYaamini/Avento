@@ -1,9 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
-import html2canvas from 'html2canvas';
 
-// QR is rendered on a canvas at 3x its on-screen size so the exported PNG
-// (html2canvas scale: 3) maps 1:1 to real pixels — the QR stays perfectly crisp.
+// QR is rendered on a canvas at 3x its on-screen size so it stays perfectly crisp.
 const QR_SIZE_PX = 98;
 const QR_EXPORT_SCALE = 3;
 
@@ -49,12 +47,8 @@ const EventPassTicket = ({
   registration,
   user,
   allocation,
-  onClose,
-  showDownloadButton = true
+  onClose
 }) => {
-  const ticketRef = useRef(null);
-  const [downloading, setDownloading] = useState(false);
-
   if (!registration) return null;
 
   const event = registration.eventId || registration.event || {};
@@ -144,56 +138,8 @@ const EventPassTicket = ({
     (registration.teamId || event.registration_type === 'team' ? 'Team Event' : 'Individual Event');
 
   // Exact QR payload required by the verification scanner
-  // (server resolves: registration UUID → user id → roll number → email)
+  // (server resolves: registration UUID �?' user id �?' roll number �?' email)
   const qrPayload = String(regId || registration.user_id || rollNumber || user?.email || 'EVENT_PASS');
-
-  // Handle Download Pass as high-res PNG image
-  const handleDownload = async () => {
-    if (!ticketRef.current || downloading) return;
-    try {
-      setDownloading(true);
-      // Make sure web fonts (Manrope/Outfit) are loaded before rasterizing,
-      // otherwise the exported image falls back to a different font.
-      if (document.fonts?.ready) {
-        try {
-          await document.fonts.ready;
-        } catch (e) {
-          /* ignore font-ready errors */
-        }
-      }
-      const canvas = await html2canvas(ticketRef.current, {
-        scale: QR_EXPORT_SCALE,
-        useCORS: true,
-        backgroundColor: null,
-        logging: false,
-        // html2canvas paints text a few pixels lower than the browser lays it
-        // out. Inside overflow-hidden boxes (.truncate / .line-clamp-1) that
-        // slices the bottom off every glyph in the exported PNG. Extend the
-        // clip box downward only in the cloned document — the paired negative
-        // margin keeps the on-screen layout (and the long-text truncation)
-        // exactly the same.
-        onclone: (clonedDoc) => {
-          const compensation = clonedDoc.createElement('style');
-          compensation.textContent =
-            '.truncate, .line-clamp-1 { padding-bottom: 6px !important; margin-bottom: -6px !important; }';
-          clonedDoc.head.appendChild(compensation);
-        }
-      });
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      const safeTitle = (event.title || 'Event').replace(/[^a-zA-Z0-9_-]/g, '_');
-      link.download = `Avento_Pass_${safeTitle}_${displayRegId}.png`;
-      link.href = dataUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error('Failed to download event pass:', err);
-      alert('Could not download pass image. You can take a screenshot instead.');
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   return (
     <div className="flex flex-col items-center w-full">
@@ -201,8 +147,7 @@ const EventPassTicket = ({
       <div className="w-full overflow-x-auto pb-2 pt-0.5 flex justify-center">
         {/* Pass-Shaped Ticket Container with Sleek, Reduced Height */}
         <div
-          ref={ticketRef}
-          className={`relative flex flex-col md:flex-row w-full max-w-[760px] min-w-[320px] md:min-w-[720px] rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-800 overflow-hidden ${theme.bodyBg} select-none transition-all duration-300`}
+          className={`relative flex flex-col md:flex-row w-full max-w-[760px] min-w-[260px] md:min-w-[720px] rounded-2xl shadow-md border border-slate-200/90 dark:border-slate-800 overflow-hidden ${theme.bodyBg} select-none transition-all duration-300`}
           style={{ fontFamily: "'Manrope', sans-serif" }}
         >
           {/* ════════════════════════════════════════════════════════════════
@@ -511,29 +456,6 @@ const EventPassTicket = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {showDownloadButton && (
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={downloading}
-              className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/80 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {downloading ? (
-                <>
-                  <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  <span>Download Pass (PNG)</span>
-                </>
-              )}
-            </button>
-          )}
-
           {onClose && (
             <button
               type="button"

@@ -134,7 +134,7 @@ const Register = () => {
               <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={inputClass} />
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Any valid email works - college or personal</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="app-auth-label">Phone Number</label>
                 <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" className={inputClass} />

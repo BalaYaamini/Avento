@@ -76,6 +76,24 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   const [manualBusyId, setManualBusyId] = useState(null);
   const [markingAll, setMarkingAll] = useState(false);
   const markLockRef = useRef(0);
+
+  // Reset mark state when switching events so a leftover busy flag can never
+  // silently disable the buttons of another event
+  useEffect(() => {
+    setManualBusyId(null);
+    setMarkingAll(false);
+    markLockRef.current = 0;
+  }, [eventId]);
+
+  // Watchdog: a hung request must never leave the buttons disabled forever
+  useEffect(() => {
+    if (manualBusyId === null && !markingAll) return;
+    const t = setTimeout(() => {
+      setManualBusyId(null);
+      setMarkingAll(false);
+    }, 20000);
+    return () => clearTimeout(t);
+  }, [manualBusyId, markingAll]);
   
   // Countdown timer state
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -295,7 +313,10 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   };
 
   const handleManualMark = async (participant, targetStatus) => {
-    if (manualBusyId || markingAll) return;
+    if (manualBusyId || markingAll) {
+      alert('Still saving the previous update. Please wait a moment and try again.');
+      return;
+    }
     const nowTs = Date.now();
     if (markLockRef.current && nowTs - markLockRef.current < 1500) return;
 
@@ -312,18 +333,24 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
       const res = await axios.post(`/api/attendance/event/${eventId}/manual`, {
         registrationId: participant.registrationId,
         status: nextStatus
-      });
+      }, { timeout: 15000 });
+      if (res.data?.warning) alert(res.data.warning);
       applyMarkedRows(res.data?.updated);
       await fetchPeriodicData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error marking attendance.');
+      const msg = err.response?.data?.message
+        || (err.code === 'ECONNABORTED' ? 'Request timed out. Please try again.' : 'Error marking attendance.');
+      alert(msg);
     } finally {
       setManualBusyId(null);
     }
   };
 
   const handleMarkAllPresent = async () => {
-    if (manualBusyId || markingAll) return;
+    if (manualBusyId || markingAll) {
+      alert('Still saving the previous update. Please wait a moment and try again.');
+      return;
+    }
     const nowTs = Date.now();
     if (markLockRef.current && nowTs - markLockRef.current < 1500) return;
 
@@ -340,11 +367,14 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
       const res = await axios.post(`/api/attendance/event/${eventId}/manual`, {
         registrationIds: pending.map(p => p.registrationId),
         status: 'Present'
-      });
+      }, { timeout: 15000 });
+      if (res.data?.warning) alert(res.data.warning);
       applyMarkedRows(res.data?.updated);
       await fetchPeriodicData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error marking attendance.');
+      const msg = err.response?.data?.message
+        || (err.code === 'ECONNABORTED' ? 'Request timed out. Please try again.' : 'Error marking attendance.');
+      alert(msg);
     } finally {
       setMarkingAll(false);
     }
@@ -1103,7 +1133,8 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
               <button
                 onClick={handleMarkAllPresent}
                 disabled={markingAll || manualBusyId !== null}
-                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md shadow-amber-500/20 transition-all whitespace-nowrap"
+                title={markingAll || manualBusyId !== null ? 'Saving in progress, please wait…' : undefined}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs rounded-xl shadow-md shadow-amber-500/20 transition-all whitespace-nowrap"
               >
                 {markingAll ? 'Marking...' : 'Mark All Present'}
               </button>
@@ -1155,7 +1186,8 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                       <button
                         onClick={() => handleManualMark(p, isPresent ? 'Absent' : 'Present')}
                         disabled={manualBusyId !== null || markingAll}
-                        className={`px-4 py-2 rounded-xl font-black text-xs transition-all disabled:opacity-50 ${
+                        title={manualBusyId !== null || markingAll ? 'Saving in progress, please wait…' : undefined}
+                        className={`px-4 py-2 rounded-xl font-black text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                           isPresent
                             ? 'bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/60'
                             : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20'
@@ -1184,7 +1216,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => handleToggleAttendanceMode('qr')}

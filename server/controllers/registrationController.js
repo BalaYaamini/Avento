@@ -8,6 +8,17 @@ const UTR_PATTERN = /^[A-Z0-9]{12,22}$/i;
 
 const validateUtr = (utr) => typeof utr === 'string' && UTR_PATTERN.test(utr.trim());
 
+// Sreenidhi University restriction: @suh.edu.in or any subdomain (e.g. @cse.suh.edu.in, @aiml.suh.edu.in)
+const isSuhEmail = (email) => {
+  const e = String(email || '').toLowerCase().trim();
+  const at = e.lastIndexOf('@');
+  if (at === -1 || at === e.length - 1) return false;
+  const domain = e.slice(at + 1);
+  return domain === 'suh.edu.in' || domain.endsWith('.suh.edu.in');
+};
+
+const SUH_ONLY_MESSAGE = 'Only Sreenidhi University students (@suh.edu.in) can register for this event.';
+
 const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds) => {
   // 1. Update event_teams status to 'registered'
   const { error: teamErr } = await supabase
@@ -197,6 +208,10 @@ exports.registerForEvent = async (req, res) => {
       .maybeSingle();
     if (eventErr || !event) {
       return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    if (event.suh_students_only && !isSuhEmail(req.user?.email)) {
+      return res.status(403).json({ message: SUH_ONLY_MESSAGE });
     }
 
     // Validate event status
@@ -1189,6 +1204,28 @@ exports.registerTeamForEvent = async (req, res) => {
       });
     }
 
+    // Sreenidhi-only events: leader, every selected member and every invited email must be @suh.edu.in
+    if (event.suh_students_only) {
+      if (!isSuhEmail(req.user?.email)) {
+        return res.status(403).json({ message: SUH_ONLY_MESSAGE });
+      }
+      const ineligibleInvite = inviteEmails.find(invEmail => !isSuhEmail(invEmail));
+      if (ineligibleInvite) {
+        return res.status(403).json({ message: `"${ineligibleInvite}" is not eligible. ${SUH_ONLY_MESSAGE}` });
+      }
+      if (uniqueMemberIds.length > 0) {
+        const { data: memberProfiles } = await supabase
+          .from('profiles')
+          .select('id, email, name')
+          .in('id', uniqueMemberIds);
+        const ineligibleMember = (memberProfiles || []).find(p => !isSuhEmail(p.email));
+        if (ineligibleMember) {
+          const label = ineligibleMember.name || ineligibleMember.email || 'A selected member';
+          return res.status(403).json({ message: `${label} is not eligible. ${SUH_ONLY_MESSAGE}` });
+        }
+      }
+    }
+
     let allTeamUserIds = [...uniqueMemberIds];
     if (event.team_leader_registration_required !== false) {
       allTeamUserIds.push(leaderId);
@@ -1578,7 +1615,7 @@ exports.acceptTeamInvitation = async (req, res) => {
     // Fetch registration with team status
     const { data: reg, error: regErr } = await supabase
       .from('event_registrations')
-      .select('*, events(id, title, registration_deadline), event_teams(status)')
+      .select('*, events(id, title, registration_deadline, suh_students_only), event_teams(status)')
       .eq('id', registrationId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -1596,6 +1633,9 @@ exports.acceptTeamInvitation = async (req, res) => {
     }
 
     const event = reg.events;
+    if (event.suh_students_only && !isSuhEmail(req.user?.email)) {
+      return res.status(403).json({ message: SUH_ONLY_MESSAGE });
+    }
     if (event.registration_deadline && new Date() > new Date(event.registration_deadline)) {
       return res.status(400).json({ message: 'The registration deadline has passed. You can no longer accept this invitation.' });
     }
@@ -1689,7 +1729,7 @@ exports.rejectTeamInvitation = async (req, res) => {
 
     const { data: reg, error: regErr } = await supabase
       .from('event_registrations')
-      .select('*, events(id, title, registration_deadline), event_teams(status)')
+      .select('*, events(id, title, registration_deadline, suh_students_only), event_teams(status)')
       .eq('id', registrationId)
       .eq('user_id', userId)
       .maybeSingle();
@@ -1872,6 +1912,13 @@ exports.confirmTeamRegistration = async (req, res) => {
     const checkUserIds = [...new Set((teamRegs || []).map(r => r.user_id))];
     if (checkUserIds.length > 0) {
       const { data: memberProfiles } = await supabase.from('profiles').select('*').in('id', checkUserIds);
+      if (event.suh_students_only) {
+        const ineligible = (memberProfiles || []).find(p => !isSuhEmail(p.email));
+        if (ineligible) {
+          const label = ineligible.name || ineligible.email || 'A team member';
+          return res.status(403).json({ message: `${label} is not eligible. ${SUH_ONLY_MESSAGE}` });
+        }
+      }
       const incompleteMembers = [];
       for (const uId of checkUserIds) {
         let prof = (memberProfiles || []).find(p => String(p.id) === String(uId));
@@ -2240,6 +2287,19 @@ exports.addTeamMember = async (req, res) => {
 
     const event = team.events;
 
+    // Sreenidhi-only events: the added member must have a @suh.edu.in email
+    if (event.suh_students_only) {
+      const { data: memberProfile } = await supabase
+        .from('profiles')
+        .select('email, name')
+        .eq('id', memberId)
+        .maybeSingle();
+      if (!isSuhEmail(memberProfile?.email)) {
+        const label = memberProfile?.name || 'This student';
+        return res.status(403).json({ message: `${label} is not eligible. ${SUH_ONLY_MESSAGE}` });
+      }
+    }
+
     // Check current active member count (accepted + pending)
     const { data: currentRegs, error: regsErr } = await supabase
       .from('event_registrations')
@@ -2534,6 +2594,19 @@ exports.adminCreateTeam = async (req, res) => {
       return res.status(403).json({ message: 'One or more selected students are organizers for this event and cannot be added as team members.' });
     }
 
+    // Sreenidhi-only events: every selected student must have a @suh.edu.in email
+    if (event.suh_students_only && allSelectedIds.length > 0) {
+      const { data: selectedProfiles } = await supabase
+        .from('profiles')
+        .select('id, email, name')
+        .in('id', allSelectedIds);
+      const ineligible = (selectedProfiles || []).find(p => !isSuhEmail(p.email));
+      if (ineligible) {
+        const label = ineligible.name || ineligible.email || 'A selected student';
+        return res.status(403).json({ message: `${label} is not eligible. ${SUH_ONLY_MESSAGE}` });
+      }
+    }
+
     const minSize = event.min_team_size || 1;
     const maxSize = event.max_team_size || 4;
     if (allSelectedIds.length < minSize || allSelectedIds.length > maxSize) {
@@ -2794,6 +2867,11 @@ exports.inviteExternalMember = async (req, res) => {
     const event = team.events;
     if (!event) {
       return res.status(404).json({ message: 'Associated event not found.' });
+    }
+
+    // Sreenidhi-only events: invited email must be @suh.edu.in
+    if (event.suh_students_only && !isSuhEmail(emailLower)) {
+      return res.status(403).json({ message: `"${emailLower}" is not eligible. ${SUH_ONLY_MESSAGE}` });
     }
 
     // 2. Check current team member count

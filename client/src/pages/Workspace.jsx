@@ -1604,7 +1604,7 @@ const Workspace = () => {
             </div>
 
             {editFormData.registrationType === 'team' ? (
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-wider mb-1">Max Teams</label>
                   <input

@@ -106,7 +106,7 @@ const StudentOrgDashboard = () => {
           <div className="flex items-center gap-3">
              <StarDoodle className="w-10 h-10 text-pastel-yellow" />
             <div>
-              <h1 className="font-heading text-4xl font-black text-text-primary">Student <span className="marker-highlight">Organizer</span></h1>
+              <h1 className="font-heading text-3xl sm:text-4xl font-black text-text-primary">Student <span className="marker-highlight">Organizer</span></h1>
               <p className="font-quicksand font-bold text-text-secondary text-sm mt-1.5">Manage your events and track participants</p>
             </div>
           </div>
@@ -134,7 +134,7 @@ const StudentOrgDashboard = () => {
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-3 !w-16"></div>
                 <div>
                   <h3 className="text-text-secondary text-[10px] font-bold uppercase tracking-[0.1em] font-quicksand">{card.title}</h3>
-                  <p className="text-4xl font-heading font-black text-text-primary mt-2">{card.value}</p>
+                  <p className="text-3xl sm:text-4xl font-heading font-black text-text-primary mt-2">{card.value}</p>
                   <p className="text-text-secondary text-xs mt-1.5 font-bold font-quicksand">{card.subtitle}</p>
                 </div>
                 <div className={`h-14 w-14 rounded-2xl ${card.bgColor} border-2 ${card.borderColor} flex items-center justify-center ${card.iconColor} group-hover:scale-110 transition-transform duration-300`}>

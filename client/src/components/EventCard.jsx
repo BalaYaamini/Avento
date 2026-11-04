@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
+import { isSuhEmail, SUH_ONLY_MESSAGE } from '../utils/collegeEmail';
 import { 
   RocketDoodle, 
   PaletteDoodle, 
@@ -38,6 +39,8 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
     ? (event.max_teams ? (event.registeredCount || 0) >= event.max_teams : false)
     : (event.capacity ? (event.registeredCount || 0) >= event.capacity : false);
   const isActive = event.status === 'published' || event.status === 'active';
+  const isSuhRestricted = !!event.suh_students_only;
+  const blockedBySuh = isSuhRestricted && !!user && !isSuhEmail(user.email);
 
   // Category styling map — vibrant high-contrast styles
   const categoryStyles = {
@@ -373,6 +376,13 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               </div>
             ) : (
               <>
+                {/* Sreenidhi-only restriction badge */}
+                {isSuhRestricted && (
+                  <div className="w-full mb-1 text-center text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 rounded-full py-1">
+                    Sreenidhi only · @suh.edu.in
+                  </div>
+                )}
+
                 {/* Main Action Button */}
                 {!isActive ? (
                   <button
@@ -380,6 +390,14 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                     className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed"
                   >
                     Event Closed
+                  </button>
+                ) : blockedBySuh ? (
+                  <button
+                    disabled
+                    title={SUH_ONLY_MESSAGE}
+                    className="w-full px-4 py-2.5 text-sm font-bold rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 cursor-not-allowed text-center"
+                  >
+                    Sreenidhi students only (@suh.edu.in)
                   </button>
                 ) : requestStatus === 'pending' ? (
                   <button

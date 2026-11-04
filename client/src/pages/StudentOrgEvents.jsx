@@ -42,8 +42,9 @@ const StudentOrgEvents = () => {
   const [paymentQrUrl, setPaymentQrUrl] = useState('');
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [paymentQrFile, setPaymentQrFile] = useState(null);
-  const [scoringEnabled, setScoringEnabled] = useState(false);
-  const [feedbackQuestions, setFeedbackQuestions] = useState([]);
+const [scoringEnabled, setScoringEnabled] = useState(false);
+const [suhStudentsOnly, setSuhStudentsOnly] = useState(false);
+const [feedbackQuestions, setFeedbackQuestions] = useState([]);
 
   const getTomorrowISO = () => {
     const d = new Date();
@@ -243,6 +244,7 @@ const StudentOrgEvents = () => {
     setHasSlots(false);
     setDurationDays('1');
     setTeamLeaderRegistrationRequired(true);
+    setSuhStudentsOnly(false);
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setAssignedFaculty('');
     setFacultySearchTerm('');
@@ -278,6 +280,7 @@ const StudentOrgEvents = () => {
     setHasSlots(Boolean(event.has_slots));
     setDurationDays(String(event.duration_days || 1));
     setTeamLeaderRegistrationRequired(event.team_leader_registration_required !== false);
+    setSuhStudentsOnly(!!event.suh_students_only);
     setPaymentEnabled(!!event.payment_enabled);
     setPaymentAmount(event.payment_amount ? String(event.payment_amount) : '');
     setPaymentUpiId(event.payment_upi_id || '');
@@ -390,6 +393,7 @@ const StudentOrgEvents = () => {
         , paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined
         , scoringEnabled
+        , suhStudentsOnly
         , feedbackQuestions
       };
 
@@ -1517,6 +1521,22 @@ const StudentOrgEvents = () => {
                     className="sr-only peer" 
                   />
                   <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between p-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl mt-4">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Sreenidhi University Students Only</h4>
+                  <p className="text-[10px] text-slate-500">Only @suh.edu.in emails (e.g. @cse.suh.edu.in, @aiml.suh.edu.in) can register for this event</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={suhStudentsOnly} 
+                    onChange={(e) => setSuhStudentsOnly(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                 </label>
               </div>
 

@@ -357,7 +357,7 @@ const FacultyOrgEvents = () => {
               <div className="p-4 bg-white/10 dark:bg-slate-800/40 rounded-xl border border-pastel-lavender/20">
                 <h3 className="font-display text-lg font-bold text-text-primary mb-2">{selectedEvent.title}</h3>
                 <p className="text-sm text-text-secondary mb-4">{selectedEvent.description}</p>
-                <div className="grid grid-cols-2 gap-4 text-xs text-text-secondary">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-text-secondary">
                   <div><strong className="text-text-primary">Category:</strong> {selectedEvent.category}</div>
                   <div><strong className="text-text-primary">Venue:</strong> {selectedEvent.venue}</div>
                   <div><strong className="text-text-primary">Date:</strong> {formatDate(selectedEvent.date)}</div>

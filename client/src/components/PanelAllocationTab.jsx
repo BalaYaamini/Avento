@@ -1351,8 +1351,8 @@ const PanelAllocationTab = ({ eventId, event, user, hasFullAccess }) => {
                   ? `${importPreview.length} row(s) ready to import`
                   : 'Some rows are invalid - fix the file and re-upload'}
               </div>
-              <div className="max-h-56 overflow-y-auto">
-                <table className="w-full text-left border-collapse text-[11px]">
+              <div className="max-h-56 overflow-auto">
+                <table className="w-full min-w-[520px] text-left border-collapse text-[11px]">
                   <thead>
                     <tr className="bg-slate-50/90 dark:bg-slate-800/80 text-slate-500 font-extrabold uppercase tracking-wider text-[9px]">
                       <th className="py-2 px-3">Student</th>

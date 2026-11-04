@@ -442,7 +442,7 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                   <span>✓</span>
                   <span>{message}</span>
                 </div>
-                <div className="grid grid-cols-4 gap-3 text-center bg-white rounded-2xl p-4 shadow-sm border border-pastel-mint/20">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center bg-white rounded-2xl p-4 shadow-sm border border-pastel-mint/20">
                   <div className="p-2">
                     <div className="text-2xl text-slate-600 font-black">{summary.total}</div>
                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">Total Records</div>
@@ -482,8 +482,8 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                 </button>
               </div>
               
-              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-64 overflow-y-auto mt-2 shadow-sm bg-white">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="border border-slate-200 rounded-2xl max-h-64 overflow-auto mt-2 shadow-sm bg-white">
+                <table className="w-full min-w-[760px] text-left border-collapse text-xs">
                   <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                     <tr className="border-b border-slate-200">
                       <th className="px-4 py-3 font-bold text-slate-600 whitespace-nowrap">Excel Row Number</th>
@@ -531,8 +531,8 @@ const ImportUsersModal = ({ isOpen, onClose, onImportSuccess }) => {
                   <button onClick={resetState} className="text-xs text-pastel-coral hover:underline font-bold">Clear All</button>
                 )}
               </div>
-              <div className="border border-pastel-lavender/20 rounded-2xl overflow-hidden max-h-60 overflow-y-auto">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="border border-pastel-lavender/20 rounded-2xl max-h-60 overflow-auto">
+                <table className="w-full min-w-[560px] text-left border-collapse text-xs">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr className="border-b border-pastel-lavender/20">
                       <th className="px-4 py-2 font-bold text-slate-600">Row #</th>

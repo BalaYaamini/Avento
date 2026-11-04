@@ -116,29 +116,29 @@ const AcceptInvite = () => {
             <>
               <div className="bg-white/60 rounded-xl p-5 mb-6 border border-slate-200/50">
                 <div className="space-y-3">
-                  <div className="flex justify-between">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                     <span className="text-xs font-bold text-slate-500 uppercase">Event</span>
                     <span className="text-sm font-bold text-slate-800">{invite?.eventTitle}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                     <span className="text-xs font-bold text-slate-500 uppercase">Team</span>
                     <span className="text-sm font-bold text-cyan-600">{invite?.teamName}</span>
                   </div>
                   {invite?.eventDate && (
-                    <div className="flex justify-between">
+                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                       <span className="text-xs font-bold text-slate-500 uppercase">Date</span>
                       <span className="text-sm text-slate-700">{new Date(invite.eventDate).toLocaleDateString()}</span>
                     </div>
                   )}
                   {invite?.eventVenue && (
-                    <div className="flex justify-between">
+                    <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                       <span className="text-xs font-bold text-slate-500 uppercase">Venue</span>
                       <span className="text-sm text-slate-700">{invite.eventVenue}</span>
                     </div>
                   )}
-                  <div className="flex justify-between">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                     <span className="text-xs font-bold text-slate-500 uppercase">Invited As</span>
-                    <span className="text-sm text-slate-700">{invite?.name || invite?.email}</span>
+                    <span className="text-sm text-slate-700 break-all">{invite?.name || invite?.email}</span>
                   </div>
                 </div>
               </div>

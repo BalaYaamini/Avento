@@ -47,7 +47,7 @@ const About = () => {
           <span className="text-xs font-bold uppercase tracking-widest">Our Story</span>
         </div>
 
-        <h1 className="font-display text-5xl md:text-7xl font-black text-slate-800 mb-6 tracking-tight animate-fade-in-up delay-100 relative">
+          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl font-black text-slate-800 mb-6 tracking-tight animate-fade-in-up delay-100 relative">
           More than an Event Platform.
           <br className="hidden md:block" />
           <span className="relative inline-block mt-2">
@@ -76,7 +76,7 @@ const About = () => {
 
       {/* 2. THE STORY BEHIND AVENTO */}
       <section className="relative py-24 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto">
-        <div className="scrapbook-panel p-10 md:p-16 text-center relative overflow-hidden group">
+          <div className="scrapbook-panel p-6 sm:p-10 md:p-16 text-center relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-pastel-lavender via-pastel-pink to-pastel-yellow mix-blend-multiply" />
           <HeartDoodle className="absolute top-10 left-10 w-12 h-12 text-pastel-coral/40 mix-blend-multiply group-hover:scale-125 transition-transform duration-500" />
           <StarDoodle className="absolute bottom-10 right-10 w-16 h-16 text-pastel-yellow/50 mix-blend-multiply group-hover:rotate-90 transition-transform duration-700" />
@@ -93,7 +93,7 @@ const About = () => {
       {/* 3. MISSION & VISION */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
         <div className="grid md:grid-cols-2 gap-8">
-          <div className="scrapbook-panel p-10 relative overflow-hidden group">
+          <div className="scrapbook-panel p-6 sm:p-10 relative overflow-hidden group">
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-pastel-mint/30 mix-blend-multiply rounded-full blur-2xl group-hover:bg-pastel-mint/50 transition-colors duration-500" />
             <RocketDoodle className="w-12 h-12 text-pastel-mint mb-6 relative z-10" />
             <h3 className="font-display text-2xl font-bold text-slate-800 mb-4 relative z-10">Our Mission</h3>
@@ -101,7 +101,7 @@ const About = () => {
               To eliminate the friction of organizing and attending campus activities. We want to empower students to discover their passions and help organizers seamlessly manage experiences without the administrative headache.
             </p>
           </div>
-          <div className="scrapbook-panel p-10 relative overflow-hidden group">
+          <div className="scrapbook-panel p-6 sm:p-10 relative overflow-hidden group">
             <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-pastel-blue/30 mix-blend-multiply rounded-full blur-2xl group-hover:bg-pastel-blue/50 transition-colors duration-500" />
             <TargetDoodle className="w-12 h-12 text-pastel-blue mb-6 relative z-10" />
             <h3 className="font-display text-2xl font-bold text-slate-800 mb-4 relative z-10">Our Vision</h3>

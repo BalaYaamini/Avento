@@ -291,6 +291,41 @@ const SplashScreen = () => {
             }`}
           />
 
+          {/* Dark mode: repaint the PNG's dark wordmark/tagline in light colors (same 1:1 contours),
+              so "avento" stays visible on the dark splash background */}
+          {hasColors && isDark && (
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-700 ease-out"
+              viewBox="0 0 500 500"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              {WORDMARK_PATHS.map((p, i) => (
+                <path
+                  key={`wm-fill-${i}`}
+                  d={p}
+                  fill="#E2E8F0"
+                  stroke="#E2E8F0"
+                  strokeWidth={1}
+                  strokeLinejoin="round"
+                  fillRule="evenodd"
+                />
+              ))}
+              {TAGLINE_PATHS.map((p, i) => (
+                <path
+                  key={`tag-fill-${i}`}
+                  d={p}
+                  fill="#94A3B8"
+                  stroke="#94A3B8"
+                  strokeWidth={0.8}
+                  strokeLinejoin="round"
+                  fillRule="evenodd"
+                />
+              ))}
+            </svg>
+          )}
+
           {/* SVG Vector Progressive Line-Drawing Overlay (100% exact geometry alignment) */}
           {(!hasColors || isDrawing) && !prefersReducedMotion && (
             <svg

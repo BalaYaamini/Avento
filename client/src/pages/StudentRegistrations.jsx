@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import FeedbackModal from '../components/FeedbackModal';
 import EventPassTicket from '../components/EventPassTicket';
 import { supabase, useAuth } from '../context/AuthContext';
+import { isSuhEmail, SUH_ONLY_MESSAGE } from '../utils/collegeEmail';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import PaymentSection, { isValidUtr } from '../components/PaymentSection';
 
@@ -621,6 +622,10 @@ const StudentRegistrations = () => {
 
   const handleInviteExternalEdit = async () => {
     if (!editInviteName.trim() || !editInviteEmail.trim() || !editTeamData) return;
+    if (editTeamData.eventId?.suh_students_only && !isSuhEmail(editInviteEmail.trim())) {
+      setTeamEditFeedback({ type: 'error', message: SUH_ONLY_MESSAGE });
+      return;
+    }
     const teamId = editTeamData.teamId.id;
     setEditInvitingExternal(true);
     setTeamEditFeedback(null);
@@ -715,7 +720,7 @@ const StudentRegistrations = () => {
         )}
 
         {/* Sub tabs */}
-        <div className="flex gap-4 mb-8 border-b border-slate-200/10 pb-5">
+        <div className="flex flex-wrap gap-4 mb-8 border-b border-slate-200/10 pb-5">
           <button
             onClick={() => setActiveSubTab('registrations')}
             className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold transition-all duration-300 ${
@@ -2243,7 +2248,6 @@ const StudentRegistrations = () => {
                 user={user}
                 allocation={teamAllocations[qrModalData.event_id || qrModalData.eventId?.id]}
                 onClose={() => setQrModalData(null)}
-                showDownloadButton={true}
               />
             </div>
           </Modal>

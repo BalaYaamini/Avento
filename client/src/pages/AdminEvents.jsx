@@ -50,6 +50,7 @@ const AdminEvents = () => {
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [paymentQrFile, setPaymentQrFile] = useState(null);
   const [scoringEnabled, setScoringEnabled] = useState(false);
+  const [suhStudentsOnly, setSuhStudentsOnly] = useState(false);
   const [feedbackQuestions, setFeedbackQuestions] = useState([]);
 
   // Organizers States
@@ -70,6 +71,7 @@ const AdminEvents = () => {
 
   // Actions Dropdown State
   const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 16 });
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -208,6 +210,7 @@ const AdminEvents = () => {
     setRegistrationDeadline('');
     setPaymentEnabled(false); setPaymentAmount(''); setPaymentUpiId(''); setPaymentQrUrl(''); setPaymentInstructions(''); setPaymentQrFile(null);
     setScoringEnabled(false);
+    setSuhStudentsOnly(false);
     setFeedbackQuestions([]);
     setFeedback(null);
     setIsModalOpen(true);
@@ -246,6 +249,7 @@ const AdminEvents = () => {
     setPaymentQrFile(null);
 
     setScoringEnabled(!!event.scoring_enabled);
+    setSuhStudentsOnly(!!event.suh_students_only);
     setFeedbackQuestions(event.feedback_questions || event.feedbackQuestions || []);
 
     setFeedback(null);
@@ -348,6 +352,7 @@ const AdminEvents = () => {
         paymentEnabled, paymentAmount: paymentEnabled ? Number(paymentAmount) : undefined, paymentUpiId: paymentEnabled ? paymentUpiId : undefined,
         paymentQrUrl: paymentEnabled ? finalPaymentQrUrl : undefined, paymentInstructions: paymentEnabled ? paymentInstructions : undefined,
         scoringEnabled,
+        suhStudentsOnly,
         feedbackQuestions,
       };
 
@@ -598,7 +603,7 @@ const AdminEvents = () => {
           /* Event Table */
           <div className="animate-fade-in-up delay-100 glass-panel rounded-2xl shadow-2xl shadow-cyan-500/3">
             <div className="overflow-x-auto">
-              <table className="w-full text-left" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+              <table className="w-full min-w-[880px] text-left" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
                 <thead>
                   <tr className="bg-white/40 border-b border-slate-200/40 text-slate-600 text-[10px] font-bold uppercase tracking-[0.1em]">
                     <th className="px-6 py-4">Event Details</th>
@@ -663,7 +668,17 @@ const AdminEvents = () => {
                           <div className="relative inline-block text-left event-actions-dropdown">
                             <button
                               type="button"
-                              onClick={() => setOpenDropdownId(openDropdownId === (evt._id || evt.id) ? null : (evt._id || evt.id))}
+                              onClick={(e) => {
+                                const id = evt._id || evt.id;
+                                if (openDropdownId === id) { setOpenDropdownId(null); return; }
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const menuMax = Math.min(360, window.innerHeight * 0.6);
+                                setDropdownPos({
+                                  top: Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - menuMax - 12)),
+                                  right: Math.max(8, window.innerWidth - rect.right)
+                                });
+                                setOpenDropdownId(id);
+                              }}
                               className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/60 text-slate-700 border border-slate-300/50 hover:bg-white hover:border-slate-300 transition-all duration-300 flex items-center gap-1.5 cursor-pointer shadow-sm"
                             >
                               <span>Actions</span>
@@ -673,7 +688,7 @@ const AdminEvents = () => {
                             </button>
 
                             {openDropdownId === (evt._id || evt.id) && (
-<div className="origin-top-right absolute right-0 mt-1.5 w-52 rounded-xl shadow-xl bg-white border border-slate-200 z-[100] p-1.5 space-y-1 animate-fade-in-scale text-left">
+<div className="origin-top-right fixed w-52 max-h-[60vh] overflow-y-auto rounded-xl shadow-xl bg-white border border-slate-200 z-[100] p-1.5 space-y-1 animate-fade-in-scale text-left" style={{ top: dropdownPos.top, right: dropdownPos.right }}>
                                 {/* Event Workspace & ID Cards Access */}
                                 <Link
                                   to={`/workspace/${evt._id || evt.id}`}
@@ -1078,6 +1093,22 @@ const AdminEvents = () => {
                     className="sr-only peer" 
                   />
                   <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between p-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl mt-4">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Sreenidhi University Students Only</h4>
+                  <p className="text-[10px] text-slate-500">Only @suh.edu.in emails (e.g. @cse.suh.edu.in, @aiml.suh.edu.in) can register for this event</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={suhStudentsOnly} 
+                    onChange={(e) => setSuhStudentsOnly(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                 </label>
               </div>
 

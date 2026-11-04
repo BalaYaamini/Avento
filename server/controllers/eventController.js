@@ -520,7 +520,7 @@ const createEvent = async (req, res) => {
       title, description, category, venue, date, capacity, imageUrl, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
       registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
-      , scoringEnabled, scoreboardVisible
+      , scoringEnabled, scoreboardVisible, suhStudentsOnly
     } = req.body;
 
     if (!title || !description || !category || !venue || !date) {
@@ -649,6 +649,7 @@ const createEvent = async (req, res) => {
       payment_instructions: isPaymentEnabled ? (paymentInstructions || null) : null,
       scoring_enabled: scoringEnabled === true || scoringEnabled === 'true',
       scoreboard_visible: (scoringEnabled === true || scoringEnabled === 'true') && (scoreboardVisible === true || scoreboardVisible === 'true'),
+      suh_students_only: suhStudentsOnly === true || suhStudentsOnly === 'true',
       has_slots: req.body.hasSlots === true || req.body.hasSlots === 'true' || req.body.has_slots === true || req.body.has_slots === 'true' || registrationType === 'slot_wise',
       duration_days: Math.min(30, Math.max(1, parseInt(req.body.durationDays ?? req.body.duration_days, 10) || 1)),
     };
@@ -781,7 +782,7 @@ const editEvent = async (req, res) => {
       title, description, category, venue, date, capacity, imageUrl, status, assignedFacultyId,
       registrationType, maxTeams, minTeamSize, maxTeamSize, allowCrossDepartment, teamLeaderRegistrationRequired,
       registrationDeadline, paymentEnabled, paymentAmount, paymentUpiId, paymentQrUrl, paymentInstructions
-      , scoringEnabled, scoreboardVisible, hasSlots
+      , scoringEnabled, scoreboardVisible, hasSlots, suhStudentsOnly
     } = req.body;
 
     const { data: event, error: fetchErr } = await supabase
@@ -822,6 +823,7 @@ const editEvent = async (req, res) => {
     if (maxTeamSize !== undefined) updates.max_team_size = Number(maxTeamSize);
     if (allowCrossDepartment !== undefined) updates.allow_cross_department = allowCrossDepartment;
     if (teamLeaderRegistrationRequired !== undefined) updates.team_leader_registration_required = teamLeaderRegistrationRequired;
+    if (suhStudentsOnly !== undefined) updates.suh_students_only = suhStudentsOnly === true || suhStudentsOnly === 'true';
     if (hasSlots !== undefined) updates.has_slots = Boolean(hasSlots);
     // Slot-wise registration always requires the slot schedule to be enabled
     if (registrationType === 'slot_wise') updates.has_slots = true;
@@ -3452,7 +3454,7 @@ const updateProposalDescription = async (req, res) => {
       title, description, category, venue, date, capacity, imageUrl, 
       registrationType, maxTeams, minTeamSize, maxTeamSize, 
       allowCrossDepartment, teamLeaderRegistrationRequired, registrationDeadline,
-      hasSlots
+      hasSlots, suhStudentsOnly
     } = req.body;
     
     const { data: event, error: evErr } = await supabase.from('events').select('*').eq('id', id).single();
@@ -3491,6 +3493,7 @@ const updateProposalDescription = async (req, res) => {
     if (maxTeamSize !== undefined) updates.max_team_size = Number(maxTeamSize);
     if (allowCrossDepartment !== undefined) updates.allow_cross_department = allowCrossDepartment;
     if (teamLeaderRegistrationRequired !== undefined) updates.team_leader_registration_required = teamLeaderRegistrationRequired;
+    if (suhStudentsOnly !== undefined) updates.suh_students_only = suhStudentsOnly === true || suhStudentsOnly === 'true';
     if (hasSlots !== undefined) updates.has_slots = Boolean(hasSlots);
     // Slot-wise registration always requires the slot schedule to be enabled
     if (registrationType === 'slot_wise') updates.has_slots = true;

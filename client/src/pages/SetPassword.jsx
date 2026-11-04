@@ -6,7 +6,7 @@ import PasswordInput from '../components/PasswordInput';
 import { SparkleDoodle, StarDoodle } from '../components/Doodles';
 
 const SetPassword = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,9 +27,8 @@ const SetPassword = () => {
       await axios.post('/api/auth/set-password', { password });
       setSuccess(true);
       setTimeout(() => {
-        logout();
-        navigate('/login', { replace: true });
-      }, 2500);
+        navigate('/', { replace: true });
+      }, 1500);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to set password.');
     } finally {
@@ -50,7 +49,7 @@ const SetPassword = () => {
       </div>
 
       <div className="w-full max-w-md relative z-10 animate-fade-in-up">
-        <div className="polaroid -rotate-1 p-8">
+        <div className="polaroid -rotate-1 p-5 sm:p-8">
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 tape tape-2 !w-28"></div>
 
           <div className="text-center mb-8 pt-4">
@@ -77,7 +76,7 @@ const SetPassword = () => {
                 </svg>
               </div>
               <h2 className="font-heading text-xl font-bold text-slate-800 mb-2">Password Set!</h2>
-              <p className="text-sm text-slate-500">Redirecting to login...</p>
+              <p className="text-sm text-slate-500">You're all set! Taking you in...</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">

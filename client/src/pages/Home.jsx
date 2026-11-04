@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth, supabase } from '../context/AuthContext';
 import EventCard from '../components/EventCard';
+import { isSuhEmail, SUH_ONLY_MESSAGE } from '../utils/collegeEmail';
 import Modal from '../components/Modal';
 import { 
   SparkleDoodle, 
@@ -236,6 +237,10 @@ const Home = () => {
   const openConfirmReg = (event) => {
     if (isUserOrganizer(event)) {
       alert('You are an organizer for this event and cannot register as a participant.');
+      return;
+    }
+    if (event.suh_students_only && user && !isSuhEmail(user.email)) {
+      alert(SUH_ONLY_MESSAGE);
       return;
     }
     const isDeadlinePassed = event.registration_deadline && new Date() > new Date(event.registration_deadline);
@@ -730,13 +735,13 @@ const Home = () => {
         
         {/* Toast Notification */}
         {feedback && (
-          <div className={`fixed bottom-6 right-6 z-50 p-4 rounded-2xl shadow-2xl border backdrop-blur-xl flex items-center gap-3 animate-toast-enter ${
+          <div className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 p-4 rounded-2xl shadow-2xl border backdrop-blur-xl flex items-center gap-3 animate-toast-enter ${
             feedback.type === 'success' 
               ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/30 shadow-emerald-500/10' 
               : 'bg-red-950/90 text-red-300 border-red-500/30 shadow-red-500/10'
           }`}>
-            <span className="text-lg">{feedback.type === 'success' ? '✓' : '⚠'}</span>
-            <span className="text-sm font-semibold">{feedback.message}</span>
+            <span className="text-lg">{feedback.type === 'success' ? '�o"' : '�s�'}</span>
+            <span className="text-sm font-semibold break-words min-w-0">{feedback.message}</span>
           </div>
         )}
 
@@ -1013,7 +1018,7 @@ const Home = () => {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 border-y border-slate-200/20 py-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-y border-slate-200/20 py-3.5 text-xs">
                 <div>
                   <span className="block text-[9px] font-bold text-slate-600 uppercase tracking-wider">Date</span>
                   <span className="font-semibold text-slate-800">
@@ -1352,7 +1357,7 @@ const Home = () => {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-[0.1em] mb-2">
                     Invite Team Members by Email
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       placeholder="Full Name"
@@ -1372,6 +1377,11 @@ const Home = () => {
                       disabled={!externalInviteName.trim() || !externalInviteEmail.trim() || invitingExternal}
                       onClick={() => {
                         if (!externalInviteName.trim() || !externalInviteEmail.trim()) return;
+                        if (teamRegEvent.suh_students_only && !isSuhEmail(externalInviteEmail.trim())) {
+                          setFeedback({ type: 'error', message: SUH_ONLY_MESSAGE });
+                          setTimeout(() => setFeedback(null), 4000);
+                          return;
+                        }
                         const leaderCount = teamRegEvent.team_leader_registration_required !== false ? 1 : 0;
                         if (externalInvites.length + leaderCount >= teamRegEvent.max_team_size) {
                           setFeedback({ type: 'error', message: 'Cannot add more members. Maximum team size reached.' });

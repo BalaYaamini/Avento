@@ -446,7 +446,7 @@ const AdminPermissions = () => {
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                     Authority Action *
                   </label>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => setDecisionAction('granted')}

@@ -1138,7 +1138,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Start Time *
@@ -1189,7 +1189,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                   Chained back-to-back using the start/end time above, with an optional break between each. Names are auto-numbered (e.g. "Batch 1", "Batch 2").
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     Number of Slots
@@ -1324,7 +1324,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Start Hour (24h)
@@ -1354,7 +1354,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Duration (Minutes)

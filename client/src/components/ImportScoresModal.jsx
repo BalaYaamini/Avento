@@ -280,7 +280,7 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
           {status === 'success' && summary && (
             <div className="p-6 bg-emerald-50 border-2 border-emerald-300 text-emerald-700 rounded-3xl text-sm font-bold flex flex-col gap-4">
               <div className="flex items-center gap-2 text-lg"><span>✓</span><span>Import Complete</span></div>
-              <div className="grid grid-cols-3 gap-3 text-center bg-white rounded-2xl p-4 shadow-sm border border-emerald-100">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center bg-white rounded-2xl p-4 shadow-sm border border-emerald-100">
                 <div><div className="text-2xl font-black text-slate-600">{summary.total}</div><div className="text-[10px] font-bold uppercase text-slate-400 mt-1">Total Scores</div></div>
                 <div><div className="text-2xl font-black text-emerald-600">{summary.saved}</div><div className="text-[10px] font-bold uppercase text-slate-400 mt-1">Saved</div></div>
                 <div><div className="text-2xl font-black text-red-500">{summary.failed}</div><div className="text-[10px] font-bold uppercase text-slate-400 mt-1">Failed</div></div>
@@ -289,8 +289,8 @@ const ImportScoresModal = ({ isOpen, onClose, eventId, rounds, teams, scores, on
           )}
 
           {status === 'success' && failedRecords.length > 0 && (
-            <div className="border border-red-200 rounded-2xl overflow-hidden max-h-48 overflow-y-auto">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="border border-red-200 rounded-2xl max-h-48 overflow-auto">
+              <table className="w-full min-w-[420px] text-left border-collapse text-xs">
                 <thead className="bg-red-50 sticky top-0"><tr className="border-b border-red-200">
                   <th className="px-4 py-2 font-bold text-red-600">Row</th>
                   <th className="px-4 py-2 font-bold text-red-600">Team</th>
