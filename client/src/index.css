@@ -844,6 +844,7 @@ html[data-theme="dark"] .sidebar-divider,
 .app-main {
   margin-left: 260px;
   flex: 1;
+  min-width: 0;
   min-height: 100vh;
   transition: margin-left 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }

@@ -208,6 +208,7 @@ const generateEmailHtml = (title, message, data = {}) => {
     ${data.date ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;width:40%;"><strong>Date</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.date}</td></tr>` : ''}
     ${data.time ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Time</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.time}</td></tr>` : ''}
     ${data.venue ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Venue</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.venue}</td></tr>` : ''}
+    ${data.slot ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Slot</strong></td><td style="padding:8px 0;font-size:14px;font-weight:700;color:#0891b2;">${data.slot}</td></tr>` : ''}
     ${data.teamName ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamName}</td></tr>` : ''}
     ${data.teamLeader ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Team Leader</strong></td><td style="padding:8px 0;font-size:14px;color:#1e293b;">${data.teamLeader}</td></tr>` : ''}
     ${data.registrationId ? `<tr><td style="padding:8px 0;font-size:14px;color:#64748b;"><strong>Reg ID</strong></td><td style="padding:8px 0;font-size:14px;font-family:monospace;font-weight:700;color:#0891b2;">${data.registrationId}</td></tr>` : ''}

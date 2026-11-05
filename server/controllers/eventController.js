@@ -184,10 +184,12 @@ const getEvents = async (req, res) => {
     }
     const isAdmin = user?.roles && (user.roles.includes('admin') || user.role === 'admin');
 
-    // Security check: Public and non-admin users MUST only receive published events
+    // Non-admin users may view published, completed and cancelled events
+    // (all end-of-life public statuses). Drafts / pending / withdrawn stay hidden.
+    const PUBLIC_STATUSES = ['published', 'completed', 'cancelled'];
     if (!isAdmin) {
-      if (status && status !== 'published') {
-        // Non-admin explicitly requested unpublished status (draft, pending_approval, etc.) -> return empty array
+      if (status && !PUBLIC_STATUSES.includes(status)) {
+        // Non-admin explicitly requested a private status (draft, pending_approval, etc.) -> return empty array
         return res.json([]);
       }
     }
@@ -195,11 +197,11 @@ const getEvents = async (req, res) => {
     let query = supabase.from('events').select('*').order('date', { ascending: true });
 
     if (search) query = query.ilike('title', `%${search}%`);
-    if (isAdmin) {
-      if (status) query = query.eq('status', status);
-    } else {
-      // Non-admin / public strictly gets published events
-      query = query.eq('status', 'published');
+    if (status) {
+      query = query.eq('status', status);
+    } else if (!isAdmin) {
+      // Non-admin / public gets all public-visible statuses
+      query = query.in('status', PUBLIC_STATUSES);
     }
     if (category) query = query.eq('category', category);
 
@@ -211,12 +213,15 @@ const getEvents = async (req, res) => {
     const eventIds = events.map(e => e.id);
 
     // Batch fetch all related data in parallel (instead of per-event)
-    const [orgsResult, membersResult, reqsResult, profilesResult, teamCountsResult] = await Promise.all([
+    const [orgsResult, membersResult, reqsResult, profilesResult, teamCountsResult, activeRegsResult, teamSlotsResult, eventSlotsResult] = await Promise.all([
       supabase.from('event_organizers').select('event_id, student_id').in('event_id', eventIds),
       supabase.from('event_members').select('event_id, user_id').in('event_id', eventIds),
       supabase.from('organizer_requests').select('event_id, student_id, status, category').in('event_id', eventIds),
       supabase.from('profiles').select('id, name').in('id', events.map(e => e.proposed_by).filter(Boolean)),
       supabase.from('event_teams').select('event_id').in('event_id', eventIds).eq('status', 'registered'),
+      supabase.from('event_registrations').select('id, event_id, team_id, slot_id').in('event_id', eventIds).not('status', 'in', '("cancelled","rejected","expired")'),
+      supabase.from('event_teams').select('id, event_id, slot_id').in('event_id', eventIds),
+      supabase.from('event_slots').select('id, event_id').in('event_id', eventIds),
     ]);
 
     // Index related data by event_id for O(1) lookups
@@ -238,6 +243,41 @@ const getEvents = async (req, res) => {
     (teamCountsResult.data || []).forEach(t => {
       teamCountByEvent[t.event_id] = (teamCountByEvent[t.event_id] || 0) + 1;
     });
+
+    // Live booked-seat counts (mirrors workspace slot math: 1 seat per team / 1 per individual, deduped per slot)
+    const teamSlotByTeamId = {};
+    (teamSlotsResult.data || []).forEach(t => {
+      teamSlotByTeamId[t.id] = t.slot_id || null;
+    });
+    const slotIdsByEvent = {};
+    (eventSlotsResult.data || []).forEach(sl => {
+      (slotIdsByEvent[sl.event_id] = slotIdsByEvent[sl.event_id] || new Set()).add(sl.id);
+    });
+    const activeRegsByEvent = {};
+    (activeRegsResult.data || []).forEach(r => {
+      (activeRegsByEvent[r.event_id] = activeRegsByEvent[r.event_id] || []).push(r);
+    });
+    const bookedCountByEvent = {};
+    if (!(activeRegsResult.error || teamSlotsResult.error || eventSlotsResult.error)) {
+      events.forEach(evt => {
+        const regs = activeRegsByEvent[evt.id] || [];
+        const seatKey = (r) => (r.team_id ? 'team_' + r.team_id : 'reg_' + r.id);
+        if (evt.has_slots) {
+          const validSlots = slotIdsByEvent[evt.id] || new Set();
+          const seatsBySlot = {};
+          regs.forEach(r => {
+            const slotId = r.slot_id || (r.team_id ? teamSlotByTeamId[r.team_id] : null);
+            if (!slotId || !validSlots.has(slotId)) return;
+            (seatsBySlot[slotId] = seatsBySlot[slotId] || new Set()).add(seatKey(r));
+          });
+          bookedCountByEvent[evt.id] = Object.values(seatsBySlot).reduce((sum, set) => sum + set.size, 0);
+        } else {
+          const seats = new Set();
+          regs.forEach(r => seats.add(seatKey(r)));
+          bookedCountByEvent[evt.id] = seats.size;
+        }
+      });
+    }
 
     const mappedEvents = events.map((evt) => {
       const orgIds = orgsByEvent[evt.id] || [];
@@ -262,6 +302,10 @@ const getEvents = async (req, res) => {
         evt.confirmed_teams_count = countVal;
         evt.registered_count = countVal;
         evt.registeredCount = countVal;
+      }
+
+      if (bookedCountByEvent[evt.id] !== undefined) {
+        evt.bookedCount = bookedCountByEvent[evt.id];
       }
 
       return cleanEventRemarks(evt);

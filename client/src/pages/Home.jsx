@@ -9,14 +9,10 @@ import {
   SparkleDoodle, 
   SquiggleDoodle, 
   StarDoodle,
-  ArrowDoodle,
   PinDoodle,
   CloudDoodle,
   PaperPlaneDoodle,
-  GeometricBlobDoodle,
-  RocketDoodle,
-  PaletteDoodle,
-  CoffeeDoodle
+  GeometricBlobDoodle
 } from '../components/Doodles';
 import RegistrationCountdown from '../components/RegistrationCountdown';
 import ScoringBoard from '../components/ScoringBoard';
@@ -32,7 +28,7 @@ const Home = () => {
   // Search & Filter State
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
-  const [status, setStatus] = useState('published'); // default show published events
+  const [status, setStatus] = useState(''); // default show all public events (incl. completed)
   const [registeringIds, setRegisteringIds] = useState({});
   const [feedback, setFeedback] = useState(null);
 
@@ -366,20 +362,12 @@ const Home = () => {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  const categoriesList = [
-    { id: 'All', label: 'All Events', icon: <SparkleDoodle className="w-3.5 h-3.5" /> },
-    { id: 'Technical', label: 'Technical', icon: <RocketDoodle className="w-3.5 h-3.5" /> },
-    { id: 'Cultural', label: 'Cultural', icon: <PaletteDoodle className="w-3.5 h-3.5" /> },
-    { id: 'Sports', label: 'Sports', icon: <StarDoodle className="w-3.5 h-3.5" /> },
-    { id: 'Workshop', label: 'Workshop', icon: <ArrowDoodle className="w-3.5 h-3.5" /> },
-    { id: 'Seminar', label: 'Seminar', icon: <CoffeeDoodle className="w-3.5 h-3.5" /> }
-  ];
 
-  const isFiltering = !!search || !!category || status !== 'published';
+  const isFiltering = !!search || !!category || !!status;
   const handleClearFilters = () => {
     setSearch('');
     setCategory('');
-    setStatus('published');
+    setStatus('');
   };
 
   const fetchEvents = async () => {
@@ -801,10 +789,10 @@ const Home = () => {
                     onChange={(e) => setStatus(e.target.value)}
                     className="w-full sm:w-auto appearance-none bg-slate-50/90 hover:bg-white text-text-primary border-2 border-slate-200/90 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/15 rounded-2xl py-3 pl-4 pr-10 text-xs font-bold font-quicksand transition-all duration-200 cursor-pointer shadow-xs"
                   >
-                    <option value="published">🟢 Open for Reg</option>
-                    <option value="">⚡ All Statuses</option>
-                    <option value="completed">🏁 Completed</option>
-                    <option value="cancelled">🔴 Cancelled</option>
+                    <option value="published">Open for Reg</option>
+                    <option value="">All Statuses</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -828,48 +816,8 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Bottom Tier: Category Pills + Live Result Counter */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-              {/* Category Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none -mx-1 px-1">
-                {categoriesList.map((cat) => {
-                  const isSelected = (cat.id === 'All' && !category) || (cat.id === category);
-                  
-                  const activeClassMap = {
-                    All: 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-md scale-[1.03]',
-                    Technical: 'bg-cyan-600 text-white border-cyan-600 shadow-md shadow-cyan-600/25 scale-[1.03]',
-                    Cultural: 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/25 scale-[1.03]',
-                    Sports: 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/25 scale-[1.03]',
-                    Workshop: 'bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/25 scale-[1.03]',
-                    Seminar: 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/25 scale-[1.03]',
-                  };
-
-                  const inactiveClassMap = {
-                    All: 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300',
-                    Technical: 'bg-white hover:bg-cyan-50/60 text-cyan-800 border-cyan-200 hover:border-cyan-400',
-                    Cultural: 'bg-white hover:bg-rose-50/60 text-rose-800 border-rose-200 hover:border-rose-400',
-                    Sports: 'bg-white hover:bg-emerald-50/60 text-emerald-800 border-emerald-200 hover:border-emerald-400',
-                    Workshop: 'bg-white hover:bg-amber-50/60 text-amber-800 border-amber-200 hover:border-amber-400',
-                    Seminar: 'bg-white hover:bg-indigo-50/60 text-indigo-800 border-indigo-200 hover:border-indigo-400',
-                  };
-
-                  const currentClass = isSelected
-                    ? (activeClassMap[cat.id] || 'bg-cyan-600 text-white border-cyan-600')
-                    : (inactiveClassMap[cat.id] || 'bg-white text-slate-700 border-slate-200');
-
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setCategory(cat.id === 'All' ? '' : cat.id)}
-                      className={`text-xs font-bold px-3.5 sm:px-4 py-2 rounded-xl transition-all duration-200 border-2 whitespace-nowrap font-quicksand flex items-center gap-1.5 shrink-0 cursor-pointer ${currentClass} hover:-translate-y-0.5`}
-                    >
-                      <span className="shrink-0">{cat.icon}</span>
-                      <span>{cat.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
+            {/* Bottom Tier: Live Result Counter */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               {/* Event count indicator */}
               <div className="flex items-center gap-2 text-xs font-bold text-slate-500 font-quicksand shrink-0 self-end md:self-center">
                 <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />

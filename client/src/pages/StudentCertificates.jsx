@@ -81,7 +81,7 @@ const StudentCertificates = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {certificates.map((cert) => (
-              <div key={cert.id} className="scrapbook-panel scrapbook-panel-hover overflow-hidden relative group">
+              <div key={cert.id} className="scrapbook-panel scrapbook-panel-hover overflow-hidden relative group hover:!transform-none">
                 {/* Decorative element */}
                 <div className="absolute -right-4 -top-4 w-24 h-24 bg-pastel-lavender/20 rounded-full blur-xl group-hover:bg-pastel-lavender/30 transition-colors duration-500"></div>
                 

@@ -59,6 +59,37 @@ const finalizeTeamRegistration = async (teamId, event, leaderId, acceptedUserIds
   }
 };
 
+// Build email detail fields from the booked slot (falls back to the event base schedule).
+const buildSlotEmailFields = async (event, slotId) => {
+  const base = {
+    date: event && event.date ? new Date(event.date).toLocaleDateString() : 'TBA',
+    time: (event && event.time) || 'TBA',
+    venue: (event && event.venue) || 'TBA',
+    slot: null
+  };
+  if (!event || !event.has_slots || !slotId) return base;
+  try {
+    const { data: slot } = await supabase
+      .from('event_slots')
+      .select('slot_name, slot_date, start_time, end_time, venue_room')
+      .eq('id', slotId)
+      .maybeSingle();
+    if (!slot) return base;
+    const fmtTime = (t) => (t ? String(t).substring(0, 5) : '');
+    return {
+      date: slot.slot_date
+        ? new Date(String(slot.slot_date).substring(0, 10) + 'T00:00:00').toLocaleDateString()
+        : base.date,
+      time: slot.start_time && slot.end_time ? `${fmtTime(slot.start_time)} - ${fmtTime(slot.end_time)}` : base.time,
+      venue: slot.venue_room || base.venue,
+      slot: slot.slot_name || 'Slot'
+    };
+  } catch (e) {
+    console.warn('buildSlotEmailFields warning:', e.message);
+    return base;
+  }
+};
+
 const resolveUserProfile = async (userId) => {
   try {
     const { data } = await supabase.from('profiles').select('id, name, email').eq('id', userId).maybeSingle();
@@ -319,7 +350,7 @@ exports.registerForEvent = async (req, res) => {
 
     // Notify user
     try {
-      const dateStr = new Date(event.date).toLocaleDateString();
+      const slotEmail = await buildSlotEmailFields(event, slotId);
       await notifyUser({
         recipientId: userId,
         title: 'Registration Successful',
@@ -329,9 +360,10 @@ exports.registerForEvent = async (req, res) => {
         emailSubject: `Registration Confirmed – ${event.title}`,
         emailData: {
           eventName: event.title,
-          date: dateStr,
-          time: event.time || 'TBA',
-          venue: event.venue || 'TBA',
+          date: slotEmail.date,
+          time: slotEmail.time,
+          venue: slotEmail.venue,
+          slot: slotEmail.slot,
           registrationId: registration?.id || 'N/A',
           status: 'Confirmed',
           organizer: event.organizer_name || 'AVENTO Admin',
@@ -847,6 +879,38 @@ exports.cancelRegistrationByEventId = async (req, res) => {
     return await executeCancellationLogic(registration, req.user.id, req.user.roles, res);
   } catch (err) {
     res.status(500).json({ message: 'Server error cancelling registration.', error: err.message });
+  }
+};
+
+// Persistent file-backed avatars map (roll number -> photo URL), one JSON file per event.
+// Gives latest re-upload priority over the profiles.avatar_url value.
+const AVATARS_DIR = path.join(__dirname, '..', 'data', 'avatars');
+
+const getEventAvatarsMap = (eventId) => {
+  try {
+    const filePath = path.join(AVATARS_DIR, `${eventId}.json`);
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    }
+  } catch (e) {
+    console.warn('getEventAvatarsMap warning:', e.message);
+  }
+  return {};
+};
+
+const setEventAvatar = (eventId, rollNumber, photoUrl) => {
+  try {
+    fs.mkdirSync(AVATARS_DIR, { recursive: true });
+    const filePath = path.join(AVATARS_DIR, `${eventId}.json`);
+    const map = getEventAvatarsMap(eventId);
+    const roll = String(rollNumber || '').trim();
+    const norm = roll.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (roll) map[roll] = photoUrl;
+    if (roll.toLowerCase()) map[roll.toLowerCase()] = photoUrl;
+    if (norm) map[norm] = photoUrl;
+    fs.writeFileSync(filePath, JSON.stringify(map, null, 2));
+  } catch (e) {
+    console.warn('setEventAvatar warning:', e.message);
   }
 };
 
@@ -1447,7 +1511,7 @@ exports.registerTeamForEvent = async (req, res) => {
 
     // Notify all team members
     try {
-      const dateStrTeam = new Date(event.date).toLocaleDateString();
+      const slotEmailTeam = await buildSlotEmailFields(event, slotId);
       
       // Fetch profiles to build the team members table
       const { data: memberProfiles } = await supabase.from('profiles').select('id, name, email').in('id', allTeamUserIds);
@@ -1490,8 +1554,9 @@ exports.registerTeamForEvent = async (req, res) => {
           emailData: {
             recipientName: memberName,
             eventName: event.title,
-            date: dateStrTeam,
-            venue: event.venue || 'TBA',
+            date: slotEmailTeam.date,
+            venue: slotEmailTeam.venue,
+            ...(slotEmailTeam.slot ? { time: slotEmailTeam.time, slot: slotEmailTeam.slot } : {}),
             status: statusText,
             teamName: teamName,
             teamLeader: teamLeaderName,
@@ -1889,7 +1954,7 @@ exports.confirmTeamRegistration = async (req, res) => {
     // 1. Fetch team & associated event details
     const { data: teamData, error: teamErr } = await supabase
       .from('event_teams')
-      .select('event_id, events(*)')
+      .select('event_id, slot_id, events(*)')
       .eq('id', teamId)
       .eq('leader_id', leaderId)
       .single();
@@ -2056,7 +2121,7 @@ exports.confirmTeamRegistration = async (req, res) => {
     try {
       const { data: confirmedRegs } = await supabase.from('event_registrations').select('user_id').eq('team_id', teamId).eq('status', 'registered');
       const eventTitle = event.title || 'the event';
-      const dateStr = new Date(event.date).toLocaleDateString();
+      const slotEmail = await buildSlotEmailFields(event, teamData.slot_id);
       const teamName = teamData.name || 'your team';
 
       if (confirmedRegs) {
@@ -2069,7 +2134,7 @@ exports.confirmTeamRegistration = async (req, res) => {
             type: 'success',
             eventId: event.id,
             emailSubject: `Team Confirmed – ${eventTitle}`,
-            emailData: { eventName: eventTitle, date: dateStr, venue: event.venue || 'TBA', teamName, status: 'Confirmed', recipientName: profile.name }
+            emailData: { eventName: eventTitle, date: slotEmail.date, venue: slotEmail.venue, ...(slotEmail.slot ? { time: slotEmail.time, slot: slotEmail.slot } : {}), teamName, status: 'Confirmed', recipientName: profile.name }
           });
         }
       }

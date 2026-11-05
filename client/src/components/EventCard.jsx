@@ -110,7 +110,8 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
   // Capacity fill rate
   const capVal = event.registration_type === 'team' ? (event.max_teams || 1) : event.capacity;
   const currCount = event.registeredCount || 0;
-  const fillRate = Math.min(100, Math.round((currCount / capVal) * 100));
+  const bookedSeats = event.bookedCount ?? event.registeredCount ?? 0;
+  const fillRate = Math.min(100, Math.round((bookedSeats / capVal) * 100));
 
   // Stagger delay for entrance animation
   const staggerDelay = Math.min(index * 100, 600);
@@ -227,7 +228,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
             <div className="flex items-center justify-between text-[10px] font-bold tracking-wide font-quicksand">
               <span className="text-text-secondary uppercase">Seats Filled</span>
               <span className={isFull ? 'text-rose-600 font-bold' : 'text-cyan-700 dark:text-cyan-400 font-bold'}>
-                {event.registeredCount} / {event.capacity}
+                {bookedSeats} / {event.capacity}
               </span>
             </div>
             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden border border-gray-200">
@@ -269,8 +270,8 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                 </div>
               ) : (
                 <div className="flex justify-between items-center bg-gray-50 rounded-lg p-2 border border-gray-100">
-                  <span>{event.registeredCount || 0} / {event.capacity} Registered</span>
-                  <span>{Math.max(0, event.capacity - (event.registeredCount || 0))} Remaining</span>
+                  <span>{bookedSeats} / {event.capacity} Registered</span>
+                  <span>{Math.max(0, event.capacity - bookedSeats)} Remaining</span>
                 </div>
               )}
             </div>
@@ -556,7 +557,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                   <div className="text-xs sm:text-sm font-bold text-text-primary">
                     {event.registration_type === 'team'
                       ? `${currCount} / ${event.max_teams || '∞'} Teams`
-                      : `${currCount} / ${event.capacity || '∞'} Seats`}
+                      : `${bookedSeats} / ${event.capacity || '∞'} Seats`}
                   </div>
                 </div>
               </div>
