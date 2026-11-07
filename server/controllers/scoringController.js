@@ -711,7 +711,7 @@ const buildSubroundMeta = async (eventId) => {
     [...(r.subrounds || [])]
       .sort((a, b) => (Number(a.display_order) || 0) - (Number(b.display_order) || 0))
       .forEach(sr => {
-        const entry = { roundName: r.name, name: sr.name, max: Number(sr.max_score) };
+        const entry = { roundId: r.id, roundName: r.name, name: sr.name, max: Number(sr.max_score) };
         subroundMeta.set(sr.id, entry);
         orderedSubs.push({ id: sr.id, ...entry });
       })
@@ -719,18 +719,27 @@ const buildSubroundMeta = async (eventId) => {
   return { subroundMeta, orderedSubs };
 };
 
-const buildStudentRows = (orderedSubs, ownScores) => {
+// Aggregate per-criterion scores into one row per ROUND (overall round-wise score).
+const buildRoundRows = (orderedSubs, ownScores) => {
   const bySub = new Map((ownScores || []).map(s => [s.subround_id, s]));
-  return orderedSubs.map(sub => {
+  const rounds = new Map();
+  const order = [];
+  orderedSubs.forEach(sub => {
     const row = bySub.get(sub.id);
-    return {
-      roundName: sub.roundName,
-      name: sub.name,
-      max: sub.max,
-      score: row ? (row.score == null ? null : Number(row.score)) : null,
-      comment: row?.comment || ''
-    };
+    let score = row && row.score != null ? Number(row.score) : 0;
+    if (!Number.isFinite(score)) score = 0;
+    let max = Number(sub.max);
+    if (!Number.isFinite(max) || max < 0) max = 0;
+    const key = sub.roundId != null ? sub.roundId : sub.roundName;
+    if (!rounds.has(key)) {
+      rounds.set(key, { roundName: sub.roundName, score: 0, max: 0 });
+      order.push(key);
+    }
+    const r = rounds.get(key);
+    r.score += score;
+    r.max += max;
   });
+  return order.map(key => rounds.get(key));
 };
 
 const createReportPdfAttachment = async ({ event, student, rows, total, rank, totalParticipants, comment }) => {
@@ -745,12 +754,13 @@ const createReportPdfAttachment = async ({ event, student, rows, total, rank, to
 // ---- Score reports (HTML email + in-app notification) ----
 
 const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticipants, comment }) => {
+  const displayTotal = rows.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
+  const displayMax = rows.reduce((sum, r) => sum + (Number(r.max) || 0), 0);
   const rowsHtml = rows.map(r => `
     <tr>
-      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;">${escHtml(r.roundName)}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;">${escHtml(r.name)}${r.comment ? `<div style="margin-top:4px;color:#64748b;font-size:12px;font-style:italic;line-height:1.6;white-space:pre-wrap;">${escHtml(r.comment)}</div>` : ''}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:14px;font-weight:700;text-align:center;">${r.score == null ? '-' : formatScoreValue(r.score)}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px;text-align:center;">${r.max == null ? '-' : formatScoreValue(r.max)}</td>
+      <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;font-weight:600;">${escHtml(r.roundName)}</td>
+      <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:15px;font-weight:700;text-align:center;">${formatScoreValue(r.score)}</td>
+      <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px;text-align:center;">${formatScoreValue(r.max)}</td>
     </tr>`).join('');
 
   const commentText = String(comment == null ? '' : comment).trim();
@@ -787,7 +797,6 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
           <table width="100%" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;border-collapse:collapse;">
             <tr style="background-color:#f8fafc;">
               <th style="padding:12px 14px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Round</th>
-              <th style="padding:12px 14px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Criterion</th>
               <th style="padding:12px 14px;text-align:center;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Score</th>
               <th style="padding:12px 14px;text-align:center;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Max</th>
             </tr>
@@ -798,7 +807,7 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
           <table width="100%" style="background:linear-gradient(135deg,#06b6d4,#0891b2);border-radius:14px;">
             <tr>
               <td style="padding:18px 22px;color:#ffffff;font-size:15px;font-weight:700;">Total Score</td>
-              <td style="padding:18px 22px;color:#ffffff;font-size:22px;font-weight:800;text-align:right;">${formatScoreValue(total)}${rank ? ` <span style="font-size:13px;font-weight:600;opacity:0.9;">(Rank ${rank} of ${totalParticipants})</span>` : ''}</td>
+              <td style="padding:18px 22px;color:#ffffff;font-size:22px;font-weight:800;text-align:right;">${formatScoreValue(displayTotal)} <span style="font-size:13px;font-weight:600;opacity:0.9;">/ ${formatScoreValue(displayMax)}</span>${rank ? ` <span style="font-size:13px;font-weight:600;opacity:0.9;">(Rank ${rank} of ${totalParticipants})</span>` : ''}</td>
             </tr>
           </table>
         </td></tr>
@@ -865,7 +874,7 @@ const sendStudentScoreReports = async (req, res) => {
         continue;
       }
 
-      const rows = buildStudentRows(orderedSubs, own);
+      const rows = buildRoundRows(orderedSubs, own);
       const total = totals.get(student.registration_id) || 0;
       const rank = rankMap.get(student.registration_id) || null;
       const comment = commentMap.get(student.registration_id) || '';
@@ -951,7 +960,7 @@ const getStudentScoreReportPdf = async (req, res) => {
       return res.status(400).json({ message: 'No scores entered for this student yet.' });
     }
 
-    const rows = buildStudentRows(orderedSubs, own);
+    const rows = buildRoundRows(orderedSubs, own);
     const total = totals.get(student.registration_id) || 0;
     const rank = rankMap.get(student.registration_id) || null;
     const { data: commentRow } = await supabase

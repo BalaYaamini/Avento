@@ -27,9 +27,8 @@ const RANK_SUB = rgb(0.741, 0.812, 0.843);
 
 const TABLE_TOP = PAGE_H - 446;
 const TABLE_COLS = {
-  round: { x: MARGIN, w: 115 },
-  criterion: { x: MARGIN + 115, w: 175 },
-  performance: { x: MARGIN + 290, w: 150 },
+  round: { x: MARGIN, w: 175 },
+  performance: { x: MARGIN + 175, w: 285 },
   score: { x: PAGE_W - MARGIN }
 };
 const ROW_H = 36;
@@ -253,7 +252,6 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
 
   const drawTableHeader = (page, topY) => {
     drawText(page, 'ROUND', TABLE_COLS.round.x, topY - 14, { size: 7, font: bold, color: MUTED });
-    drawText(page, 'CRITERION', TABLE_COLS.criterion.x, topY - 14, { size: 7, font: bold, color: MUTED });
     drawText(page, 'PERFORMANCE', TABLE_COLS.performance.x, topY - 14, { size: 7, font: bold, color: MUTED });
     drawText(page, 'SCORE', TABLE_COLS.score.x, topY - 14, { size: 7, font: bold, color: MUTED, align: 'right' });
     page.drawLine({
@@ -273,14 +271,7 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     const barY = midY + barH / 2;
 
     item.roundLines.forEach((line, i) => {
-      drawText(page, line, TABLE_COLS.round.x, topY - 16 - i * 11, { size: 9, color: SLATE });
-    });
-    item.nameLines.forEach((line, i) => {
-      drawText(page, line, TABLE_COLS.criterion.x, topY - 16 - i * 11, { size: 9.5, font: bold, color: NAVY });
-    });
-    const commentStartY = topY - 16 - item.nameLines.length * 11 - 1;
-    item.lines.forEach((line, i) => {
-      drawText(page, line, TABLE_COLS.criterion.x, commentStartY - i * 10, { size: 7, color: MUTED });
+      drawText(page, line, TABLE_COLS.round.x, topY - 16 - i * 11, { size: 10, font: bold, color: NAVY, maxWidth: TABLE_COLS.round.w - 12 });
     });
 
     drawRoundRect(page, barX, barY, barW, barH, barH / 2, TRACK);
@@ -291,7 +282,7 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
       if (frac > 0) drawRoundRect(page, barX, barY, Math.max(barH, barW * frac), barH, barH / 2, TEAL);
     }
 
-    drawText(page, scoreNum == null ? '-' : formatScore(scoreNum), TABLE_COLS.score.x, midY + 5, { size: 12, font: bold, color: NAVY, align: 'right' });
+    drawText(page, scoreNum == null ? '-' : formatScore(scoreNum), TABLE_COLS.score.x, midY + 5, { size: 13, font: bold, color: NAVY, align: 'right' });
     const maxLabel = row.max == null || row.max === '' ? '-' : formatScore(maxNum);
     drawText(page, `of ${maxLabel}`, TABLE_COLS.score.x, midY - 9, { size: 7.5, color: MUTED, align: 'right' });
 
@@ -311,17 +302,13 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
   const firstRowTop = TABLE_TOP - TABLE_HEAD_H;
   const contTableTop = PAGE_H - 84;
   const contRowTop = contTableTop - TABLE_HEAD_H;
-  const commentLineH = 10;
   const nameLineH = 11;
-  const rowCommentWidth = TABLE_COLS.criterion.w - 12;
   const rowItems = safeRows.map(row => {
-    const roundLines = wrapText(regular, String(row.roundName == null ? '' : row.roundName), 9, TABLE_COLS.round.w - 12);
-    const nameLines = wrapText(bold, String(row.name == null ? '' : row.name), 9.5, rowCommentWidth);
-    const lines = row.comment ? wrapText(regular, String(row.comment), 7, rowCommentWidth) : [];
-    const extraNameLines = Math.max(Math.max(nameLines.length, roundLines.length) - 1, 0);
-    const textBottom = 16 + extraNameLines * nameLineH + lines.length * commentLineH + 3;
+    const roundLines = wrapText(bold, String(row.roundName == null ? '' : row.roundName), 10, TABLE_COLS.round.w - 12);
+    const extraNameLines = Math.max(roundLines.length - 1, 0);
+    const textBottom = 16 + extraNameLines * nameLineH + 3;
     const mid = (9 + Math.max(31, textBottom)) / 2;
-    return { row, roundLines, nameLines, lines, mid, h: ROW_H + extraNameLines * nameLineH + lines.length * commentLineH };
+    return { row, roundLines, mid, h: ROW_H + extraNameLines * nameLineH };
   });
 
   const chunks = [];

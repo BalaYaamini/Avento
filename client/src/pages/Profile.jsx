@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Cropper from 'react-easy-crop';
 import axios from 'axios';
 
@@ -517,9 +517,6 @@ const Profile = () => {
             </button>
           </form>
         </div>
-        <Link to="/scoring-events" className="mt-5 flex items-center justify-between rounded-2xl border border-cyan-200 bg-cyan-50/60 p-5 transition hover:bg-cyan-100">
-          <div><h2 className="font-display text-sm font-bold text-cyan-800">Event Scoring</h2><p className="mt-1 text-xs text-cyan-600">View scoreboards published for participants.</p></div><span className="text-xl font-bold text-cyan-600">→</span>
-        </Link>
 
       </div>
 
