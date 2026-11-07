@@ -1258,7 +1258,8 @@ ${proposer}`
                       type="number"
                       min="1"
                       max="7"
-                      className="w-full sm:max-w-[160px] p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none"
+                      disabled
+                      className="w-full sm:max-w-[160px] p-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-fuchsia-500 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                       value={editFormData.durationDays}
                       onChange={(e) => setEditFormData({...editFormData, durationDays: e.target.value})}
                     />

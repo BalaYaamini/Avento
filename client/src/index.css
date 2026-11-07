@@ -2213,3 +2213,61 @@ html[data-theme="dark"] .theme-toggle-float:hover,
   border-color: rgba(6, 182, 212, 0.5);
   box-shadow: 0 4px 15px rgba(6, 182, 212, 0.2);
 }
+
+/* Score drag sliders — keep them out of the generic input chrome so the
+   track maps exactly 0 (empty) .. max (full). */
+input.score-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent !important;
+  background-image: linear-gradient(to right, #6366f1 0%, #6366f1 var(--fill, 0%), #e2e8f0 var(--fill, 0%), #e2e8f0 100%);
+  background-size: 100% 8px;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 0 !important;
+  border-radius: 0;
+  padding: 0 !important;
+  height: 28px;
+  box-shadow: none !important;
+  outline: none;
+}
+input.score-slider:focus-visible {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
+}
+input.score-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
+}
+input.score-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: #4f46e5;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+  cursor: pointer;
+}
+input.score-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
+}
+input.score-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #4f46e5;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+  cursor: pointer;
+}
+.score-slider-ends {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  line-height: 1;
+}

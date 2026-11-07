@@ -2,20 +2,48 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-const clampScoreInput = (value, maxValue) => {
-  const raw = String(value ?? '').trim();
-  if (raw === '') return '';
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return '';
-  const max = Number(maxValue);
-  const upper = Number.isFinite(max) && max >= 0 ? max : n;
-  return String(Math.min(Math.max(n, 0), upper));
-};
-
 const formatSaveErrors = (errors) => {
   const list = (Array.isArray(errors) ? errors : []).map(e => e.error || 'Invalid score');
   const unique = [...new Set(list)];
   return `${list.length} score(s) could not be saved: ${unique.slice(0, 3).join('; ')}${unique.length > 3 ? ' ...' : ''}`;
+};
+
+const READINESS_BANDS = [
+  {
+    maxScore: 24,
+    band: 'Needs Intensive Support',
+    text: 'Not yet placement ready. Requires structured technical and soft-skills training, guided practice and a repeat mock interview.'
+  },
+  {
+    maxScore: 34,
+    band: 'Developing \u2013 Needs Coaching',
+    text: 'Has basic technical and communication skills, but noticeable gaps remain. Needs targeted coaching in weaker areas and a repeat assessment in 3\u20134 weeks.'
+  },
+  {
+    maxScore: 42,
+    band: 'Good \u2013 Almost There',
+    text: 'Demonstrates a good technical foundation and professional readiness. Improve one or two weaker areas through focused practice before company drives.'
+  },
+  {
+    maxScore: 50,
+    band: 'Outstanding \u2013 Placement Ready',
+    text: 'Demonstrates strong technical ability, problem-solving, communication and professional readiness. Ready to face company interviews; focus on polishing and maintaining consistency.'
+  }
+];
+
+const formatReadinessComment = (entry) => `Readiness Band: ${entry.band}\n\n${entry.text}`;
+
+const isDefaultComment = (value) => {
+  const normalized = String(value ?? '').trim();
+  return normalized === '' || READINESS_BANDS.some(entry => formatReadinessComment(entry) === normalized);
+};
+
+const getReadinessComment = (total, maxTotal) => {
+  const raw = Number(total) || 0;
+  const scaled = Number(maxTotal) > 0 ? (raw / Number(maxTotal)) * 50 : raw;
+  const clamped = Math.max(0, Math.min(50, scaled));
+  const entry = READINESS_BANDS.find(band => clamped <= band.maxScore) || READINESS_BANDS[READINESS_BANDS.length - 1];
+  return formatReadinessComment(entry);
 };
 
 const StudentScoreCard = () => {
@@ -29,7 +57,7 @@ const StudentScoreCard = () => {
   const [comment, setComment] = useState('');
   const [savingComment, setSavingComment] = useState(false);
   const pendingSaves = useRef({});
-  const [pendingCount, setPendingCount] = useState(0);
+  const saveTimer = useRef(null);
 
   const load = async () => {
     try {
@@ -59,10 +87,13 @@ const StudentScoreCard = () => {
   useEffect(() => { load(); }, [eventId, registrationId]);
 
   const flushPendingSaves = useCallback(async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     const entries = Object.entries(pendingSaves.current);
     if (entries.length === 0) return;
     pendingSaves.current = {};
-    setPendingCount(0);
     const scores = entries.map(([key, value]) => {
       const [regId, subroundId] = key.split(':');
       return { registrationId: regId, subroundId, score: value.score, comment: value.comment };
@@ -81,15 +112,24 @@ const StudentScoreCard = () => {
 
   const saveRow = useCallback((subroundId, scoreValue, commentValue) => {
     pendingSaves.current[`${registrationId}:${subroundId}`] = { score: scoreValue, comment: commentValue };
-    setPendingCount(Object.keys(pendingSaves.current).length);
-  }, [registrationId]);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      flushPendingSaves();
+    }, 500);
+  }, [registrationId, flushPendingSaves]);
 
-  const commitScore = (event, subround) => {
-    const clamped = clampScoreInput(event.target.value, subround.max_score);
-    if (clamped !== event.target.value) {
-      setValues(prev => ({ ...prev, [subround.id]: clamped }));
-      alert(`Score must be between 0 and ${subround.max_score}. Value adjusted to ${clamped === '' ? 'blank' : clamped}.`);
-    }
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (Object.keys(pendingSaves.current).length > 0) flushPendingSaves();
+  }, [flushPendingSaves]);
+
+  const commitScore = (subround, rawValue) => {
+    const max = Number(subround.max_score);
+    const upper = Number.isFinite(max) && max >= 0 ? max : 0;
+    const parsed = Math.round(Number(rawValue));
+    const clamped = Math.min(Math.max(Number.isFinite(parsed) ? parsed : 0, 0), upper);
+    setValues(prev => ({ ...prev, [subround.id]: clamped }));
     saveRow(subround.id, clamped, comments[subround.id] ?? '');
   };
 
@@ -110,6 +150,16 @@ const StudentScoreCard = () => {
     () => subrounds.reduce((sum, subround) => sum + (Number(values[subround.id]) || 0), 0),
     [subrounds, values]
   );
+
+  const maxTotal = useMemo(
+    () => subrounds.reduce((sum, subround) => sum + (Number(subround.max_score) || 0), 0),
+    [subrounds]
+  );
+
+  useEffect(() => {
+    if (!card?.canEdit) return;
+    setComment(prev => (isDefaultComment(prev) ? getReadinessComment(total, maxTotal) : prev));
+  }, [card?.canEdit, total, maxTotal]);
 
   const saveComment = async () => {
     setSavingComment(true);
@@ -198,7 +248,6 @@ const StudentScoreCard = () => {
                   <div className="text-2xl font-black">{total} pts</div>
                   {card?.rank && <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-100/80">Rank #{card.rank} of {card.total_participants}</div>}
                 </div>
-                {pendingCount > 0 && <button type="button" onClick={flushPendingSaves} className="rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white shadow-lg hover:bg-emerald-600 animate-pulse">{pendingCount} unsaved - Click to Save</button>}
                 {card?.canEdit && <button type="button" onClick={sendReport} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">Email Report</button>}
                 <button type="button" onClick={downloadReportPdf} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">Download PDF</button>
               </div>
@@ -229,26 +278,30 @@ const StudentScoreCard = () => {
                         <td className="p-4 font-bold text-slate-700 dark:text-slate-200">{subround.name}</td>
                         <td className="p-2 text-center">
                           {card?.canEdit ? (
-                            <input
-                              type="number"
-                              min="0"
-                              max={subround.max_score}
-                              value={values[subround.id] ?? ''}
-                              onChange={event => setValues(prev => ({ ...prev, [subround.id]: event.target.value }))}
-                              onBlur={event => commitScore(event, subround)}
-                              onKeyDown={event => {
-                                if (event.key === 'Tab' || event.key === 'Enter') {
-                                  commitScore(event, subround);
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    const inputs = Array.from(event.target.closest('table').querySelectorAll('input[type=number]'));
-                                    const idx = inputs.indexOf(event.target);
-                                    if (idx < inputs.length - 1) inputs[idx + 1].focus();
-                                  }
-                                }
-                              }}
-                              className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-2 text-center font-bold text-slate-700 focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                            />
+                            (() => {
+                              const maxScore = Math.max(0, Number(subround.max_score) || 0);
+                              const rawScore = Number(values[subround.id]);
+                              const score = Math.min(Math.max(Number.isFinite(rawScore) ? Math.round(rawScore) : 0, 0), maxScore);
+                              const fillPercent = maxScore > 0 ? (score / maxScore) * 100 : 0;
+                              return (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="score-slider-ends">0</span>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max={maxScore}
+                                    step="1"
+                                    value={score}
+                                    onChange={event => commitScore(subround, event.target.value)}
+                                    aria-label={`${subround.name} score out of ${maxScore}`}
+                                    style={{ '--fill': `${fillPercent}%` }}
+                                    className="score-slider w-24 cursor-pointer sm:w-32"
+                                  />
+                                  <span className="score-slider-ends">{maxScore}</span>
+                                  <span className="inline-flex h-7 min-w-[2rem] items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50 px-1.5 text-xs font-black text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300">{score}</span>
+                                </div>
+                              );
+                            })()
                           ) : (
                             <span className="font-semibold text-slate-600 dark:text-slate-300">{values[subround.id] ?? '-'}</span>
                           )}

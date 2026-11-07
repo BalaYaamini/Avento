@@ -60,12 +60,23 @@ const wrapText = (font, text, size, maxWidth, maxLines = 45) => {
     }
     let line = '';
     words.forEach(word => {
-      const candidate = line ? `${line} ${word}` : word;
+      let w = word;
+      while (w.length > 1 && font.widthOfTextAtSize(w, size) > maxWidth) {
+        let cut = w.length - 1;
+        while (cut > 1 && font.widthOfTextAtSize(w.slice(0, cut), size) > maxWidth) cut -= 1;
+        if (line) {
+          lines.push(line);
+          line = '';
+        }
+        lines.push(w.slice(0, cut));
+        w = w.slice(cut);
+      }
+      const candidate = line ? `${line} ${w}` : w;
       if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
         line = candidate;
       } else {
         if (line) lines.push(line);
-        line = word;
+        line = w;
       }
     });
     if (line) lines.push(line);
@@ -122,6 +133,14 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     }
   }
 
+  let universityLogo = null;
+  try {
+    const uniBytes = fs.readFileSync(path.resolve(__dirname, '../../client/public', 'sreenidhi-university.png'));
+    universityLogo = await doc.embedPng(uniBytes);
+  } catch (e) {
+    universityLogo = null;
+  }
+
   const generatedAt = new Date().toLocaleString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
@@ -134,9 +153,8 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
 
   // Results derived from the breakdown itself so the summary always matches the table
   const totalScore = safeRows.reduce((sum, r) => sum + (r.score == null || r.score === '' ? 0 : num(r.score)), 0);
-  const displayTotal = totalScore || num(total);
+  const displayTotal = totalScore;
   const maxTotal = safeRows.reduce((sum, r) => sum + Math.max(0, num(r.max)), 0);
-  const percentage = maxTotal > 0 ? (displayTotal / maxTotal) * 100 : 0;
   const fraction = maxTotal > 0 ? Math.min(Math.max(displayTotal / maxTotal, 0), 1) : 0;
 
   const drawText = (page, text, x, y, opts = {}) => {
@@ -165,6 +183,13 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     page.drawImage(logo, { x: x + (w - lw) / 2, y: yBottom + (h - lh) / 2, width: lw, height: lh });
   };
 
+  const drawUniversityLogo = (page, rightX, topY, height) => {
+    if (!universityLogo) return;
+    const dims = universityLogo.scale(1);
+    const w = dims.width * (height / dims.height);
+    page.drawImage(universityLogo, { x: rightX - w, y: topY - height, width: w, height });
+  };
+
   const drawFullHeader = (page) => {
     page.drawRectangle({ x: 0, y: PAGE_H - 112, width: PAGE_W, height: 112, color: HEADER_BG });
     page.drawCircle({ x: PAGE_W - 62, y: PAGE_H - 12, size: 96, color: HEADER_BLOB });
@@ -174,8 +199,7 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     drawLogo(page, 44, PAGE_H - 92, 68, 68, 2);
     drawText(page, 'AVENTO', 126, PAGE_H - 58, { size: 26, font: bold, color: NAVY });
     drawText(page, 'SMART CAMPUS EVENT MANAGEMENT', 127, PAGE_H - 73, { size: 7, color: SLATE });
-    drawText(page, 'SCORE REPORT', PAGE_W - 40, PAGE_H - 54, { size: 14, font: bold, color: TEAL_TEXT, align: 'right' });
-    drawText(page, 'Evaluation Scorecard', PAGE_W - 40, PAGE_H - 70, { size: 8.5, color: SLATE, align: 'right' });
+    drawUniversityLogo(page, PAGE_W - 40, PAGE_H - 37, 42);
   };
 
   const drawContinuationHeader = (page) => {
@@ -186,24 +210,23 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
 
     drawLogo(page, 40, PAGE_H - 45, 34, 34, 1);
     drawText(page, 'AVENTO', 82, PAGE_H - 34, { size: 13, font: bold, color: NAVY });
-    drawText(page, `${student.name || 'Student'} - Score Report (continued)`, PAGE_W - 40, PAGE_H - 33, { size: 8.5, color: SLATE, align: 'right' });
+    drawUniversityLogo(page, PAGE_W - 40, PAGE_H - 12, 20);
+    drawText(page, `${student.name || 'Student'} - Score Report (continued)`, PAGE_W - 40, PAGE_H - 46, { size: 8.5, color: SLATE, align: 'right' });
   };
 
   const drawTitleBlock = (page) => {
     drawText(page, event.title || 'Event', MARGIN, PAGE_H - 158, { size: 22, font: bold, color: NAVY, maxWidth: CONTENT_W });
     const name = student.name || 'Student';
-    const panel = student.panel_name || 'Not assigned';
-    drawText(page, `Score report for ${name}      Panel: ${panel}`, MARGIN, PAGE_H - 176, { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
+    drawText(page, `Score report for ${name}`, MARGIN, PAGE_H - 176, { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
   };
 
   const drawInfoCard = (page) => {
     const top = PAGE_H - 200;
     drawRoundRect(page, MARGIN, top, CONTENT_W, 64, 10, CARD_BG, BORDER, 1);
     const cols = [
-      { label: 'NAME', x: MARGIN + 18, value: student.name || 'Unknown Student', w: 125 },
-      { label: 'ROLL NO', x: MARGIN + 152, value: student.roll_number || '-', w: 130 },
-      { label: 'DEPARTMENT', x: MARGIN + 292, value: student.department || '-', w: 110 },
-      { label: 'PANEL', x: MARGIN + 412, value: student.panel_name || 'Not assigned', w: 90 }
+      { label: 'NAME', x: MARGIN + 18, value: student.name || 'Unknown Student', w: 185 },
+      { label: 'ROLL NO', x: MARGIN + 215, value: student.roll_number || '-', w: 125 },
+      { label: 'DEPARTMENT', x: MARGIN + 355, value: student.department || '-', w: 142 }
     ];
     cols.forEach(col => {
       drawText(page, col.label, col.x, top - 22, { size: 6.5, font: bold, color: MUTED });
@@ -211,44 +234,21 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     });
   };
 
-  const drawDonut = (page) => {
-    const cx = 122;
-    const cy = PAGE_H - 338;
-    const ringR = 45;
-    const ringW = 11;
-
-    page.drawSvgPath(fullRingPath(ringR), {
-      x: cx, y: cy, borderColor: TRACK, borderWidth: ringW, color: undefined
-    });
-    if (fraction > 0.001) {
-      page.drawSvgPath(arcPath(ringR, fraction * 360), {
-        x: cx, y: cy, borderColor: TEAL, borderWidth: ringW, borderLineCap: LineCapStyle.Round, color: undefined
-      });
-    }
-
-    const label = formatScore(displayTotal);
-    let numSize = 30;
-    while (numSize > 14 && bold.widthOfTextAtSize(label, numSize) > 84) numSize -= 1;
-    drawText(page, label, cx, cy + 2, { size: numSize, font: bold, color: NAVY, align: 'center' });
-    drawText(page, `out of ${formatScore(maxTotal)}`, cx, cy - 22, { size: 8.5, color: SLATE, align: 'center' });
-  };
-
-  const drawRankCard = (page) => {
-    const x = 214;
-    const top = PAGE_H - 280;
-    drawRoundRect(page, x, top, 186, 116, 12, NAVY_CARD);
-    drawText(page, 'OVERALL RANK', x + 18, top - 28, { size: 7.5, font: bold, color: RANK_LABEL });
-    drawText(page, rank ? `#${rank}` : '#-', x + 18, top - 70, { size: 32, font: bold, color: WHITE });
-    drawText(page, `of ${num(totalParticipants)} participants`, x + 18, top - 94, { size: 8.5, color: RANK_SUB });
-  };
-
-  const drawPercentageCard = (page) => {
-    const x = 410;
-    const top = PAGE_H - 280;
-    drawRoundRect(page, x, top, 145, 116, 12, TEAL_PALE);
-    drawText(page, 'PERCENTAGE', x + 18, top - 28, { size: 7.5, font: bold, color: SLATE });
-    drawText(page, `${formatScore(percentage)}%`, x + 18, top - 68, { size: 26, font: bold, color: TEAL });
-    drawText(page, `${formatScore(displayTotal)} / ${formatScore(maxTotal)} marks`, x + 18, top - 92, { size: 8.5, color: SLATE, maxWidth: 115 });
+  const drawTotalCard = (page) => {
+    const top = PAGE_H - 296;
+    const h = 92;
+    drawRoundRect(page, MARGIN, top, CONTENT_W, h, 12, TEAL_PALE, BORDER, 1);
+    drawText(page, 'TOTAL SCORE', MARGIN + 20, top - 24, { size: 7.5, font: bold, color: SLATE });
+    const valueStr = formatScore(displayTotal);
+    drawText(page, valueStr, MARGIN + 20, top - 60, { size: 28, font: bold, color: TEAL });
+    const valueW = bold.widthOfTextAtSize(valueStr, 28);
+    drawText(page, `/ ${formatScore(maxTotal)} marks`, MARGIN + 20 + valueW + 8, top - 60, { size: 12, color: SLATE });
+    const barX = MARGIN + 20;
+    const barY = top - 76;
+    const barW = CONTENT_W - 40;
+    const barH = 8;
+    drawRoundRect(page, barX, barY, barW, barH, barH / 2, TRACK);
+    if (fraction > 0.001) drawRoundRect(page, barX, barY, Math.max(barH, barW * fraction), barH, barH / 2, TEAL);
   };
 
   const drawTableHeader = (page, topY) => {
@@ -269,12 +269,18 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     const barX = TABLE_COLS.performance.x;
     const barW = TABLE_COLS.performance.w;
     const barH = 8;
-    const barY = topY - 23;
+    const midY = topY - item.mid;
+    const barY = midY + barH / 2;
 
-    drawText(page, row.roundName, TABLE_COLS.round.x, topY - 16, { size: 9, color: SLATE, maxWidth: TABLE_COLS.round.w - 10 });
-    drawText(page, row.name, TABLE_COLS.criterion.x, topY - 16, { size: 9.5, font: bold, color: NAVY, maxWidth: TABLE_COLS.criterion.w - 10 });
+    item.roundLines.forEach((line, i) => {
+      drawText(page, line, TABLE_COLS.round.x, topY - 16 - i * 11, { size: 9, color: SLATE });
+    });
+    item.nameLines.forEach((line, i) => {
+      drawText(page, line, TABLE_COLS.criterion.x, topY - 16 - i * 11, { size: 9.5, font: bold, color: NAVY });
+    });
+    const commentStartY = topY - 16 - item.nameLines.length * 11 - 1;
     item.lines.forEach((line, i) => {
-      drawText(page, line, TABLE_COLS.criterion.x, topY - 28 - i * 10, { size: 7, color: MUTED, maxWidth: TABLE_COLS.criterion.w - 12 });
+      drawText(page, line, TABLE_COLS.criterion.x, commentStartY - i * 10, { size: 7, color: MUTED });
     });
 
     drawRoundRect(page, barX, barY, barW, barH, barH / 2, TRACK);
@@ -285,9 +291,9 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
       if (frac > 0) drawRoundRect(page, barX, barY, Math.max(barH, barW * frac), barH, barH / 2, TEAL);
     }
 
-    drawText(page, scoreNum == null ? '-' : formatScore(scoreNum), TABLE_COLS.score.x, topY - 15, { size: 12, font: bold, color: NAVY, align: 'right' });
+    drawText(page, scoreNum == null ? '-' : formatScore(scoreNum), TABLE_COLS.score.x, midY + 5, { size: 12, font: bold, color: NAVY, align: 'right' });
     const maxLabel = row.max == null || row.max === '' ? '-' : formatScore(maxNum);
-    drawText(page, `of ${maxLabel}`, TABLE_COLS.score.x, topY - 28, { size: 7.5, color: MUTED, align: 'right' });
+    drawText(page, `of ${maxLabel}`, TABLE_COLS.score.x, midY - 9, { size: 7.5, color: MUTED, align: 'right' });
 
     page.drawLine({
       start: { x: MARGIN, y: topY - item.h },
@@ -306,10 +312,16 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
   const contTableTop = PAGE_H - 84;
   const contRowTop = contTableTop - TABLE_HEAD_H;
   const commentLineH = 10;
+  const nameLineH = 11;
   const rowCommentWidth = TABLE_COLS.criterion.w - 12;
   const rowItems = safeRows.map(row => {
-    const lines = row.comment ? wrapText(regular, String(row.comment), 7, rowCommentWidth, 4) : [];
-    return { row, lines, h: ROW_H + lines.length * commentLineH };
+    const roundLines = wrapText(regular, String(row.roundName == null ? '' : row.roundName), 9, TABLE_COLS.round.w - 12);
+    const nameLines = wrapText(bold, String(row.name == null ? '' : row.name), 9.5, rowCommentWidth);
+    const lines = row.comment ? wrapText(regular, String(row.comment), 7, rowCommentWidth) : [];
+    const extraNameLines = Math.max(Math.max(nameLines.length, roundLines.length) - 1, 0);
+    const textBottom = 16 + extraNameLines * nameLineH + lines.length * commentLineH + 3;
+    const mid = (9 + Math.max(31, textBottom)) / 2;
+    return { row, roundLines, nameLines, lines, mid, h: ROW_H + extraNameLines * nameLineH + lines.length * commentLineH };
   });
 
   const chunks = [];
@@ -340,9 +352,7 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
       drawFullHeader(page);
       drawTitleBlock(page);
       drawInfoCard(page);
-      drawDonut(page);
-      drawRankCard(page);
-      drawPercentageCard(page);
+      drawTotalCard(page);
       drawText(page, 'Score breakdown', MARGIN, PAGE_H - 430, { size: 13, font: bold, color: NAVY });
       drawTableHeader(page, TABLE_TOP);
       y = firstRowTop;
@@ -365,7 +375,7 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     const commentLines = wrapText(regular, commentText, 9.5, commentWidth);
     const commentLineH = 14;
     const commentHeadH = 30;
-    const commentH = commentHeadH + Math.max(1, commentLines.length) * commentLineH + 16;
+    const commentH = commentHeadH + (Math.max(1, commentLines.length) - 1) * commentLineH + 19;
 
     const drawComment = (page, topY) => {
       drawRoundRect(page, MARGIN, topY, CONTENT_W, commentH, 10, CARD_BG, BORDER, 1);

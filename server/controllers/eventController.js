@@ -920,7 +920,7 @@ const editEvent = async (req, res) => {
     if (durationDaysRaw !== undefined && durationDaysRaw !== null && durationDaysRaw !== '') {
       const parsedDays = parseInt(durationDaysRaw, 10);
       if (!Number.isNaN(parsedDays) && parsedDays >= 1) {
-        updates.duration_days = Math.min(30, parsedDays);
+        // duration_days is preserved on update — editing must not change the number of days.
       }
     }
 
@@ -962,25 +962,9 @@ const editEvent = async (req, res) => {
       .from('events').update(updates).eq('id', id);
     if (updateErr) throw updateErr;
 
-    // Synchronize/reset all slot dates to match the new event date if date was updated
-    if (updates.date) {
-      try {
-        const newEventDate = new Date(updates.date);
-        if (!isNaN(newEventDate.getTime())) {
-          const year = newEventDate.getFullYear();
-          const month = String(newEventDate.getMonth() + 1).padStart(2, '0');
-          const day = String(newEventDate.getDate()).padStart(2, '0');
-          const slotDateStr = `${year}-${month}-${day}`;
-
-          await supabase
-            .from('event_slots')
-            .update({ slot_date: slotDateStr })
-            .eq('event_id', id);
-        }
-      } catch (slotDateErr) {
-        console.warn('Non-fatal error updating slot dates on event date change:', slotDateErr.message);
-      }
-    }
+    // event_slots are intentionally NOT modified on edit. Slot dates are managed
+    // explicitly (Slot Management) and editing the event must leave them untouched.
+    // (Previously this rewrote every slot_date and collapsed multi-day schedules.)
 
     // Re-read to confirm
     const { data: updatedEvent, error: readErr } = await supabase
@@ -3575,7 +3559,7 @@ const updateProposalDescription = async (req, res) => {
     if (durationDaysRaw !== undefined && durationDaysRaw !== null && durationDaysRaw !== '') {
       const parsedDays = parseInt(durationDaysRaw, 10);
       if (!Number.isNaN(parsedDays) && parsedDays >= 1) {
-        updates.duration_days = Math.min(30, parsedDays);
+        // duration_days is preserved on update — editing must not change the number of days.
       }
     }
     

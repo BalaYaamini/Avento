@@ -107,7 +107,9 @@ const fetchEventStudents = async (eventId) => {
       roll_number: prof.roll_number || '',
       department: prof.department || '',
       panel_id: panelId,
-      panel_name: panelId ? (panelMap.get(panelId) || '') : ''
+      panel_name: panelId ? (panelMap.get(panelId) || '') : '',
+      report_email_sent_at: r.report_email_sent_at || null,
+      report_email_sent_to: r.report_email_sent_to || ''
     };
   });
 };
@@ -779,7 +781,6 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
           <p style="margin:0;color:#64748b;font-size:14px;line-height:1.7;">
             <strong style="color:#334155;">${escHtml(student.name)}</strong><br>
             ${student.roll_number ? `Roll No: ${escHtml(student.roll_number)}${student.department ? ` &middot; ${escHtml(student.department)}` : ''}<br>` : ''}
-            ${student.panel_name ? `Panel: ${escHtml(student.panel_name)}` : ''}
           </p>
         </td></tr>
         <tr><td style="padding:18px 40px;">
@@ -883,6 +884,16 @@ const sendStudentScoreReports = async (req, res) => {
             htmlBody: buildScoreReportHtml({ event, student, rows, total, rank, totalParticipants: totals.size, comment }),
             attachments
           });
+          // Record that the report email was sent (non-fatal if tracking columns are absent).
+          try {
+            const { error: trackErr } = await supabase
+              .from('event_registrations')
+              .update({ report_email_sent_at: new Date().toISOString(), report_email_sent_to: student.email })
+              .eq('id', student.registration_id);
+            if (trackErr) console.warn('Score report email tracking not recorded:', trackErr.message);
+          } catch (trackErr) {
+            console.warn('Score report email tracking not recorded:', trackErr.message);
+          }
         }
         await sendInAppNotification({
           recipientId: student.user_id,

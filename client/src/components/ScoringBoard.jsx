@@ -198,9 +198,23 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }
   };
 
+  const markReportsSent = (sentList) => {
+    const sentIds = new Set((sentList || []).map(s => String(s.registrationId)));
+    if (sentIds.size === 0) return;
+    setData(previous => ({
+      ...previous,
+      students: (previous.students || []).map(stu => (
+        sentIds.has(String(stu.registration_id))
+          ? { ...stu, report_email_sent_at: new Date().toISOString(), report_email_sent_to: stu.report_email_sent_to || stu.email || '' }
+          : stu
+      ))
+    }));
+  };
+
   const sendReports = async (registrationIds) => {
     try {
       const res = await axios.post(`/api/events/${eventId}/scoring/reports`, registrationIds ? { registrationIds } : {});
+      markReportsSent(res.data?.sent);
       alert(res.data?.message || 'Score reports sent.');
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to send score reports.');
@@ -544,6 +558,9 @@ const ScoringBoard = ({ eventId, canEdit }) => {
                   {detailStudents.map(student => {
                     const total = subrounds.reduce((sum, subround) => sum + Number(studentScoresMap[`${student.registration_id}:${subround.id}`] || 0), 0);
                     const editable = canScoreStudent(student.registration_id);
+                    const sentAt = student.report_email_sent_at || null;
+                    const sentTo = student.report_email_sent_to || student.email || '';
+                    const sentLabel = sentTo ? `Sent to ${sentTo} on ${new Date(sentAt).toLocaleString()}` : 'Report emailed';
                     return (
                       <tr key={student.registration_id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/30">
                         <td className="sticky left-0 bg-white dark:bg-slate-950 p-4">
@@ -585,9 +602,20 @@ const ScoringBoard = ({ eventId, canEdit }) => {
                         {canSendReports && (
                           <td className="border-l border-slate-100 dark:border-slate-800 p-2 text-center">
                             <div className="flex items-center justify-center gap-1.5">
-                              <button onClick={() => sendReports([student.registration_id])} className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[10px] font-bold text-indigo-600 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">Send</button>
+                              <button
+                                onClick={() => sendReports([student.registration_id])}
+                                title={sentAt ? `${sentLabel}. Click to resend.` : `Email the score report to ${sentTo || 'this student'}`}
+                                className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold ${sentAt ? 'border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'}`}
+                              >
+                                {sentAt ? 'Resend' : 'Send'}
+                              </button>
                               <button onClick={() => downloadReportPdf(student.registration_id, student.name)} className="rounded-lg border border-cyan-200 bg-cyan-50 px-2.5 py-1.5 text-[10px] font-bold text-cyan-600 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-300">PDF</button>
                             </div>
+                            {sentAt && (
+                              <div className="mt-1 truncate text-[9px] text-emerald-600 dark:text-emerald-400" title={sentLabel}>
+                                ✓ {sentTo || 'Sent'}
+                              </div>
+                            )}
                           </td>
                         )}
                       </tr>

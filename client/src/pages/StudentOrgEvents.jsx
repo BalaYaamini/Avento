@@ -1361,7 +1361,8 @@ const [feedbackQuestions, setFeedbackQuestions] = useState([]);
                   max="7"
                   value={durationDays}
                   onChange={(e) => setDurationDays(e.target.value)}
-                  className="w-full sm:max-w-[160px] bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300"
+                  disabled={modalMode === 'edit'}
+                  className="w-full sm:max-w-[160px] bg-white/60 text-slate-800 border border-slate-300/50 rounded-xl px-4 py-2.5 text-sm font-body focus:outline-none focus:border-cyan-500/60 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">For 2+ day events, slot management will ask for Day 1, Day 2… slots separately.</p>
               </div>
