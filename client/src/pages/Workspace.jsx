@@ -17,6 +17,7 @@ import TeamAllocation from '../components/TeamAllocation';
 import AdminCreateTeamModal from '../components/AdminCreateTeamModal';
 import ScoringBoard from '../components/ScoringBoard';
 import ConfirmationEmailModal from '../components/ConfirmationEmailModal';
+import ReminderEmailModal from '../components/ReminderEmailModal';
 import IDCardManager from '../components/IDCardManager';
 import OrganizerPeriodicAttendance from '../components/OrganizerPeriodicAttendance';
 import ReviewDiscussionTab from '../components/ReviewDiscussionTab';
@@ -83,6 +84,7 @@ const Workspace = () => {
   // Admin Actions State
   const [isAdminCreateTeamOpen, setIsAdminCreateTeamOpen] = useState(false);
   const [isConfirmationEmailModalOpen, setIsConfirmationEmailModalOpen] = useState(false);
+  const [isReminderEmailModalOpen, setIsReminderEmailModalOpen] = useState(false);
 
   const handleAdminCloseRegistrations = async () => {
     if (!event || !window.confirm(`Manually close registrations for "${event.title}"?`)) {
@@ -608,6 +610,22 @@ const Workspace = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     <span>Customize Confirmation Email</span>
+                  </button>
+                )}
+
+                {isSuperUser && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      setIsReminderEmailModalOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Event Reminder Emails</span>
                   </button>
                 )}
 
@@ -1710,6 +1728,16 @@ const Workspace = () => {
         <ConfirmationEmailModal
           isOpen={isConfirmationEmailModalOpen}
           onClose={() => setIsConfirmationEmailModalOpen(false)}
+          eventId={eventId}
+          event={event}
+          onUpdate={() => fetchWorkspaceData(true)}
+        />
+      )}
+
+      {event && (
+        <ReminderEmailModal
+          isOpen={isReminderEmailModalOpen}
+          onClose={() => setIsReminderEmailModalOpen(false)}
           eventId={eventId}
           event={event}
           onUpdate={() => fetchWorkspaceData(true)}

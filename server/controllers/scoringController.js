@@ -55,6 +55,27 @@ const getPanelScoreAccess = async (eventId, userId) => {
   return { panels, registrationIds };
 };
 
+// Profiles lookup in chunks of 200. A single .in('id', [hundreds of UUIDs])
+// overflows the HTTP header limit (~16KB URL) and silently returns nothing,
+// which turns every student into "Unknown Student" on large events.
+const fetchProfilesByIds = async (userIds) => {
+  const uniqueIds = [...new Set((userIds || []).map(id => String(id)).filter(Boolean))];
+  const out = [];
+  for (let i = 0; i < uniqueIds.length; i += 200) {
+    const chunk = uniqueIds.slice(i, i + 200);
+    const { data: rows, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, roll_number, department')
+      .in('id', chunk);
+    if (error) {
+      console.warn('[Scoring] Profile lookup chunk failed:', error.message);
+      continue;
+    }
+    out.push(...(rows || []));
+  }
+  return out;
+};
+
 // Active students of the event with profile + panel info (same shape as the panel roster)
 const fetchEventStudents = async (eventId) => {
   const { data: regs } = await supabase
@@ -69,21 +90,14 @@ const fetchEventStudents = async (eventId) => {
   const { data: allPanels } = await supabase.from('event_panels').select('id, name').eq('event_id', eventId);
 
   const userIds = [...new Set((regs || []).map(r => r.user_id).filter(Boolean))];
-  let profiles = [];
-  if (userIds.length > 0) {
-    const { data: profs } = await supabase
-      .from('profiles')
-      .select('id, name, email, roll_number, department')
-      .in('id', userIds);
-    profiles = profs || [];
-  }
+  const profiles = await fetchProfilesByIds(userIds);
 
-  const profileMap = new Map(profiles.map(p => [p.id, p]));
+  const profileMap = new Map(profiles.map(p => [String(p.id), p]));
   const panelMap = new Map((allPanels || []).map(p => [p.id, p.name]));
   const panelByReg = new Map((assigns || []).map(a => [a.registration_id, a.panel_id]));
 
   return (regs || []).map(r => {
-    const prof = profileMap.get(r.user_id) || {};
+    const prof = profileMap.get(String(r.user_id)) || {};
     const panelId = panelByReg.get(r.id) || null;
     return {
       registration_id: r.id,

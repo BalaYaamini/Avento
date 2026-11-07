@@ -107,10 +107,10 @@ const EventPassTicket = ({
   const allocatedRoom = venueEnabled && allocatedRoomRaw && !/^yet to assign$/i.test(allocatedRoomRaw)
     ? allocatedRoomRaw
     : '';
-  const slotRoom = slot?.venue_room ? `Room ${slot.venue_room}` : '';
+  const slotRoom = slot?.venue_room ? `${slot.venue_room}` : '';
   const roomDisplay = allocatedRoom || slotRoom;
   const venueFormatted = event.venue || 'Venue TBD';
-  const fullVenueDisplay = roomDisplay
+  const fullVenueDisplay = roomDisplay && roomDisplay.toLowerCase() !== venueFormatted.toLowerCase()
     ? `${venueFormatted}, ${roomDisplay}`
     : venueFormatted;
 
@@ -118,7 +118,7 @@ const EventPassTicket = ({
   const panelInfo = registration.panel || null;
   const panelName = String(panelInfo?.name || '').trim();
   const panelRoom = String(panelInfo?.venueRoom || '').trim();
-  const panelDisplay = [panelName, panelRoom ? `Room ${panelRoom}` : '']
+  const panelDisplay = [panelName, panelRoom ? `${panelRoom}` : '']
     .filter(Boolean)
     .join(' · ');
   const panelMembers = Array.isArray(panelInfo?.members) ? panelInfo.members : [];

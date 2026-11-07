@@ -3849,6 +3849,45 @@ const deleteConfirmationAttachment = async (req, res) => {
   }
 };
 
+const saveReminderEmailConfig = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { enabled, mode, subject, body } = req.body;
+
+    const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const current = event.reminder_email_config || {};
+    const config = {
+      enabled: enabled !== undefined ? Boolean(enabled) : (current.enabled !== false),
+      mode: mode === 'custom' ? 'custom' : 'default',
+      subject: subject !== undefined ? String(subject).slice(0, 300) : (current.subject || ''),
+      body: body !== undefined ? String(body).slice(0, 5000) : (current.body || ''),
+      updated_at: new Date().toISOString(),
+      updated_by: req.user.id
+    };
+
+    const { data: updatedEvent, error: updateErr } = await supabase
+      .from('events')
+      .update({ reminder_email_config: config })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      message: 'Reminder email configuration saved successfully.',
+      reminderEmailConfig: updatedEvent.reminder_email_config
+    });
+  } catch (err) {
+    console.error('Error saving reminder email config:', err);
+    res.status(500).json({ message: 'Server error saving reminder email config.', error: err.message });
+  }
+};
+
 const requestOfficialPermission = async (req, res) => {
   try {
     const { id } = req.params;
@@ -4257,6 +4296,7 @@ module.exports = {
   saveConfirmationEmailConfig,
   uploadConfirmationAttachment,
   deleteConfirmationAttachment,
+  saveReminderEmailConfig,
   requestOfficialPermission,
   getEventOfficialPermissions,
   getAllOfficialPermissions,

@@ -327,6 +327,14 @@ router.delete(
   eventController.deleteConfirmationAttachment
 );
 
+// Automated Event Reminder Email Config Routes
+router.put(
+  '/:id/reminder-email',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  eventController.saveReminderEmailConfig
+);
+
 // Higher Official Event Permissions Routes
 router.get(
   '/official-permissions/all',

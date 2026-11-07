@@ -79,6 +79,9 @@ startEventCompletionJob();
 const startRegistrationClosingJob = require('./jobs/registrationClosingJob');
 startRegistrationClosingJob();
 
+const startEventReminderJob = require('./jobs/eventReminderJob');
+startEventReminderJob();
+
 const app = express();
 
 // Global Middlewares

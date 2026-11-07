@@ -92,11 +92,20 @@ const getPanelsOverview = async (req, res) => {
 
     let profiles = [];
     if (userIds.length > 0) {
-      const { data: profs } = await supabase
-        .from('profiles')
-        .select('id, name, email, roll_number, department, role')
-        .in('id', userIds);
-      profiles = profs || [];
+      // Chunked lookup: one big .in('id', [hundreds of UUIDs]) overflows the
+      // HTTP header limit (~16KB URL) and silently returns no rows.
+      for (let i = 0; i < userIds.length; i += 200) {
+        const chunk = userIds.slice(i, i + 200);
+        const { data: profs, error: profErr } = await supabase
+          .from('profiles')
+          .select('id, name, email, roll_number, department, role')
+          .in('id', chunk);
+        if (profErr) {
+          console.warn('[Panels] Profile lookup chunk failed:', profErr.message);
+          continue;
+        }
+        profiles.push(...(profs || []));
+      }
     }
 
     let teams = [];

@@ -854,7 +854,7 @@ const StudentRegistrations = () => {
                                     {slotInfo.venue_room && (
                                       <>
                                         <span>•</span>
-                                        <span>Room {slotInfo.venue_room}</span>
+                                        <span>{slotInfo.venue_room}</span>
                                       </>
                                     )}
                                   </div>
@@ -866,7 +866,7 @@ const StudentRegistrations = () => {
                                     {reg.panel.venueRoom && (
                                       <>
                                         <span>•</span>
-                                        <span>Room {reg.panel.venueRoom}</span>
+                                        <span>{reg.panel.venueRoom}</span>
                                       </>
                                     )}
                                     {Array.isArray(reg.panel.members) && reg.panel.members.length > 0 && (
@@ -2398,7 +2398,7 @@ const StudentRegistrations = () => {
                             {s.venue_room && (
                               <>
                                 <span>•</span>
-                                <span>Room {s.venue_room}</span>
+                                <span>{s.venue_room}</span>
                               </>
                             )}
                           </div>
