@@ -4,10 +4,10 @@ const checkIsEventOrganizer = async (event, user) => {
   if (!user || !user.id) return false;
   if (user.roles && user.roles.includes('admin')) return true;
   if (String(event.organizer_id) === String(user.id) ||
-      String(event.student_organizer_id) === String(user.id) ||
-      String(event.proposed_by) === String(user.id) ||
-      String(event.created_by) === String(user.id) ||
-      String(event.faculty_id) === String(user.id)) {
+    String(event.student_organizer_id) === String(user.id) ||
+    String(event.proposed_by) === String(user.id) ||
+    String(event.created_by) === String(user.id) ||
+    String(event.faculty_id) === String(user.id)) {
     return true;
   }
 
@@ -84,7 +84,7 @@ exports.verifyQrToken = async (req, res) => {
         const parsed = JSON.parse(registrationId);
         if (parsed.registrationId) registrationId = parsed.registrationId;
         else if (parsed.id) registrationId = parsed.id;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const cleanToken = String(registrationId).trim();
@@ -382,12 +382,46 @@ exports.getEventPeriodicAttendance = async (req, res) => {
       timeRemainingSeconds = Math.max(0, Math.floor((new Date(activePeriod.end_time).getTime() - now.getTime()) / 1000));
     }
 
-    // Fetch total registrations
-    const { data: registrations } = await supabase
+    // Fetch total registrations (all active registrations — exclude only cancelled/rejected/expired)
+    let { data: registrations, error: regFetchError } = await supabase
       .from('event_registrations')
-      .select('id, user_id, status, attendance_status, attendance_timestamp, profiles:user_id(id, name, email, roll_number)')
+      .select('id, user_id, team_id, slot_id, status, attendance_status, attendance_timestamp, profiles:user_id(id, name, email, roll_number)')
       .eq('event_id', eventId)
-      .in('status', ['registered', 'accepted', 'pending']);
+      .not('status', 'in', '("cancelled","rejected","expired")');
+
+    if (regFetchError) {
+      console.error('getEventPeriodicAttendance: registration join query failed, falling back:', regFetchError.message);
+      const fallback = await supabase
+        .from('event_registrations')
+        .select('*')
+        .eq('event_id', eventId);
+      if (fallback.error) {
+        console.error('getEventPeriodicAttendance: fallback registration query failed:', fallback.error.message);
+      }
+      const rawRegs = (fallback.data || []).filter(r => !['cancelled', 'rejected', 'expired'].includes(String(r.status || '').toLowerCase()));
+      const userIds = [...new Set(rawRegs.map(r => r.user_id).filter(Boolean))];
+      let profileMap = new Map();
+      if (userIds.length > 0) {
+        const { data: profs } = await supabase.from('profiles').select('id, name, email, roll_number').in('id', userIds);
+        profileMap = new Map((profs || []).map(p => [p.id, p]));
+      }
+      registrations = rawRegs.map(r => ({ ...r, profiles: profileMap.get(r.user_id) || null }));
+    }
+    registrations = registrations || [];
+
+    // Resolve each registration's chosen slot (own slot, or team's slot for team registrations)
+    const teamIds = [...new Set(registrations.map(r => r.team_id).filter(Boolean))];
+    const teamSlotMap = new Map();
+    if (teamIds.length > 0) {
+      const { data: teams } = await supabase.from('event_teams').select('id, slot_id').in('id', teamIds);
+      (teams || []).forEach(t => teamSlotMap.set(t.id, t.slot_id || null));
+    }
+    const slotIds = [...new Set(registrations.map(r => r.slot_id || (r.team_id ? teamSlotMap.get(r.team_id) : null)).filter(Boolean))];
+    const slotMap = new Map();
+    if (slotIds.length > 0) {
+      const { data: slots } = await supabase.from('event_slots').select('id, slot_name, slot_date, start_time, end_time').in('id', slotIds);
+      (slots || []).forEach(s => slotMap.set(s.id, s));
+    }
 
     const totalRegistered = (registrations || []).length;
 
@@ -445,7 +479,7 @@ exports.getEventPeriodicAttendance = async (req, res) => {
       const regRecords = records.filter(r => r.registration_id === reg.id);
       const markedCount = regRecords.length;
       const percentage = Math.round((markedCount / totalPeriodsCount) * 100);
-      
+
       let isEligible = false;
       if (minCheckpoints !== null && minCheckpoints > 0) {
         isEligible = markedCount >= minCheckpoints;
@@ -453,9 +487,17 @@ exports.getEventPeriodicAttendance = async (req, res) => {
         isEligible = percentage >= minPercentage;
       }
 
+      const resolvedSlotId = reg.slot_id || (reg.team_id ? teamSlotMap.get(reg.team_id) : null) || null;
+      const slot = resolvedSlotId ? slotMap.get(resolvedSlotId) : null;
+
       return {
         registrationId: reg.id,
         userId: reg.user_id,
+        slotId: resolvedSlotId,
+        slotName: slot?.slot_name || null,
+        slotDate: slot?.slot_date || null,
+        slotStartTime: slot?.start_time || null,
+        slotEndTime: slot?.end_time || null,
         name: reg.profiles?.name || 'Participant',
         rollNumber: reg.profiles?.roll_number || 'N/A',
         email: reg.profiles?.email || 'N/A',
@@ -547,15 +589,15 @@ exports.autoGeneratePeriods = async (req, res) => {
 
     const effectiveEnd = eventEnd ? new Date(eventEnd).toISOString() : (targetEvent.end_date || (periods.length > 0 ? periods[periods.length - 1].end_time : null));
 
-    return res.json({ 
-      success: true, 
-      message: `Auto-generated ${periods.length} periodic attendance checkpoints (${hours}-hour intervals).`, 
+    return res.json({
+      success: true,
+      message: `Auto-generated ${periods.length} periodic attendance checkpoints (${hours}-hour intervals).`,
       periods,
       event: {
         ...targetEvent,
         date: eventStart ? new Date(eventStart).toISOString() : targetEvent.date,
         end_date: effectiveEnd
-      } 
+      }
     });
   } catch (err) {
     console.error('Error auto-generating periods:', err);

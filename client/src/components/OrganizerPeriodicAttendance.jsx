@@ -47,6 +47,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEligibility, setFilterEligibility] = useState('all'); // 'all' | 'eligible' | 'ineligible'
   const [logFilterPeriod, setLogFilterPeriod] = useState('all'); // 'all' | periodId
+  const [manualSlotDateFilter, setManualSlotDateFilter] = useState('all'); // 'all' | 'none' | 'YYYY-MM-DD'
   
   // Custom period modal form
   const [showPeriodModal, setShowPeriodModal] = useState(false);
@@ -354,7 +355,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
     const nowTs = Date.now();
     if (markLockRef.current && nowTs - markLockRef.current < 1500) return;
 
-    const pending = filteredParticipants.filter(p => p.attendanceStatus !== 'Present');
+    const pending = manualFilteredParticipants.filter(p => p.attendanceStatus !== 'Present');
     if (pending.length === 0) {
       alert('All listed participants are already marked Present.');
       return;
@@ -449,6 +450,27 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
     if (filterEligibility === 'eligible') return matchesSearch && p.isEligible;
     if (filterEligibility === 'ineligible') return matchesSearch && !p.isEligible;
     return matchesSearch;
+  });
+
+  // Manual Attendance tab: search + filter by the date of the slot each participant chose
+  const formatSlotDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(`${dateStr}T00:00:00`);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  const formatSlotTime = (t) => (t ? String(t).slice(0, 5) : '');
+  const manualSlotDates = [...new Set(participantProgress.map(p => p.slotDate).filter(Boolean))].sort();
+  const hasParticipantsWithoutSlot = participantProgress.some(p => !p.slotDate);
+  const manualFilteredParticipants = participantProgress.filter(p => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = String(p.name || '').toLowerCase().includes(term) ||
+                          String(p.rollNumber || '').toLowerCase().includes(term) ||
+                          String(p.email || '').toLowerCase().includes(term);
+    if (!matchesSearch) return false;
+    if (manualSlotDateFilter === 'all') return true;
+    if (manualSlotDateFilter === 'none') return !p.slotDate;
+    return p.slotDate === manualSlotDateFilter;
   });
 
   const filteredLogs = scanLogs.filter(log => {
@@ -1141,6 +1163,7 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
             </div>
           </div>
 
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="relative w-full sm:w-80">
             <input
               type="text"
@@ -1154,13 +1177,30 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
             </svg>
           </div>
 
-          {filteredParticipants.length === 0 ? (
+          <select
+            value={manualSlotDateFilter}
+            onChange={e => setManualSlotDateFilter(e.target.value)}
+            className="w-full sm:w-64 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none dark:text-white"
+          >
+            <option value="all">All Slot Dates ({participantProgress.length})</option>
+            {manualSlotDates.map(d => (
+              <option key={d} value={d}>
+                {formatSlotDate(d)} ({participantProgress.filter(p => p.slotDate === d).length})
+              </option>
+            ))}
+            {hasParticipantsWithoutSlot && (
+              <option value="none">No Slot Selected ({participantProgress.filter(p => !p.slotDate).length})</option>
+            )}
+          </select>
+          </div>
+
+          {manualFilteredParticipants.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
               No participants match your search.
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredParticipants.map(p => {
+              {manualFilteredParticipants.map(p => {
                 const isPresent = p.attendanceStatus === 'Present';
                 return (
                   <div
@@ -1176,6 +1216,12 @@ export default function OrganizerPeriodicAttendance({ eventId, onScanClick }) {
                         <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                           {p.rollNumber} · {p.email}
                         </div>
+                        {p.slotDate && (
+                          <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 truncate">
+                            {p.slotName ? `${p.slotName} · ` : ''}{formatSlotDate(p.slotDate)}
+                            {p.slotStartTime ? ` · ${formatSlotTime(p.slotStartTime)}${p.slotEndTime ? `–${formatSlotTime(p.slotEndTime)}` : ''}` : ''}
+                          </div>
+                        )}
                       </div>
                     </div>
 

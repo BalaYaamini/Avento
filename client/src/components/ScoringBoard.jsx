@@ -48,8 +48,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const pendingStudentSaves = useRef({});
   const [pendingCount, setPendingCount] = useState(0);
   const [panelFilter, setPanelFilter] = useState('all');
-  const [registeredFrom, setRegisteredFrom] = useState('');
-  const [registeredTo, setRegisteredTo] = useState('');
+  const [slotDateFilter, setSlotDateFilter] = useState('all');
 
   const load = async () => {
     try {
@@ -438,22 +437,32 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   });
   panelOptions.sort((a, b) => a.name.localeCompare(b.name));
 
+  // Collect unique slot dates for the filter dropdown
+  const studentSlotDates = [...new Set(detailStudents.map(s => s.slot_date).filter(Boolean))].sort();
+  const hasStudentsWithoutSlot = detailStudents.some(s => !s.slot_date);
+
+  const formatSlotDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(`${dateStr}T00:00:00`);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
   const filteredStudents = detailStudents.filter(student => {
     if (panelFilter === 'none') {
       if (student.panel_id) return false;
     } else if (panelFilter !== 'all' && String(student.panel_id) !== String(panelFilter)) {
       return false;
     }
-    if (registeredFrom || registeredTo) {
-      const regDate = student.registered_at ? new Date(student.registered_at) : null;
-      if (!regDate || Number.isNaN(regDate.getTime())) return false;
-      if (registeredFrom && regDate < new Date(`${registeredFrom}T00:00:00`)) return false;
-      if (registeredTo && regDate > new Date(`${registeredTo}T23:59:59.999`)) return false;
+    if (slotDateFilter === 'none') {
+      if (student.slot_date) return false;
+    } else if (slotDateFilter !== 'all' && student.slot_date !== slotDateFilter) {
+      return false;
     }
     return true;
   });
-  const filtersActive = panelFilter !== 'all' || registeredFrom !== '' || registeredTo !== '';
-  const clearStudentFilters = () => { setPanelFilter('all'); setRegisteredFrom(''); setRegisteredTo(''); };
+  const filtersActive = panelFilter !== 'all' || slotDateFilter !== 'all';
+  const clearStudentFilters = () => { setPanelFilter('all'); setSlotDateFilter('all'); };
 
   const canSendReports = canEdit || data.isPanelMember;
   const myComment = (data.studentComments || []).find(c => String(c.registration_id) === String(data.myScorecard?.registration_id))?.comment || '';
@@ -598,26 +607,22 @@ const ScoringBoard = ({ eventId, canEdit }) => {
                     <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                   </div>
                 )}
-                <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  Registered from
-                  <input
-                    type="date"
-                    value={registeredFrom}
-                    max={registeredTo || undefined}
-                    onChange={event => setRegisteredFrom(event.target.value)}
-                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  />
-                </label>
-                <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  to
-                  <input
-                    type="date"
-                    value={registeredTo}
-                    min={registeredFrom || undefined}
-                    onChange={event => setRegisteredTo(event.target.value)}
-                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  />
-                </label>
+                <div className="relative">
+                  <select
+                    value={slotDateFilter}
+                    onChange={event => setSlotDateFilter(event.target.value)}
+                    className="h-10 appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-xs font-semibold text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    <option value="all">All Dates ({detailStudents.length})</option>
+                    {studentSlotDates.map(d => (
+                      <option key={d} value={d}>
+                        {formatSlotDate(d)} ({detailStudents.filter(s => s.slot_date === d).length})
+                      </option>
+                    ))}
+                    {hasStudentsWithoutSlot && <option value="none">No Slot ({detailStudents.filter(s => !s.slot_date).length})</option>}
+                  </select>
+                  <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                </div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{filteredStudents.length} of {detailStudents.length} shown</span>
                 {filtersActive && (
                   <button type="button" onClick={clearStudentFilters} className="rounded-lg px-2 py-1 text-[10px] font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">Clear filters</button>

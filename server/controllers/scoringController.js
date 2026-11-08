@@ -96,9 +96,25 @@ const fetchEventStudents = async (eventId) => {
   const panelMap = new Map((allPanels || []).map(p => [p.id, p.name]));
   const panelByReg = new Map((assigns || []).map(a => [a.registration_id, a.panel_id]));
 
+  // Resolve slot dates for each registration (own slot_id, or team's slot_id)
+  const teamIds = [...new Set((regs || []).map(r => r.team_id).filter(Boolean))];
+  const teamSlotMap = new Map();
+  if (teamIds.length > 0) {
+    const { data: teams } = await supabase.from('event_teams').select('id, slot_id').in('id', teamIds);
+    (teams || []).forEach(t => teamSlotMap.set(t.id, t.slot_id || null));
+  }
+  const slotIds = [...new Set((regs || []).map(r => r.slot_id || (r.team_id ? teamSlotMap.get(r.team_id) : null)).filter(Boolean))];
+  const slotMap = new Map();
+  if (slotIds.length > 0) {
+    const { data: slots } = await supabase.from('event_slots').select('id, slot_name, slot_date, start_time, end_time').in('id', slotIds);
+    (slots || []).forEach(s => slotMap.set(s.id, s));
+  }
+
   return (regs || []).map(r => {
     const prof = profileMap.get(String(r.user_id)) || {};
     const panelId = panelByReg.get(r.id) || null;
+    const resolvedSlotId = r.slot_id || (r.team_id ? teamSlotMap.get(r.team_id) : null) || null;
+    const slot = resolvedSlotId ? slotMap.get(resolvedSlotId) : null;
     return {
       registration_id: r.id,
       user_id: r.user_id,
@@ -109,6 +125,9 @@ const fetchEventStudents = async (eventId) => {
       panel_id: panelId,
       panel_name: panelId ? (panelMap.get(panelId) || '') : '',
       registered_at: r.created_at || null,
+      slot_id: resolvedSlotId,
+      slot_date: slot?.slot_date || null,
+      slot_name: slot?.slot_name || null,
       report_email_sent_at: r.report_email_sent_at || null,
       report_email_sent_to: r.report_email_sent_to || ''
     };
