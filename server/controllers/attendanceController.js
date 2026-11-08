@@ -385,12 +385,12 @@ exports.getEventPeriodicAttendance = async (req, res) => {
     // Fetch total registrations (all active registrations — exclude only cancelled/rejected/expired)
     let { data: registrations, error: regFetchError } = await supabase
       .from('event_registrations')
-      .select('id, user_id, team_id, slot_id, status, attendance_status, attendance_timestamp, profiles:user_id(id, name, email, roll_number)')
+      .select('id, user_id, team_id, slot_id, status, attendance_status, attendance_timestamp')
       .eq('event_id', eventId)
       .not('status', 'in', '("cancelled","rejected","expired")');
 
     if (regFetchError) {
-      console.error('getEventPeriodicAttendance: registration join query failed, falling back:', regFetchError.message);
+      console.error('getEventPeriodicAttendance: registration query failed, falling back:', regFetchError.message);
       const fallback = await supabase
         .from('event_registrations')
         .select('*')
@@ -398,16 +398,27 @@ exports.getEventPeriodicAttendance = async (req, res) => {
       if (fallback.error) {
         console.error('getEventPeriodicAttendance: fallback registration query failed:', fallback.error.message);
       }
-      const rawRegs = (fallback.data || []).filter(r => !['cancelled', 'rejected', 'expired'].includes(String(r.status || '').toLowerCase()));
-      const userIds = [...new Set(rawRegs.map(r => r.user_id).filter(Boolean))];
-      let profileMap = new Map();
-      if (userIds.length > 0) {
-        const { data: profs } = await supabase.from('profiles').select('id, name, email, roll_number').in('id', userIds);
-        profileMap = new Map((profs || []).map(p => [p.id, p]));
-      }
-      registrations = rawRegs.map(r => ({ ...r, profiles: profileMap.get(r.user_id) || null }));
+      registrations = (fallback.data || []).filter(r => !['cancelled', 'rejected', 'expired'].includes(String(r.status || '').toLowerCase()));
     }
     registrations = registrations || [];
+
+    // Always fetch profiles separately — the Supabase join (profiles:user_id)
+    // silently returns null on some production setups when the FK isn't configured.
+    const userIds = [...new Set(registrations.map(r => r.user_id).filter(Boolean))];
+    const profileMap = new Map();
+    if (userIds.length > 0) {
+      // Supabase .in() has a practical limit; batch in chunks of 200
+      for (let i = 0; i < userIds.length; i += 200) {
+        const batch = userIds.slice(i, i + 200);
+        const { data: profs } = await supabase.from('profiles').select('id, name, email, roll_number').in('id', batch);
+        (profs || []).forEach(p => profileMap.set(p.id, p));
+      }
+    }
+    // Attach profile to each registration
+    registrations = registrations.map(r => ({
+      ...r,
+      profiles: profileMap.get(r.user_id) || null
+    }));
 
     // Resolve each registration's chosen slot (own slot, or team's slot for team registrations)
     const teamIds = [...new Set(registrations.map(r => r.team_id).filter(Boolean))];
