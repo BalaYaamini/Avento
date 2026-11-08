@@ -3,12 +3,23 @@ const supabase = require('../config/supabaseClient');
 const { sendEventReminderEmail } = require('../services/reminderEmailService');
 
 const REMINDER_WINDOW_MS = 3 * 60 * 60 * 1000;
+// If the server was down/asleep during the whole pre-session window, still send
+// shortly after the session start instead of silently skipping forever.
+const CATCHUP_GRACE_MS = 30 * 60 * 1000;
 const CONFIRMED_STATUSES = ['registered', 'confirmed'];
 const REMINDABLE_EVENT_STATUSES = ['published', 'active'];
 
-const parseSlotStart = (slot) => {
-  const d = String(slot?.slot_date || '').substring(0, 10);
+const parseSlotStart = (slot, event) => {
   const t = String(slot?.start_time || '').substring(0, 5);
+  let d = String(slot?.slot_date || '').substring(0, 10);
+  // Slots created without a date fall back to the event's date so their
+  // registrants still get reminders instead of being silently skipped.
+  if (!d && event?.date) {
+    const eventDay = new Date(event.date);
+    if (!isNaN(eventDay.getTime())) {
+      d = `${eventDay.getFullYear()}-${String(eventDay.getMonth() + 1).padStart(2, '0')}-${String(eventDay.getDate()).padStart(2, '0')}`;
+    }
+  }
   if (!d || !t) return null;
   const date = new Date(`${d}T${t}`);
   return isNaN(date.getTime()) ? null : date;
@@ -16,6 +27,9 @@ const parseSlotStart = (slot) => {
 
 const isWithinReminderWindow = (start, now, windowEnd) =>
   start && start.getTime() > now.getTime() && start.getTime() <= windowEnd.getTime();
+
+const isWithinCatchupWindow = (start, now) =>
+  start && start.getTime() <= now.getTime() && start.getTime() > now.getTime() - CATCHUP_GRACE_MS;
 
 let isSweepRunning = false;
 
@@ -35,18 +49,20 @@ const runReminderSweep = async () => {
     // ── 1. Candidate slot sessions starting within the reminder window ──
     const { data: slots, error: slotErr } = await supabase
       .from('event_slots')
-      .select('id, event_id, slot_name, slot_date, start_time, end_time, venue_room, status, event:events(*)')
-      .neq('status', 'inactive');
+      .select('id, event_id, slot_name, slot_date, start_time, end_time, venue_room, status, event:events(*)');
 
     if (slotErr) throw slotErr;
 
     const slotSessions = new Map();
     for (const slot of slots || []) {
+      if (slot.status === 'inactive') continue;
       const event = slot.event;
       if (!event || !REMINDABLE_EVENT_STATUSES.includes(event.status)) continue;
-      const start = parseSlotStart(slot);
-      if (!isWithinReminderWindow(start, now, windowEnd)) continue;
-      slotSessions.set(slot.id, { slot, event, start });
+      const start = parseSlotStart(slot, event);
+      const inWindow = isWithinReminderWindow(start, now, windowEnd);
+      const inCatchup = isWithinCatchupWindow(start, now);
+      if (!inWindow && !inCatchup) continue;
+      slotSessions.set(slot.id, { slot, event, start, late: !inWindow });
     }
 
     // ── 2. Candidate event-date sessions (non-slot events + slot-less regs) ──
@@ -54,7 +70,7 @@ const runReminderSweep = async () => {
       .from('events')
       .select('*')
       .in('status', REMINDABLE_EVENT_STATUSES)
-      .gte('date', nowISO)
+      .gte('date', new Date(now.getTime() - CATCHUP_GRACE_MS).toISOString())
       .lte('date', windowEndISO);
 
     if (eventErr) throw eventErr;
@@ -67,8 +83,10 @@ const runReminderSweep = async () => {
     for (const event of windowEvents || []) {
       eventById.set(event.id, event);
       const start = new Date(event.date);
-      if (isWithinReminderWindow(start, now, windowEnd)) {
-        eventSessions.set(event.id, { event, start });
+      const inWindow = isWithinReminderWindow(start, now, windowEnd);
+      const inCatchup = isWithinCatchupWindow(start, now);
+      if (inWindow || inCatchup) {
+        eventSessions.set(event.id, { event, start, late: !inWindow });
       }
     }
 
@@ -100,6 +118,10 @@ const runReminderSweep = async () => {
     }
 
     // ── 4. Resolve each registration's session and send once per session ──
+    let dueCount = 0;
+    let sentCount = 0;
+    let failedCount = 0;
+
     for (const reg of regs) {
       const teamSlotId = reg.team?.slot_id || null;
       const ownSlotId = reg.slot_id || null;
@@ -118,8 +140,12 @@ const runReminderSweep = async () => {
         if (!session) continue;
       }
 
-      const { event, slot, start } = session;
-      if (event.reminder_email_config && event.reminder_email_config.enabled === false) continue;
+      const { event, slot, start, late } = session;
+      // Automated sending is opt-in per event: reminders go out 3 hours before
+      // a session only when the organizer explicitly enabled auto_send.
+      // Manual, date-based sending ignores this flag.
+      const reminderConfig = event.reminder_email_config || {};
+      if (reminderConfig.enabled === false || reminderConfig.auto_send !== true) continue;
 
       const sessionStartISO = start.toISOString();
       // Strictly once per registration: re-evaluating the live schedule each
@@ -140,27 +166,41 @@ const runReminderSweep = async () => {
       }
       if (!claimed || claimed.length === 0) continue;
 
+      dueCount++;
+      const profile = profileById.get(reg.user_id) || null;
+      const rollbackClaim = async (reason) => {
+        failedCount++;
+        console.error(`[EventReminderJob] Reminder FAILED for registration ${reg.id} (${event.title}): ${reason} - will retry next sweep.`);
+        // Roll back the claim so the next sweep retries this reminder.
+        await supabase
+          .from('event_registrations')
+          .update({ reminder_sent_at: null, reminder_sent_for_start: null })
+          .eq('id', reg.id);
+      };
+
       try {
-        await sendEventReminderEmail({
+        const result = await sendEventReminderEmail({
           registration: reg,
           event,
           slot: slot || null,
           teamName: reg.team?.name || null,
-          profile: profileById.get(reg.user_id) || null,
-          config: event.reminder_email_config || {}
+          profile,
+          config: event.reminder_email_config || {},
+          late: Boolean(late)
         });
-        console.log(`[EventReminderJob] Reminder sent for registration ${reg.id} (${event.title}).`);
+        if (result && result.ok === false) {
+          await rollbackClaim(result.error || 'Email delivery failed');
+        } else {
+          sentCount++;
+          console.log(`[EventReminderJob] Reminder sent for registration ${reg.id} (${event.title}) via ${result?.channel || 'unknown'}${late ? ' [catch-up]' : ''}.`);
+        }
       } catch (sendErr) {
-        console.error(`[EventReminderJob] Send failed for registration ${reg.id}:`, sendErr.message);
-        // Roll back the claim so the next sweep retries this reminder.
-        await supabase
-          .from('event_registrations')
-          .update({
-            reminder_sent_at: reg.reminder_sent_at || null,
-            reminder_sent_for_start: reg.reminder_sent_for_start || null
-          })
-          .eq('id', reg.id);
+        await rollbackClaim(sendErr.message);
       }
+    }
+
+    if (dueCount > 0) {
+      console.log(`[EventReminderJob] Sweep done: ${dueCount} due, ${sentCount} sent, ${failedCount} failed (will retry).`);
     }
   } catch (err) {
     const missingColumn = /reminder_sent_at|reminder_email_config|schema cache/i.test(err.message || '');

@@ -335,6 +335,27 @@ router.put(
   eventController.saveReminderEmailConfig
 );
 
+router.post(
+  '/:id/reminder-email/test',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  eventController.sendTestReminderEmail
+);
+
+router.get(
+  '/:id/reminder-email/recipients',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  eventController.getReminderRecipients
+);
+
+router.post(
+  '/:id/reminder-email/send-by-date',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student', 'organizer']),
+  eventController.sendReminderEmailsByDate
+);
+
 // Higher Official Event Permissions Routes
 router.get(
   '/official-permissions/all',

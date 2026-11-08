@@ -87,19 +87,21 @@ const sendSmtpMail = async ({ recipientEmail, subject, htmlBody, attachments, re
 const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attachments, replyTo }) => {
   if (DISABLE_TEAM_EMAIL_NOTIFICATIONS) {
     console.log(`[EMAIL TEMPORARILY DISABLED FOR TESTING] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
-    return;
+    return { ok: true, channel: 'disabled' };
   }
 
   if (!BREVO_API_KEY && !SMTP_ENABLED) {
     console.log(`[EMAIL MOCK] To: ${recipientEmail} | Subject: ${subject}${attachments?.length ? ` | Attachments: ${attachments.length}` : ''}`);
-    return;
+    return { ok: true, channel: 'mock' };
   }
 
   resetDailyCount();
   if (emailCountToday >= 300) {
     console.warn(`[EMAIL] Daily limit reached (300). Email to ${recipientEmail} queued.`);
-    return;
+    return { ok: false, channel: 'limit', error: 'Daily email limit reached (300)' };
   }
+
+  let lastError = '';
 
   // 1) Brevo API first
   if (BREVO_API_KEY) {
@@ -127,10 +129,10 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attach
 
       emailCountToday++;
       console.log(`[EMAIL SENT] To: ${recipientEmail} | Subject: ${subject} | Count: ${emailCountToday}/300`);
-      return response.data;
+      return { ok: true, channel: 'brevo', data: response.data };
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message;
-      console.warn(`[EMAIL BREVO FAILED] To: ${recipientEmail} | Error: ${errMsg}${SMTP_ENABLED ? ' - falling back to SMTP' : ''}`);
+      lastError = err.response?.data?.message || err.message;
+      console.warn(`[EMAIL BREVO FAILED] To: ${recipientEmail} | Error: ${lastError}${SMTP_ENABLED ? ' - falling back to SMTP' : ''}`);
     }
   }
 
@@ -140,11 +142,14 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attach
       const info = await sendSmtpMail({ recipientEmail, subject, htmlBody, attachments, replyTo });
       emailCountToday++;
       console.log(`[EMAIL SENT via SMTP] To: ${recipientEmail} | Subject: ${subject} | ${info.messageId || ''} | Count: ${emailCountToday}/300`);
-      return { messageId: info.messageId, channel: 'smtp' };
+      return { ok: true, channel: 'smtp', messageId: info.messageId };
     } catch (smtpErr) {
+      lastError = smtpErr.message;
       console.error(`[EMAIL SMTP FAILED] To: ${recipientEmail} | Error: ${smtpErr.message}`);
     }
   }
+
+  return { ok: false, channel: 'none', error: lastError || 'No email transport succeeded' };
 };
 
 const sendPasswordResetEmail = async ({ recipientEmail, resetUrl }) => {

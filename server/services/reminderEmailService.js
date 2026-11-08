@@ -1,5 +1,3 @@
-const QRCode = require('qrcode');
-const supabase = require('../config/supabaseClient');
 const {
   sendEmailNotification,
   sendInAppNotification,
@@ -71,15 +69,14 @@ const buildTagMap = ({ event, details, recipientName, teamName }) => ({
   teamName: teamName || ''
 });
 
-const buildReminderEmailHtml = ({ recipientName, event, details, teamName, regIdShort, message, qrImageUrl, qrAttached }) => {
+const buildReminderEmailHtml = ({ recipientName, event, details, teamName, message }) => {
   const rows = [
     ['Date', details.dateText],
     ['Session Time', details.timeText],
     ['Reporting Time', details.reportingText],
     ['Venue', details.venueText],
     details.slotName ? ['Slot', `<span style="color:#0891b2;font-weight:700;">${details.slotName}</span>`] : null,
-    teamName ? ['Team', teamName] : null,
-    ['Pass ID', `<span style="font-family:monospace;font-weight:700;color:#0891b2;">${regIdShort}</span>`]
+    teamName ? ['Team', teamName] : null
   ].filter(Boolean);
 
   const rowsHtml = rows.map(([label, value]) => `
@@ -87,14 +84,6 @@ const buildReminderEmailHtml = ({ recipientName, event, details, teamName, regId
       <td style="padding:8px 0;font-size:14px;color:#64748b;width:38%;"><strong>${label}</strong></td>
       <td style="padding:8px 0;font-size:14px;color:#1e293b;">${value}</td>
     </tr>`).join('');
-
-  const qrHtml = qrImageUrl
-    ? `<img src="${qrImageUrl}" alt="Event pass QR code" width="168" height="168" style="display:block;width:168px;height:168px;background:#ffffff;border-radius:12px;padding:8px;border:1px solid #e2e8f0;" />`
-    : `<div style="width:168px;height:168px;background:#f1f5f9;border-radius:12px;border:1px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:12px;color:#64748b;text-align:center;padding:8px;">QR pass attached to this email</div>`;
-
-  const qrNote = qrImageUrl
-    ? ''
-    : `<p style="margin:12px 0 0;font-size:12px;color:#64748b;">${qrAttached ? 'A copy of the QR code is attached to this email — you can also find your pass in the Avento app.' : 'Open your pass in the Avento app to show the QR code at check-in.'}</p>`;
 
   return `
 <!DOCTYPE html>
@@ -121,10 +110,7 @@ const buildReminderEmailHtml = ({ recipientName, event, details, teamName, regId
 
           <div style="margin-top:25px;border-radius:16px;padding:24px;background:linear-gradient(135deg,#0f766e,#0d9488);text-align:center;">
             <p style="margin:0 0 4px;font-size:11px;letter-spacing:2px;text-color:#ffffff;color:#ccfbf1;font-weight:700;">EVENT ENTRY PASS</p>
-            <p style="margin:0 0 16px;font-family:monospace;font-size:14px;color:#ffffff;font-weight:700;">${regIdShort}</p>
-            ${qrHtml}
-            ${qrNote}
-            <p style="margin:14px 0 0;font-size:12px;color:#ccfbf1;">Show this QR code at the venue check-in desk.</p>
+            <p style="margin:0;font-size:12px;color:#ccfbf1;">Open your pass with the button below and show the QR code at the venue check-in desk.</p>
           </div>
 
           <div style="text-align:center;margin-top:35px;margin-bottom:10px;">
@@ -144,83 +130,57 @@ const buildReminderEmailHtml = ({ recipientName, event, details, teamName, regId
 </html>`;
 };
 
-const uploadQrImage = async (eventId, registrationId, qrDataUrl) => {
-  try {
-    const base64 = String(qrDataUrl).split(',')[1];
-    if (!base64) return null;
-    const storagePath = `reminder-qr/${eventId}/${registrationId}.png`;
-    const { error } = await supabase.storage
-      .from('documents')
-      .upload(storagePath, Buffer.from(base64, 'base64'), {
-        contentType: 'image/png',
-        upsert: true
-      });
-    if (error) {
-      console.warn('[ReminderEmail] QR image upload failed:', error.message);
-      return null;
-    }
-    const { data } = supabase.storage.from('documents').getPublicUrl(storagePath);
-    return data?.publicUrl || null;
-  } catch (err) {
-    console.warn('[ReminderEmail] QR image upload error:', err.message);
-    return null;
-  }
-};
-
-const DEFAULT_SUBJECT = 'Reminder: {{eventName}} starts in 3 hours';
+const DEFAULT_SUBJECT = 'Reminder: {{eventName}} is coming up';
+const LATE_SUBJECT = 'Reminder: {{eventName}} is starting shortly';
 const DEFAULT_MESSAGE = (recipientName) =>
-  `Hi ${recipientName || 'there'},\n\nThis is a friendly reminder that your event is starting in 3 hours. Please find your session details and event pass below. Keep this email handy and show the QR code at the check-in desk.\n\nPlease report to the venue on time.\n\nSee you there!\n- Team Avento`;
+  `Hi ${recipientName || 'there'},\n\nThis is a friendly reminder that your session is coming up soon. Please find your session details and event pass below. Keep this email handy and show the QR code at the check-in desk.\n\nPlease report to the venue on time.\n\nSee you there!\n- Team Avento`;
+const LATE_MESSAGE = (recipientName) =>
+  `Hi ${recipientName || 'there'},\n\nThis is a friendly reminder that your event is starting shortly. Please find your session details and event pass below. Keep this email handy and show the QR code at the check-in desk.\n\nPlease report to the venue right away.\n\nSee you there!\n- Team Avento`;
 
-const sendEventReminderEmail = async ({ registration, event, slot, teamName, profile, config }) => {
+const sendEventReminderEmail = async ({ registration, event, slot, teamName, profile, config, isTest = false, late = false }) => {
   const sessionStart = slot && slot.slot_date && slot.start_time
     ? new Date(`${String(slot.slot_date).substring(0, 10)}T${fmtTime(slot.start_time)}:00`)
     : new Date(event.date);
 
   const details = buildSessionDetails(event, slot, sessionStart);
   const recipientName = profile?.name || '';
-  const regIdShort = buildRegIdShort(registration.id);
   const tagMap = buildTagMap({ event, details, recipientName, teamName });
 
   const useCustom = config?.mode === 'custom' && String(config?.body || '').trim();
   const message = useCustom
     ? applyTags(config.body, tagMap)
-    : DEFAULT_MESSAGE(recipientName);
+    : late
+      ? LATE_MESSAGE(recipientName)
+      : DEFAULT_MESSAGE(recipientName);
   const subject = String(config?.subject || '').trim()
     ? applyTags(config.subject, tagMap)
-    : applyTags(DEFAULT_SUBJECT, tagMap);
-
-  const qrDataUrl = await QRCode.toDataURL(String(registration.id), {
-    margin: 1,
-    width: 300,
-    errorCorrectionLevel: 'H'
-  });
-  const qrImageUrl = await uploadQrImage(event.id, registration.id, qrDataUrl);
-  const qrBase64 = String(qrDataUrl).split(',')[1] || '';
-  const attachments = qrBase64
-    ? [{ name: `Avento-Event-Pass-${regIdShort}.png`, content: qrBase64, contentType: 'image/png' }]
-    : [];
+    : applyTags(late ? LATE_SUBJECT : DEFAULT_SUBJECT, tagMap);
+  const finalSubject = isTest ? `[TEST] ${subject}` : subject;
 
   const htmlBody = buildReminderEmailHtml({
     recipientName,
     event,
     details,
     teamName,
-    regIdShort,
-    message,
-    qrImageUrl,
-    qrAttached: attachments.length > 0
+    message
   });
 
+  let delivery = { ok: true, channel: 'none' };
   if (profile?.email) {
-    await sendEmailNotification({
+    delivery = await sendEmailNotification({
       recipientEmail: profile.email,
-      subject,
-      htmlBody,
-      attachments
-    });
+      subject: finalSubject,
+      htmlBody
+    }) || { ok: false, channel: 'none', error: 'Email service returned no result' };
+
+    // Failed delivery: report it so the caller can roll back its claim and
+    // retry on the next sweep instead of silently losing the reminder.
+    if (!delivery.ok) {
+      return { ok: false, channel: delivery.channel, error: delivery.error || 'Email delivery failed' };
+    }
   }
 
-  if (registration.user_id) {
+  if (registration.user_id && !isTest) {
     await sendInAppNotification({
       recipientId: registration.user_id,
       title: `Reminder: ${event.title}`,
@@ -229,6 +189,8 @@ const sendEventReminderEmail = async ({ registration, event, slot, teamName, pro
       eventId: event.id
     });
   }
+
+  return { ok: true, channel: delivery.channel || 'none' };
 };
 
 module.exports = {

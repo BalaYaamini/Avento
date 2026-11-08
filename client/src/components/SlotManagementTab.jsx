@@ -3,6 +3,28 @@ import axios from 'axios';
 import { supabase } from '../context/AuthContext';
 import Modal from './Modal';
 
+const parseSlotDate = (value) => {
+  if (!value) return null;
+  const str = String(value);
+  const d = /^\d{4}-\d{2}-\d{2}/.test(str) ? new Date(str.slice(0, 10) + 'T00:00:00') : new Date(str);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const normalizeDateKey = (value) => {
+  const d = parseSlotDate(value);
+  return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
+};
+
+const formatSlotDate = (value) => {
+  const d = parseSlotDate(value);
+  return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+};
+
+const getRegSlotId = (reg) => {
+  const team = reg.event_teams || reg.teamId || {};
+  return reg.slot_id || reg.slot?.id || team.slot_id || team.slot?.id || null;
+};
+
 const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
   const [slots, setSlots] = useState([]);
   const [registrationsBySlot, setRegistrationsBySlot] = useState({});
@@ -14,6 +36,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
 
   // Filter & Search State
   const [selectedSlotFilter, setSelectedSlotFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [attendanceFilter, setAttendanceFilter] = useState('all');
 
@@ -148,6 +171,20 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
     });
     return [...groups, ...(extra.slots.length ? [extra] : [])];
   }, [eventDays, slots]);
+
+  // Unique slot dates for the roster date filter
+  const slotDateOptions = useMemo(() => {
+    const map = new Map();
+    slots.forEach(s => {
+      const key = normalizeDateKey(s.slot_date);
+      if (!key) return;
+      const entry = map.get(key) || { key, label: formatSlotDate(s.slot_date), slotCount: 0, registered: 0 };
+      entry.slotCount += 1;
+      entry.registered += (registrationsBySlot[s.id] || []).length;
+      map.set(key, entry);
+    });
+    return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+  }, [slots, registrationsBySlot]);
 
   const renderSlotCard = (slot) => {
     const isSelected = selectedSlotFilter === slot.id;
@@ -595,6 +632,15 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
       list = [...(registrationsBySlot[selectedSlotFilter] || [])];
     }
 
+    if (dateFilter !== 'all') {
+      const slotById = new Map(slots.map(s => [String(s.id), s]));
+      list = list.filter(r => {
+        const slotId = getRegSlotId(r);
+        const slot = slotId ? slotById.get(String(slotId)) : null;
+        return slot && normalizeDateKey(slot.slot_date) === dateFilter;
+      });
+    }
+
     if (attendanceFilter !== 'all') {
       list = list.filter(r => {
         if (attendanceFilter === 'attended') return r.attendance_status === 'present' || r.status === 'attended';
@@ -620,7 +666,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
     }
 
     return list;
-  }, [registrationsBySlot, unassignedRegistrations, selectedSlotFilter, attendanceFilter, searchTerm]);
+  }, [registrationsBySlot, unassignedRegistrations, slots, selectedSlotFilter, dateFilter, attendanceFilter, searchTerm]);
 
   return (
     <div className="space-y-6">
@@ -887,9 +933,9 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
       {['published', 'active'].includes(event?.status) && (
       <div className="glass-panel p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm space-y-4 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
+          <div className="shrink-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                 Slot Participant Roster
               </h3>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60">
@@ -902,9 +948,9 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
           </div>
 
           {/* Unified Filters Toolbar */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0 lg:justify-end">
             {/* Slot Filter Dropdown */}
-            <div className="relative min-w-[160px] sm:min-w-[200px] flex-1 sm:flex-none">
+            <div className="relative flex-1 min-w-[150px] sm:max-w-[230px]">
               <select
                 value={selectedSlotFilter}
                 onChange={(e) => setSelectedSlotFilter(e.target.value)}
@@ -913,7 +959,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                 <option value="all">All Time Slots ({summary?.total_allocated || 0})</option>
                 {slots.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.slot_name} ({s.start_time?.substring(0, 5)} - {s.end_time?.substring(0, 5)}) — {(registrationsBySlot[s.id] || []).length} registered
+                    {s.slot_name} ({s.start_time?.substring(0, 5)} - {s.end_time?.substring(0, 5)}){s.slot_date ? ` · ${formatSlotDate(s.slot_date)}` : ''} — {(registrationsBySlot[s.id] || []).length} registered
                   </option>
                 ))}
                 {unassignedRegistrations.length > 0 && (
@@ -925,8 +971,29 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
               </svg>
             </div>
 
+            {/* Slot Date Filter */}
+            {slotDateOptions.length > 0 && (
+              <div className="relative flex-1 min-w-[140px] sm:max-w-[200px]">
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full h-10 pl-3 pr-8 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer shadow-sm appearance-none"
+                >
+                  <option value="all">All Dates</option>
+                  {slotDateOptions.map(d => (
+                    <option key={d.key} value={d.key}>
+                      {d.label} ({d.registered} registered)
+                    </option>
+                  ))}
+                </select>
+                <svg className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            )}
+
             {/* Attendance Filter */}
-            <div className="relative min-w-[130px] sm:min-w-[150px] flex-1 sm:flex-none">
+            <div className="relative flex-1 min-w-[130px] sm:max-w-[180px]">
               <select
                 value={attendanceFilter}
                 onChange={(e) => setAttendanceFilter(e.target.value)}
@@ -942,7 +1009,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             </div>
 
             {/* Search Input */}
-            <div className="relative min-w-[180px] sm:w-64 flex-1 sm:flex-none">
+            <div className="relative flex-1 min-w-[180px] sm:max-w-[260px]">
               <input
                 type="text"
                 placeholder="Search name, roll no, team..."
@@ -965,6 +1032,7 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                 <th className="py-3.5 px-4.5">Participant / Student</th>
                 <th className="py-3.5 px-4">Roll No & Dept</th>
                 <th className="py-3.5 px-4">Team</th>
+                <th className="py-3.5 px-4">Slot Date</th>
                 <th className="py-3.5 px-4">Assigned Slot</th>
                 <th className="py-3.5 px-4">Status</th>
                 {hasFullAccess && <th className="py-3.5 px-4.5 text-right">Action</th>}
@@ -973,10 +1041,10 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
               {filteredRegistrations.length === 0 ? (
                 <tr>
-                  <td colSpan={hasFullAccess ? 6 : 5} className="py-12 text-center text-slate-400">
+                  <td colSpan={hasFullAccess ? 7 : 6} className="py-12 text-center text-slate-400">
                     <div className="max-w-xs mx-auto space-y-1">
                       <p className="font-semibold text-slate-600 dark:text-slate-300">No matching participants found</p>
-                      <p className="text-[11px] text-slate-400">Try adjusting your slot or attendance filters</p>
+                      <p className="text-[11px] text-slate-400">Try adjusting your slot, date or attendance filters</p>
                     </div>
                   </td>
                 </tr>
@@ -1010,6 +1078,16 @@ const SlotManagementTab = ({ eventId, event, user, hasFullAccess }) => {
                           </span>
                         ) : (
                           <span className="text-slate-400 text-[11px]">Individual</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 align-middle">
+                        {currentSlot?.slot_date ? (
+                          <div className="font-semibold text-slate-700 dark:text-slate-300">
+                            {formatSlotDate(currentSlot.slot_date)}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">—</span>
                         )}
                       </td>
 

@@ -108,17 +108,23 @@ const fetchEventStudents = async (eventId) => {
       department: prof.department || '',
       panel_id: panelId,
       panel_name: panelId ? (panelMap.get(panelId) || '') : '',
+      registered_at: r.created_at || null,
       report_email_sent_at: r.report_email_sent_at || null,
       report_email_sent_to: r.report_email_sent_to || ''
     };
   });
 };
 
-// Totals + competition ranking across all scored students
-const computeStudentTotals = (studentScores) => {
+// Totals + competition ranking across all scored students. Rows without a
+// score (comment-only entries) are not ranked, and when activeRegIds is given
+// (a Set of active registration ids) scores of cancelled/rejected/expired
+// registrations are excluded so ranks and "Rank X of Y" stay correct.
+const computeStudentTotals = (studentScores, activeRegIds = null) => {
   const totals = new Map();
   (studentScores || []).forEach(s => {
     if (!s.registration_id) return;
+    if (s.score == null || s.score === '') return;
+    if (activeRegIds && !activeRegIds.has(s.registration_id)) return;
     totals.set(s.registration_id, (totals.get(s.registration_id) || 0) + Number(s.score || 0));
   });
   const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]);
@@ -133,7 +139,7 @@ const computeStudentTotals = (studentScores) => {
 
 const buildMyScorecard = (students, studentScores, myRegistrationId) => {
   if (!myRegistrationId) return null;
-  const { totals, rankMap } = computeStudentTotals(studentScores);
+  const { totals, rankMap } = computeStudentTotals(studentScores, new Set((students || []).map(s => s.registration_id)));
   const me = students.find(s => s.registration_id === myRegistrationId) || null;
   return {
     registration_id: myRegistrationId,
@@ -377,7 +383,10 @@ const bulkUpdateScores = async (req, res) => {
     const rows = [];
     const errors = [];
     scores.forEach(({ teamId, subroundId, score }) => {
-      const numericScore = Number(score);
+      // Blank score = no change (prevents Tab-through/empty blur from writing 0)
+      const scoreStr = score == null ? '' : String(score).trim();
+      if (scoreStr === '') return;
+      const numericScore = Number(scoreStr);
       if (!teamId || !subroundId || !Number.isFinite(numericScore) || numericScore < 0) { errors.push({ teamId, subroundId, error: 'Invalid score' }); return; }
       if (!(subroundId in validSubrounds)) { errors.push({ teamId, subroundId, error: 'Invalid subround' }); return; }
       if (numericScore > validSubrounds[subroundId]) { errors.push({ teamId, subroundId, error: `Score exceeds max ${validSubrounds[subroundId]}` }); return; }
@@ -526,11 +535,14 @@ const bulkUpdateStudentScores = async (req, res) => {
       if (scoreStr !== '') {
         numericScore = Number(scoreStr);
       } else if (commentProvided) {
+        // Comment-only save: keep any existing score, otherwise store NULL so
+        // "not yet scored" stays distinguishable from a real 0 (needs patch v62).
         const existingScore = existing.score;
         numericScore = existingScore == null || existingScore === '' ? null : Number(existingScore);
         if (!Number.isFinite(numericScore)) numericScore = null;
       } else {
-        numericScore = 0;
+        // Blank score with no comment = no change (prevents phantom 0 rows)
+        return;
       }
 
       if (!registrationId || !subroundId || (numericScore != null && (!Number.isFinite(numericScore) || numericScore < 0))) {
@@ -611,7 +623,7 @@ const getStudentScoreCard = async (req, res) => {
       .eq('event_id', eventId)
       .not('registration_id', 'is', null);
     const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
-    const { totals, rankMap } = computeStudentTotals(studentScores);
+    const { totals, rankMap } = computeStudentTotals(studentScores, new Set(students.map(s => s.registration_id)));
 
     const { data: commentRow } = await supabase
       .from('student_score_comments')
@@ -689,6 +701,7 @@ const escHtml = (value) => String(value == null ? '' : value)
   .replace(/"/g, '&quot;');
 
 const formatScoreValue = (value) => {
+  if (value == null || value === '') return '-';
   const n = Number(value);
   if (!Number.isFinite(n)) return '-';
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
@@ -720,30 +733,48 @@ const buildSubroundMeta = async (eventId) => {
 };
 
 // Aggregate per-criterion scores into one row per ROUND (overall round-wise score).
+// A round where no criterion has a score yet yields score: null so renderers
+// show '-' instead of a misleading "0 / max".
 const buildRoundRows = (orderedSubs, ownScores) => {
   const bySub = new Map((ownScores || []).map(s => [s.subround_id, s]));
   const rounds = new Map();
   const order = [];
   orderedSubs.forEach(sub => {
     const row = bySub.get(sub.id);
-    let score = row && row.score != null ? Number(row.score) : 0;
+    const hasScore = Boolean(row && row.score != null && row.score !== '');
+    let score = hasScore ? Number(row.score) : 0;
     if (!Number.isFinite(score)) score = 0;
     let max = Number(sub.max);
     if (!Number.isFinite(max) || max < 0) max = 0;
     const key = sub.roundId != null ? sub.roundId : sub.roundName;
     if (!rounds.has(key)) {
-      rounds.set(key, { roundName: sub.roundName, score: 0, max: 0 });
+      rounds.set(key, { roundName: sub.roundName, score: 0, max: 0, evaluated: false });
       order.push(key);
     }
     const r = rounds.get(key);
-    r.score += score;
+    if (hasScore) {
+      r.score += score;
+      r.evaluated = true;
+    }
     r.max += max;
   });
-  return order.map(key => rounds.get(key));
+  return order.map(key => {
+    const r = rounds.get(key);
+    return { roundName: r.roundName, score: r.evaluated ? r.score : null, max: r.max };
+  });
 };
 
-const createReportPdfAttachment = async ({ event, student, rows, total, rank, totalParticipants, comment }) => {
-  const pdfBytes = await buildScoreReportPdf({ event, student, rows, total, rank, totalParticipants, comment });
+// Per-criterion comments (patch v54) shown alongside the overall comment.
+const buildCriterionComments = (subroundMeta, ownScores) =>
+  (ownScores || [])
+    .filter(s => String(s.comment || '').trim())
+    .map(s => ({
+      name: (subroundMeta.get(s.subround_id) || {}).name || 'Criterion',
+      comment: String(s.comment).trim()
+    }));
+
+const createReportPdfAttachment = async ({ event, student, rows, total, rank, totalParticipants, comment, criterionComments }) => {
+  const pdfBytes = await buildScoreReportPdf({ event, student, rows, total, rank, totalParticipants, comment, criterionComments });
   return {
     name: `Avento_Score_Report_${safeFileName(event.title)}_${safeFileName(student.name)}.pdf`,
     content: Buffer.from(pdfBytes).toString('base64'),
@@ -753,7 +784,7 @@ const createReportPdfAttachment = async ({ event, student, rows, total, rank, to
 
 // ---- Score reports (HTML email + in-app notification) ----
 
-const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticipants, comment }) => {
+const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticipants, comment, criterionComments }) => {
   const displayTotal = rows.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
   const displayMax = rows.reduce((sum, r) => sum + (Number(r.max) || 0), 0);
   const rowsHtml = rows.map(r => `
@@ -764,12 +795,20 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
     </tr>`).join('');
 
   const commentText = String(comment == null ? '' : comment).trim();
-  const commentHtml = commentText ? `
+  const critComments = (Array.isArray(criterionComments) ? criterionComments : [])
+    .filter(cc => cc && String(cc.comment || '').trim());
+  const critHtml = critComments.map(cc => `
+              <div style="margin-top:10px;">
+                <div style="font-size:11px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(cc.name)}</div>
+                <div style="color:#334155;font-size:13px;line-height:1.7;white-space:pre-wrap;">${escHtml(cc.comment)}</div>
+              </div>`).join('');
+  const commentHtml = (commentText || critHtml) ? `
         <tr><td style="padding:18px 40px 0;">
           <table width="100%" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
             <tr><td style="padding:16px 18px;">
               <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Evaluator Comments</div>
-              <div style="color:#334155;font-size:14px;line-height:1.7;white-space:pre-wrap;">${escHtml(commentText)}</div>
+              ${commentText ? `<div style="color:#334155;font-size:14px;line-height:1.7;white-space:pre-wrap;">${escHtml(commentText)}</div>` : ''}
+              ${critHtml}
             </td></tr>
           </table>
         </td></tr>` : '';
@@ -839,12 +878,13 @@ const sendStudentScoreReports = async (req, res) => {
       .not('registration_id', 'is', null);
     const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
     const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
-    const { totals, rankMap } = computeStudentTotals(studentScores);
+    const activeRegIds = new Set(students.map(s => s.registration_id));
+    const { totals, rankMap } = computeStudentTotals(studentScores, activeRegIds);
     const commentRows = await fetchStudentComments(eventId);
     const commentMap = new Map(commentRows.map(c => [c.registration_id, c.comment]));
 
     // Targets: an explicit subset, or every student with at least one score
-    const scoredRegIds = new Set(studentScores.map(s => s.registration_id));
+    const scoredRegIds = new Set(studentScores.filter(s => s.score != null && s.score !== '').map(s => s.registration_id));
     let targets;
     if (Array.isArray(registrationIds) && registrationIds.length > 0) {
       const wanted = new Set(registrationIds);
@@ -862,37 +902,51 @@ const sendStudentScoreReports = async (req, res) => {
     }
 
     const sent = [];
+    const failed = [];
     const skipped = [];
+    let mockUsed = false;
     for (const student of targets) {
       if (panelAccess && !panelAccess.registrationIds.has(student.registration_id)) {
         skipped.push({ registrationId: student.registration_id, name: student.name, reason: 'Student is not on your panel' });
         continue;
       }
       const own = studentScores.filter(s => s.registration_id === student.registration_id);
-      if (own.length === 0) {
+      if (!own.some(s => s.score != null && s.score !== '')) {
         skipped.push({ registrationId: student.registration_id, name: student.name, reason: 'No scores entered yet' });
         continue;
       }
 
       const rows = buildRoundRows(orderedSubs, own);
+      const criterionComments = buildCriterionComments(subroundMeta, own);
       const total = totals.get(student.registration_id) || 0;
       const rank = rankMap.get(student.registration_id) || null;
       const comment = commentMap.get(student.registration_id) || '';
 
-      try {
-        if (student.email) {
-          let attachments;
-          try {
-            attachments = [await createReportPdfAttachment({ event, student, rows, total, rank, totalParticipants: totals.size, comment })];
-          } catch (pdfErr) {
-            console.warn('Score report PDF generation failed (sending email without attachment):', pdfErr.message);
-          }
-          await sendEmailNotification({
+      let emailOk = false;
+      let emailError = student.email ? null : 'No email address on profile (in-app notification sent)';
+      if (student.email) {
+        let attachments;
+        try {
+          attachments = [await createReportPdfAttachment({ event, student, rows, total, rank, totalParticipants: totals.size, comment, criterionComments })];
+        } catch (pdfErr) {
+          console.warn('Score report PDF generation failed (sending email without attachment):', pdfErr.message);
+        }
+        // sendEmailNotification reports failure via { ok: false } - only a
+        // confirmed delivery may be tracked as sent.
+        let result;
+        try {
+          result = await sendEmailNotification({
             recipientEmail: student.email,
             subject: `Score Report - ${event.title}`,
-            htmlBody: buildScoreReportHtml({ event, student, rows, total, rank, totalParticipants: totals.size, comment }),
+            htmlBody: buildScoreReportHtml({ event, student, rows, total, rank, totalParticipants: totals.size, comment, criterionComments }),
             attachments
           });
+        } catch (mailErr) {
+          result = { ok: false, error: mailErr.message };
+        }
+        if (result && result.ok) {
+          emailOk = true;
+          if (result.channel === 'mock') mockUsed = true;
           // Record that the report email was sent (non-fatal if tracking columns are absent).
           try {
             const { error: trackErr } = await supabase
@@ -903,23 +957,37 @@ const sendStudentScoreReports = async (req, res) => {
           } catch (trackErr) {
             console.warn('Score report email tracking not recorded:', trackErr.message);
           }
+        } else {
+          emailError = (result && result.error) || 'Email delivery failed';
         }
+      }
+
+      try {
         await sendInAppNotification({
           recipientId: student.user_id,
           title: `Score report for ${event.title}`,
-          message: `Your evaluation report is ready. Total: ${total}${rank ? ` | Rank: ${rank} of ${totals.size}` : ''}. Open the event to view your full scorecard.`,
+          message: `Your evaluation report is ready. Total: ${formatScoreValue(total)}${rank ? ` | Rank: ${rank} of ${totals.size}` : ''}. Open the event to view your full scorecard.`,
           type: 'info',
           eventId
         });
+      } catch (inAppErr) {
+        console.warn(`Score report in-app notification failed for registration ${student.registration_id}:`, inAppErr.message);
+      }
+
+      if (emailOk) {
         sent.push({ registrationId: student.registration_id, name: student.name });
-      } catch (mailErr) {
-        skipped.push({ registrationId: student.registration_id, name: student.name, reason: mailErr.message });
+      } else {
+        failed.push({ registrationId: student.registration_id, name: student.name, reason: emailError || 'Email delivery failed' });
       }
     }
 
+    const parts = [`Sent ${sent.length} score report(s)`];
+    if (failed.length) parts.push(`${failed.length} failed`);
+    if (skipped.length) parts.push(`${skipped.length} skipped`);
     res.json({
-      message: `Sent ${sent.length} score report(s)${skipped.length ? `, ${skipped.length} skipped` : ''}.`,
+      message: `${parts.join(', ')}.${mockUsed ? ' [mock mode - no actual emails were delivered]' : ''}`,
       sent,
+      failed,
       skipped
     });
   } catch (err) {
@@ -953,7 +1021,8 @@ const getStudentScoreReportPdf = async (req, res) => {
       .not('registration_id', 'is', null);
     const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
     const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
-    const { totals, rankMap } = computeStudentTotals(studentScores);
+    const activeRegIds = new Set(students.map(s => s.registration_id));
+    const { totals, rankMap } = computeStudentTotals(studentScores, activeRegIds);
 
     const own = studentScores.filter(s => s.registration_id === student.registration_id);
     if (own.length === 0) {
@@ -961,6 +1030,7 @@ const getStudentScoreReportPdf = async (req, res) => {
     }
 
     const rows = buildRoundRows(orderedSubs, own);
+    const criterionComments = buildCriterionComments(subroundMeta, own);
     const total = totals.get(student.registration_id) || 0;
     const rank = rankMap.get(student.registration_id) || null;
     const { data: commentRow } = await supabase
@@ -970,7 +1040,7 @@ const getStudentScoreReportPdf = async (req, res) => {
       .eq('registration_id', registrationId)
       .maybeSingle();
 
-    const pdfBytes = await buildScoreReportPdf({ event, student, rows, total, rank, totalParticipants: totals.size, comment: commentRow?.comment || '' });
+    const pdfBytes = await buildScoreReportPdf({ event, student, rows, total, rank, totalParticipants: totals.size, comment: commentRow?.comment || '', criterionComments });
     const fileName = `Avento_Score_Report_${safeFileName(event.title)}_${safeFileName(student.name)}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

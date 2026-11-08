@@ -3,6 +3,7 @@ const path = require('path');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabaseClient');
 const { notifyUser } = require('../services/notificationService');
+const { sendEventReminderEmail } = require('../services/reminderEmailService');
 
 /**
  * Helper to optionally resolve authenticated user from Authorization header
@@ -3836,7 +3837,7 @@ const deleteConfirmationAttachment = async (req, res) => {
 const saveReminderEmailConfig = async (req, res) => {
   try {
     const { id } = req.params;
-    const { enabled, mode, subject, body } = req.body;
+    const { enabled, auto_send, mode, subject, body } = req.body;
 
     const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
     if (fetchErr || !event) {
@@ -3846,6 +3847,9 @@ const saveReminderEmailConfig = async (req, res) => {
     const current = event.reminder_email_config || {};
     const config = {
       enabled: enabled !== undefined ? Boolean(enabled) : (current.enabled !== false),
+      // Automated 3-hour sending is opt-in: without an explicit true the cron
+      // job stays off and reminders are sent manually by date instead.
+      auto_send: auto_send !== undefined ? Boolean(auto_send) : Boolean(current.auto_send),
       mode: mode === 'custom' ? 'custom' : 'default',
       subject: subject !== undefined ? String(subject).slice(0, 300) : (current.subject || ''),
       body: body !== undefined ? String(body).slice(0, 5000) : (current.body || ''),
@@ -3869,6 +3873,336 @@ const saveReminderEmailConfig = async (req, res) => {
   } catch (err) {
     console.error('Error saving reminder email config:', err);
     res.status(500).json({ message: 'Server error saving reminder email config.', error: err.message });
+  }
+};
+
+// Sends one [TEST] reminder email immediately (bypasses the 3-hour window and
+// the once-per-registration tracking) so organizers can verify delivery in dev.
+const sendTestReminderEmail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { registrationId, mode, subject, body } = req.body || {};
+
+    const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const savedConfig = event.reminder_email_config || {};
+    const config = {
+      mode: mode === 'custom' ? 'custom' : (savedConfig.mode === 'custom' ? 'custom' : 'default'),
+      subject: subject !== undefined ? String(subject).slice(0, 300) : (savedConfig.subject || ''),
+      body: body !== undefined ? String(body).slice(0, 5000) : (savedConfig.body || '')
+    };
+
+    let profile = null;
+    let registration = { id: 'TEST-REMINDER', user_id: null };
+    let slot = null;
+    let teamName = null;
+
+    if (registrationId) {
+      const { data: reg } = await supabase
+        .from('event_registrations')
+        .select('id, user_id, event_id, team_id, slot_id, team:event_teams(id, name, slot_id)')
+        .eq('id', registrationId)
+        .eq('event_id', id)
+        .single();
+      if (!reg) {
+        return res.status(404).json({ message: 'Registration not found for this event.' });
+      }
+      registration = { id: reg.id, user_id: reg.user_id };
+      const slotId = reg.team_id ? (reg.team?.slot_id || reg.slot_id) : (reg.slot_id || reg.team?.slot_id);
+      if (slotId) {
+        const { data: slotRow } = await supabase.from('event_slots').select('*').eq('id', slotId).single();
+        slot = slotRow || null;
+      }
+      teamName = reg.team?.name || null;
+      const { data: prof } = await supabase.from('profiles').select('id, name, email').eq('id', reg.user_id).single();
+      profile = prof || null;
+    } else {
+      const { data: prof } = await supabase.from('profiles').select('id, name, email').eq('id', req.user.id).single();
+      profile = prof || { name: req.user.name || 'Organizer', email: req.user.email || '' };
+    }
+
+    if (!profile?.email) {
+      return res.status(400).json({ message: 'No email address found for the test recipient.' });
+    }
+
+    const result = await sendEventReminderEmail({
+      registration,
+      event,
+      slot,
+      teamName,
+      profile,
+      config,
+      isTest: true
+    });
+
+    if (!result || result.ok === false) {
+      return res.status(502).json({
+        success: false,
+        message: `Test email could not be delivered: ${(result && result.error) || 'email delivery failed'}. Check the server console for [EMAIL ...] logs.`,
+        channel: result && result.channel
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Test reminder email sent to ${profile.email} via ${result.channel === 'mock' ? 'mock mode (no email transport configured - see server console)' : result.channel}.`,
+      channel: result.channel
+    });
+  } catch (err) {
+    console.error('Error sending test reminder email:', err);
+    res.status(500).json({ message: 'Server error sending test reminder email.', error: err.message });
+  }
+};
+
+// ── Manual, date-based reminder sending ─────────────────────────────────────
+const CONFIRMED_REMINDER_STATUSES = ['registered', 'confirmed'];
+
+const reminderSlotStart = (slot, event) => {
+  const t = String(slot?.start_time || '').substring(0, 5);
+  let d = String(slot?.slot_date || '').substring(0, 10);
+  if (!d && event?.date) {
+    const eventDay = new Date(event.date);
+    if (!isNaN(eventDay.getTime())) {
+      d = `${eventDay.getFullYear()}-${String(eventDay.getMonth() + 1).padStart(2, '0')}-${String(eventDay.getDate()).padStart(2, '0')}`;
+    }
+  }
+  if (!d || !t) return null;
+  const date = new Date(`${d}T${t}`);
+  return isNaN(date.getTime()) ? null : date;
+};
+
+const localDateKey = (value) => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const slotDateKey = (slot, event) => {
+  const direct = String(slot?.slot_date || '').substring(0, 10);
+  return direct || localDateKey(event?.date);
+};
+
+// Resolves every confirmed registrant whose effective session falls on the
+// given date (team slot wins for team registrations - mirrors the cron job).
+const resolveReminderTargets = async (event, dateKey) => {
+  const { data: slots, error: slotErr } = await supabase
+    .from('event_slots')
+    .select('*')
+    .eq('event_id', event.id);
+  if (slotErr) throw slotErr;
+
+  const activeSlots = (slots || []).filter(s => s.status !== 'inactive');
+  const slotById = new Map(activeSlots.map(s => [s.id, s]));
+  const matchedSlotIds = new Set();
+  const dateSet = new Set();
+
+  for (const slot of activeSlots) {
+    const key = slotDateKey(slot, event);
+    if (!key) continue;
+    dateSet.add(key);
+    if (key === dateKey) matchedSlotIds.add(slot.id);
+  }
+
+  const eventKey = localDateKey(event.date);
+  if (eventKey) dateSet.add(eventKey);
+  const eventDateMatches = Boolean(eventKey && eventKey === dateKey);
+
+  const { data: regs, error: regErr } = await supabase
+    .from('event_registrations')
+    .select('id, user_id, event_id, team_id, slot_id, status, reminder_sent_at, reminder_sent_for_start, team:event_teams(id, name, slot_id)')
+    .eq('event_id', event.id)
+    .in('status', CONFIRMED_REMINDER_STATUSES);
+  if (regErr) throw regErr;
+
+  const matched = [];
+  for (const reg of regs || []) {
+    const teamSlotId = reg.team?.slot_id || null;
+    const ownSlotId = reg.slot_id || null;
+    // For team registrations the team's slot is the source of truth
+    // (mirrors the event pass resolution logic).
+    const effectiveSlotId = reg.team_id ? (teamSlotId || ownSlotId) : (ownSlotId || teamSlotId);
+    let slot = null;
+    if (effectiveSlotId) {
+      if (!matchedSlotIds.has(effectiveSlotId)) continue;
+      slot = slotById.get(effectiveSlotId) || null;
+      if (!slot) continue;
+    } else {
+      if (!eventDateMatches) continue;
+    }
+    matched.push({ reg, slot });
+  }
+
+  const userIds = [...new Set(matched.map(m => m.reg.user_id).filter(Boolean))];
+  const profileById = new Map();
+  if (userIds.length > 0) {
+    const { data: profiles, error: profErr } = await supabase
+      .from('profiles')
+      .select('id, name, email')
+      .in('id', userIds);
+    if (profErr) throw profErr;
+    for (const p of profiles || []) profileById.set(p.id, p);
+  }
+
+  const targets = matched.map(({ reg, slot }) => {
+    const profile = profileById.get(reg.user_id) || null;
+    const start = slot ? reminderSlotStart(slot, event) : (event?.date ? new Date(event.date) : null);
+    return {
+      registration: reg,
+      profile,
+      slot,
+      teamName: reg.team?.name || null,
+      sessionStart: start && !isNaN(start.getTime()) ? start.toISOString() : null,
+      alreadySent: Boolean(reg.reminder_sent_at),
+      previous: {
+        reminder_sent_at: reg.reminder_sent_at || null,
+        reminder_sent_for_start: reg.reminder_sent_for_start || null
+      }
+    };
+  });
+
+  return { dates: [...dateSet].sort(), targets };
+};
+
+const getReminderRecipients = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dateKey = String(req.query.date || '').substring(0, 10);
+
+    const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const { dates, targets } = await resolveReminderTargets(event, dateKey);
+
+    const recipients = /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
+      ? targets.map(t => ({
+          registrationId: t.registration.id,
+          name: t.profile?.name || 'Unnamed',
+          email: t.profile?.email || '',
+          slotName: t.slot?.slot_name || null,
+          teamName: t.teamName,
+          sessionStart: t.sessionStart,
+          alreadySent: t.alreadySent
+        }))
+      : [];
+
+    res.json({ dates, date: /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? dateKey : null, recipients });
+  } catch (err) {
+    console.error('Error fetching reminder recipients:', err);
+    res.status(500).json({ message: 'Server error fetching reminder recipients.', error: err.message });
+  }
+};
+
+// Sends the configured reminder email to confirmed registrants of every
+// session on the selected date. Resends are allowed; tracking is restored on
+// failure so history stays accurate.
+const sendReminderEmailsByDate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, registrationIds, mode, subject, body } = req.body || {};
+    const dateKey = String(date || '').substring(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ message: 'A valid date (YYYY-MM-DD) is required.' });
+    }
+
+    const { data: event, error: fetchErr } = await supabase.from('events').select('*').eq('id', id).single();
+    if (fetchErr || !event) {
+      return res.status(404).json({ message: 'Event not found.' });
+    }
+
+    const { dates, targets } = await resolveReminderTargets(event, dateKey);
+    if (!dates.includes(dateKey)) {
+      return res.status(400).json({ message: 'No sessions found for the selected date.' });
+    }
+
+    let selected = targets;
+    if (Array.isArray(registrationIds) && registrationIds.length > 0) {
+      const wanted = new Set(registrationIds.map(String));
+      selected = targets.filter(t => wanted.has(String(t.registration.id)));
+    }
+    if (selected.length === 0) {
+      return res.status(400).json({ message: 'No confirmed registrants found for the selected date.' });
+    }
+
+    const savedConfig = event.reminder_email_config || {};
+    const config = {
+      mode: mode === 'custom' ? 'custom' : (savedConfig.mode === 'custom' ? 'custom' : 'default'),
+      subject: subject !== undefined ? String(subject).slice(0, 300) : (savedConfig.subject || ''),
+      body: body !== undefined ? String(body).slice(0, 5000) : (savedConfig.body || '')
+    };
+
+    const nowISO = new Date().toISOString();
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
+    let channel = null;
+    const failures = [];
+
+    for (const target of selected) {
+      const { registration, profile, slot, teamName, sessionStart, previous } = target;
+      if (!profile?.email) {
+        skipped++;
+        continue;
+      }
+
+      const { error: claimErr } = await supabase
+        .from('event_registrations')
+        .update({ reminder_sent_at: nowISO, reminder_sent_for_start: sessionStart || null })
+        .eq('id', registration.id);
+      if (claimErr) {
+        failed++;
+        failures.push({ registrationId: registration.id, error: claimErr.message });
+        continue;
+      }
+
+      const late = sessionStart ? new Date(sessionStart).getTime() < Date.now() : false;
+      try {
+        const result = await sendEventReminderEmail({
+          registration,
+          event,
+          slot: slot || null,
+          teamName,
+          profile,
+          config,
+          late
+        });
+        if (result && result.ok === false) {
+          throw new Error(result.error || 'Email delivery failed');
+        }
+        sent++;
+        channel = (result && result.channel) || channel;
+        console.log(`[ReminderEmail] Manual reminder sent for registration ${registration.id} (${event.title}) via ${result?.channel || 'unknown'}.`);
+      } catch (sendErr) {
+        failed++;
+        failures.push({ registrationId: registration.id, error: sendErr.message });
+        console.error(`[ReminderEmail] Manual reminder FAILED for registration ${registration.id} (${event.title}): ${sendErr.message}`);
+        await supabase
+          .from('event_registrations')
+          .update({
+            reminder_sent_at: previous.reminder_sent_at,
+            reminder_sent_for_start: previous.reminder_sent_for_start
+          })
+          .eq('id', registration.id);
+      }
+    }
+
+    res.json({
+      success: failed === 0,
+      message: `${sent} reminder${sent === 1 ? '' : 's'} sent${failed ? `, ${failed} failed` : ''}${skipped ? `, ${skipped} skipped (no email address)` : ''}.`,
+      date: dateKey,
+      sent,
+      failed,
+      skipped,
+      failures,
+      channel
+    });
+  } catch (err) {
+    console.error('Error sending reminder emails by date:', err);
+    res.status(500).json({ message: 'Server error sending reminder emails.', error: err.message });
   }
 };
 
@@ -4281,6 +4615,9 @@ module.exports = {
   uploadConfirmationAttachment,
   deleteConfirmationAttachment,
   saveReminderEmailConfig,
+  sendTestReminderEmail,
+  getReminderRecipients,
+  sendReminderEmailsByDate,
   requestOfficialPermission,
   getEventOfficialPermissions,
   getAllOfficialPermissions,

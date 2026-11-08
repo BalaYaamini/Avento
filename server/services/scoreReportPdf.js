@@ -116,7 +116,7 @@ const arcPath = (r, sweepDeg) => {
 const fullRingPath = (r) =>
   `M 0 ${-r} A ${r} ${r} 0 1 1 0 ${r} A ${r} ${r} 0 1 1 0 ${-r}`;
 
-const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalParticipants, comment }) => {
+const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalParticipants, comment, criterionComments }) => {
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -357,9 +357,18 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
   });
 
   const commentText = String(comment == null ? '' : comment).trim();
+  const critComments = (Array.isArray(criterionComments) ? criterionComments : [])
+    .filter(cc => cc && String(cc.comment || '').trim());
+  const commentWidth = CONTENT_W - 36;
+  const commentLines = [];
   if (commentText) {
-    const commentWidth = CONTENT_W - 36;
-    const commentLines = wrapText(regular, commentText, 9.5, commentWidth);
+    wrapText(regular, commentText, 9.5, commentWidth).forEach(line => commentLines.push({ text: line, bold: false }));
+  }
+  critComments.forEach(cc => {
+    wrapText(bold, String(cc.name || 'Criterion'), 9, commentWidth).forEach(line => commentLines.push({ text: line, bold: true }));
+    wrapText(regular, String(cc.comment), 9.5, commentWidth).forEach(line => commentLines.push({ text: line, bold: false }));
+  });
+  if (commentLines.length > 0) {
     const commentLineH = 14;
     const commentHeadH = 30;
     const commentH = commentHeadH + (Math.max(1, commentLines.length) - 1) * commentLineH + 19;
@@ -367,8 +376,13 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     const drawComment = (page, topY) => {
       drawRoundRect(page, MARGIN, topY, CONTENT_W, commentH, 10, CARD_BG, BORDER, 1);
       drawText(page, 'EVALUATOR COMMENTS', MARGIN + 18, topY - 18, { size: 7.5, font: bold, color: MUTED });
-      commentLines.forEach((line, i) => {
-        drawText(page, line, MARGIN + 18, topY - commentHeadH - i * commentLineH, { size: 9.5, color: NAVY, maxWidth: commentWidth });
+      commentLines.forEach((entry, i) => {
+        drawText(page, entry.text, MARGIN + 18, topY - commentHeadH - i * commentLineH, {
+          size: 9.5,
+          font: entry.bold ? bold : regular,
+          color: entry.bold ? TEAL_TEXT : NAVY,
+          maxWidth: commentWidth
+        });
       });
     };
 

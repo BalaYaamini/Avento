@@ -47,6 +47,9 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const pendingSaves = useRef({});
   const pendingStudentSaves = useRef({});
   const [pendingCount, setPendingCount] = useState(0);
+  const [panelFilter, setPanelFilter] = useState('all');
+  const [registeredFrom, setRegisteredFrom] = useState('');
+  const [registeredTo, setRegisteredTo] = useState('');
 
   const load = async () => {
     try {
@@ -122,12 +125,16 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   }, [eventId]);
 
   const saveScore = useCallback((teamId, subroundId, value) => {
+    // Blank = no change; prevents Tab-through/empty blur from writing phantom 0s
+    if (value === '' || value == null) return;
     const key = `${teamId}:${subroundId}`;
     pendingSaves.current[key] = value;
     setPendingCount(Object.keys(pendingSaves.current).length + Object.keys(pendingStudentSaves.current).length);
   }, []);
 
   const saveStudentScore = useCallback((registrationId, subroundId, value) => {
+    // Blank = no change; prevents Tab-through/empty blur from writing phantom 0s
+    if (value === '' || value == null) return;
     const key = `${registrationId}:${subroundId}`;
     pendingStudentSaves.current[key] = value;
     setPendingCount(Object.keys(pendingSaves.current).length + Object.keys(pendingStudentSaves.current).length);
@@ -213,6 +220,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
 
   const sendReports = async (registrationIds) => {
     try {
+      // Make sure the newest edits are saved before the report totals are computed
+      await flushPendingSaves();
       const res = await axios.post(`/api/events/${eventId}/scoring/reports`, registrationIds ? { registrationIds } : {});
       markReportsSent(res.data?.sent);
       alert(res.data?.message || 'Score reports sent.');
@@ -274,7 +283,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     })));
     const maxTotal = subMeta.reduce((sum, sub) => sum + sub.max, 0);
 
-    const studentEntries = detailStudents.map(student => ({
+    const studentEntries = filteredStudents.map(student => ({
       student,
       total: subMeta.reduce((sum, sub) => sum + Number(studentScoresMap[`${student.registration_id}:${sub.id}`] || 0), 0)
     }));
@@ -308,7 +317,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       return row;
     });
 
-    const commentRows = detailStudents.map(student => {
+    const commentRows = filteredStudents.map(student => {
       const row = { 'Roll No': student.roll_number || '', Name: student.name || '' };
       subMeta.forEach(sub => {
         row[sub.label] = studentCommentMap[`${student.registration_id}:${sub.id}`] || '';
@@ -385,7 +394,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       total: subrounds.reduce((sum, subround) => sum + Number(scoresMap[`${team.id}:${subround.id}`] || 0), 0)
     }));
     const scoredStudents = (data.students || []).filter(student =>
-      (data.studentScores || []).some(score => score.registration_id === student.registration_id)
+      (data.studentScores || []).some(score => score.registration_id === student.registration_id && score.score != null && score.score !== '')
     );
     const studentEntries = scoredStudents.map(student => ({
       id: student.registration_id,
@@ -414,6 +423,37 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       ? (data.students || []).filter(s => myStudentIds.has(s.registration_id))
       : (data.myScorecard?.student ? [data.myScorecard.student] : []);
   const canScoreStudent = (registrationId) => canEdit || (data.isPanelMember && myStudentIds.has(registrationId));
+
+  // Panel + registration-date filters for the Student Score Details grid
+  const panelOptions = [];
+  const panelSeen = new Set();
+  let hasUnassigned = false;
+  detailStudents.forEach(student => {
+    if (!student.panel_id) { hasUnassigned = true; return; }
+    const key = String(student.panel_id);
+    if (!panelSeen.has(key)) {
+      panelSeen.add(key);
+      panelOptions.push({ id: key, name: student.panel_name || `Panel ${key}` });
+    }
+  });
+  panelOptions.sort((a, b) => a.name.localeCompare(b.name));
+
+  const filteredStudents = detailStudents.filter(student => {
+    if (panelFilter === 'none') {
+      if (student.panel_id) return false;
+    } else if (panelFilter !== 'all' && String(student.panel_id) !== String(panelFilter)) {
+      return false;
+    }
+    if (registeredFrom || registeredTo) {
+      const regDate = student.registered_at ? new Date(student.registered_at) : null;
+      if (!regDate || Number.isNaN(regDate.getTime())) return false;
+      if (registeredFrom && regDate < new Date(`${registeredFrom}T00:00:00`)) return false;
+      if (registeredTo && regDate > new Date(`${registeredTo}T23:59:59.999`)) return false;
+    }
+    return true;
+  });
+  const filtersActive = panelFilter !== 'all' || registeredFrom !== '' || registeredTo !== '';
+  const clearStudentFilters = () => { setPanelFilter('all'); setRegisteredFrom(''); setRegisteredTo(''); };
 
   const canSendReports = canEdit || data.isPanelMember;
   const myComment = (data.studentComments || []).find(c => String(c.registration_id) === String(data.myScorecard?.registration_id))?.comment || '';
@@ -486,7 +526,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     </section>
   ) : null;
 
-  if (!canEdit && !data.visible) {
+  if (!canEdit && !data.isPanelMember && !data.visible) {
     return scorecardSection || (
       <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
         The live scoreboard has not been published for this event yet.
@@ -536,8 +576,54 @@ const ScoringBoard = ({ eventId, canEdit }) => {
                 <h3 className="font-display text-xl font-black text-slate-800 dark:text-slate-100">Student Score Details</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{canEdit ? 'Score the students assigned to panels (panel members can score their own students).' : data.isPanelMember ? 'Score the students assigned to your panel.' : 'Showing your scores only.'}</p>
               </div>
-              {canSendReports && <button onClick={() => sendReports(detailStudents.map(s => s.registration_id))} className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">Email These Reports</button>}
+              {canSendReports && <button onClick={() => { if (filteredStudents.length === 0) return; sendReports(filteredStudents.map(s => s.registration_id)); }} className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300">Email These Reports</button>}
             </div>
+            {canSendReports && (
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {canEdit && (
+                  <div className="relative">
+                    <select
+                      value={panelFilter}
+                      onChange={event => setPanelFilter(event.target.value)}
+                      className="h-10 appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-xs font-semibold text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                      <option value="all">All Panels ({detailStudents.length})</option>
+                      {panelOptions.map(panel => (
+                        <option key={panel.id} value={panel.id}>
+                          {panel.name} ({detailStudents.filter(s => String(s.panel_id) === panel.id).length})
+                        </option>
+                      ))}
+                      {hasUnassigned && <option value="none">Unassigned ({detailStudents.filter(s => !s.panel_id).length})</option>}
+                    </select>
+                    <svg className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                  </div>
+                )}
+                <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Registered from
+                  <input
+                    type="date"
+                    value={registeredFrom}
+                    max={registeredTo || undefined}
+                    onChange={event => setRegisteredFrom(event.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  to
+                  <input
+                    type="date"
+                    value={registeredTo}
+                    min={registeredFrom || undefined}
+                    onChange={event => setRegisteredTo(event.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  />
+                </label>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{filteredStudents.length} of {detailStudents.length} shown</span>
+                {filtersActive && (
+                  <button type="button" onClick={clearStudentFilters} className="rounded-lg px-2 py-1 text-[10px] font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40">Clear filters</button>
+                )}
+              </div>
+            )}
             <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
               <table className="w-full min-w-[760px] text-left text-xs">
                 <thead>
@@ -555,7 +641,14 @@ const ScoringBoard = ({ eventId, canEdit }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {detailStudents.map(student => {
+                  {filteredStudents.length === 0 && (
+                    <tr>
+                      <td colSpan={subrounds.length + (canSendReports ? 3 : 2)} className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No students match the selected filters.
+                      </td>
+                    </tr>
+                  )}
+                  {filteredStudents.map(student => {
                     const total = subrounds.reduce((sum, subround) => sum + Number(studentScoresMap[`${student.registration_id}:${subround.id}`] || 0), 0);
                     const editable = canScoreStudent(student.registration_id);
                     const sentAt = student.report_email_sent_at || null;
@@ -570,6 +663,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
                             <div className="font-bold text-slate-700 dark:text-slate-200">{student.name}</div>
                           )}
                           <div className="text-[10px] text-slate-400">{student.roll_number}{student.panel_name ? ` - ${student.panel_name}` : ''}</div>
+                          {student.registered_at && <div className="text-[9px] text-slate-400">Registered {new Date(student.registered_at).toLocaleDateString()}</div>}
                         </td>
                         {subrounds.map(subround => (
                           <td key={subround.id} className="p-2 text-center">

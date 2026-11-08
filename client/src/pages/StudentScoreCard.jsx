@@ -174,6 +174,8 @@ const StudentScoreCard = () => {
 
   const sendReport = async () => {
     try {
+      // Make sure the newest edits are saved before the report totals are computed
+      await flushPendingSaves();
       const res = await axios.post(`/api/events/${eventId}/scoring/reports`, { registrationIds: [registrationId] });
       alert(res.data?.message || 'Score report sent.');
     } catch (err) {
