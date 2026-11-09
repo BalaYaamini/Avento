@@ -458,7 +458,7 @@ const PanelAllocationTab = ({ eventId, event, user, hasFullAccess }) => {
 
   const handleExportCSV = () => {
     const rows = [
-      ['Student Name', 'Email', 'Roll Number', 'Department', 'Team', 'Slot', 'Slot Date', 'Slot Time', 'Panel', 'Panel Venue', 'Panel Members']
+      ['Student Name', 'Email', 'Roll Number', 'Department', 'Team', 'Slot', 'Slot Date', 'Slot Time', 'Panel', 'Panel Venue', 'Panel Members', 'Registered On']
     ];
 
     allStudents.forEach(s => {
@@ -474,7 +474,8 @@ const PanelAllocationTab = ({ eventId, event, user, hasFullAccess }) => {
         s.slot_time || '',
         s.panel_name || 'Unassigned',
         s.panel_venue || '',
-        panel ? (panel.members || []).map(m => m.name).join('; ') : ''
+        panel ? (panel.members || []).map(m => m.name).join('; ') : '',
+        s.registered_at ? new Date(s.registered_at).toLocaleDateString() : ''
       ]);
     });
 

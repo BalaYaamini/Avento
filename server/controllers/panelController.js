@@ -139,6 +139,7 @@ const getPanelsOverview = async (req, res) => {
         slot_name: slot ? slot.slot_name : '',
         slot_date: slot ? slot.slot_date : null,
         slot_time: slot ? `${(slot.start_time || '').substring(0, 5)} - ${(slot.end_time || '').substring(0, 5)}` : '',
+        registered_at: reg.created_at || null,
         status: reg.status
       };
     };
