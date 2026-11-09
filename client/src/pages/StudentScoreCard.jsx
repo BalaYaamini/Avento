@@ -214,12 +214,29 @@ const StudentScoreCard = () => {
     }
   };
 
+  // Persist the on-screen comment (incl. the auto-generated readiness comment)
+  // so the report always contains exactly what the panel shows.
+  const persistComment = async () => {
+    if (!card?.canEdit) return true;
+    try {
+      await axios.put(`/api/events/${eventId}/scoring/student-comment`, { registrationId, comment });
+      return true;
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to save the comment.');
+      return false;
+    }
+  };
+
   const sendReport = async () => {
     try {
       // Make sure the newest edits are saved before the report totals are computed
       const saved = await flushPendingSaves();
       if (!saved) {
         alert('Some scores could not be saved. Please try again before sending the report.');
+        return;
+      }
+      if (!(await persistComment())) {
+        alert('The comment could not be saved. Please try again before sending the report.');
         return;
       }
       const res = await axios.post(`/api/events/${eventId}/scoring/reports`, { registrationIds: [registrationId] });
@@ -235,6 +252,10 @@ const StudentScoreCard = () => {
       const saved = await flushPendingSaves();
       if (!saved) {
         alert('Some scores could not be saved. Please try again before downloading the report.');
+        return;
+      }
+      if (!(await persistComment())) {
+        alert('The comment could not be saved. Please try again before downloading the report.');
         return;
       }
       const res = await axios.get(`/api/events/${eventId}/scoring/report/${registrationId}/pdf`, { responseType: 'blob' });
