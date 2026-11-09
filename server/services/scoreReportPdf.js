@@ -214,9 +214,37 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
   };
 
   const drawTitleBlock = (page) => {
-    drawText(page, event.title || 'Event', MARGIN, PAGE_H - 158, { size: 22, font: bold, color: NAVY, maxWidth: CONTENT_W });
+    const title = event.title || 'Event';
     const name = student.name || 'Student';
-    drawText(page, `Score report for ${name}`, MARGIN, PAGE_H - 176, { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
+    // Show the event title in full: wrap it across lines (shrinking the font a
+    // little when needed) so it fits between the header and the info card,
+    // instead of truncating it to a single line ending in "...".
+    const topLimit = 122.5;
+    const bottomLimit = 175;
+    let size = 22;
+    let lineH = size * 1.15;
+    let firstBaseline = topLimit + size * 0.72;
+    let maxLines = Math.max(1, Math.floor((bottomLimit - firstBaseline) / lineH) + 1);
+    let lines = wrapText(bold, title, size, CONTENT_W, 20);
+    while (lines.length > maxLines && size > 11) {
+      size -= 1;
+      lineH = size * 1.15;
+      firstBaseline = topLimit + size * 0.72;
+      maxLines = Math.max(1, Math.floor((bottomLimit - firstBaseline) / lineH) + 1);
+      lines = wrapText(bold, title, size, CONTENT_W, 20);
+    }
+    if (lines.length > maxLines) lines = wrapText(bold, title, size, CONTENT_W, maxLines);
+
+    if (lines.length === 1) {
+      drawText(page, lines[0], MARGIN, PAGE_H - 158, { size, font: bold, color: NAVY });
+      drawText(page, `Score report for ${name}`, MARGIN, PAGE_H - 176, { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
+      return;
+    }
+
+    lines.forEach((line, i) => {
+      drawText(page, line, MARGIN, PAGE_H - (firstBaseline + i * lineH), { size, font: bold, color: NAVY });
+    });
+    drawText(page, `Score report for ${name}`, MARGIN, PAGE_H - (firstBaseline + (lines.length - 1) * lineH + 18), { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
   };
 
   const drawInfoCard = (page) => {

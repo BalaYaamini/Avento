@@ -457,6 +457,13 @@ const PanelAllocationTab = ({ eventId, event, user, hasFullAccess }) => {
   // ---------- Export CSV ----------
 
   const handleExportCSV = () => {
+    const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const dateCell = (value) => {
+      const raw = String(value == null ? '' : value);
+      if (!raw) return '';
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `="${m[3]}-${monthShort[Number(m[2]) - 1]}-${m[1]}"` : `="${raw}"`;
+    };
     const rows = [
       ['Student Name', 'Email', 'Roll Number', 'Department', 'Team', 'Slot', 'Slot Date', 'Slot Time', 'Panel', 'Panel Venue', 'Panel Members', 'Registered On']
     ];
@@ -470,7 +477,7 @@ const PanelAllocationTab = ({ eventId, event, user, hasFullAccess }) => {
         s.department || '',
         s.team_name || '',
         s.slot_name || '',
-        s.slot_date ? new Date(s.slot_date).toLocaleDateString() : '',
+        dateCell(s.slot_date),
         s.slot_time || '',
         s.panel_name || 'Unassigned',
         s.panel_venue || '',
