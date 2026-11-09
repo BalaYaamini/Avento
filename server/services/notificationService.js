@@ -102,6 +102,7 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attach
   }
 
   let lastError = '';
+  const channelErrors = [];
 
   // 1) Brevo API first
   if (BREVO_API_KEY) {
@@ -132,6 +133,7 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attach
       return { ok: true, channel: 'brevo', data: response.data };
     } catch (err) {
       lastError = err.response?.data?.message || err.message;
+      channelErrors.push(`Brevo: ${lastError}`);
       console.warn(`[EMAIL BREVO FAILED] To: ${recipientEmail} | Error: ${lastError}${SMTP_ENABLED ? ' - falling back to SMTP' : ''}`);
     }
   }
@@ -145,11 +147,16 @@ const sendEmailNotification = async ({ recipientEmail, subject, htmlBody, attach
       return { ok: true, channel: 'smtp', messageId: info.messageId };
     } catch (smtpErr) {
       lastError = smtpErr.message;
+      channelErrors.push(`Gmail SMTP: ${smtpErr.message}`);
       console.error(`[EMAIL SMTP FAILED] To: ${recipientEmail} | Error: ${smtpErr.message}`);
     }
   }
 
-  return { ok: false, channel: 'none', error: lastError || 'No email transport succeeded' };
+  return {
+    ok: false,
+    channel: 'none',
+    error: channelErrors.length ? channelErrors.join(' | ') : (lastError || 'No email transport succeeded'),
+  };
 };
 
 const sendPasswordResetEmail = async ({ recipientEmail, resetUrl }) => {

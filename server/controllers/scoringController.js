@@ -1003,8 +1003,13 @@ const sendStudentScoreReports = async (req, res) => {
     const parts = [`Sent ${sent.length} score report(s)`];
     if (failed.length) parts.push(`${failed.length} failed`);
     if (skipped.length) parts.push(`${skipped.length} skipped`);
+    let message = `${parts.join(', ')}.${mockUsed ? ' [mock mode - no actual emails were delivered]' : ''}`;
+    if (failed.length) {
+      const reason = String(failed[0].reason || '').replace(/\s*\n\s*/g, ' ').slice(0, 300);
+      message += ` Email error: ${reason}`;
+    }
     res.json({
-      message: `${parts.join(', ')}.${mockUsed ? ' [mock mode - no actual emails were delivered]' : ''}`,
+      message,
       sent,
       failed,
       skipped
