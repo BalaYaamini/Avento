@@ -86,6 +86,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const pendingSaves = useRef({});
   const pendingStudentSaves = useRef({});
+  const flushingRef = useRef(false);
   const filtersRestoredForRef = useRef(null);
   const scrollRestoredForRef = useRef(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -127,12 +128,23 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   };
 
   const flushPendingSaves = useCallback(async () => {
+    if (flushingRef.current) return;
     const entries = Object.entries(pendingSaves.current);
     const studentEntries = Object.entries(pendingStudentSaves.current);
     if (entries.length === 0 && studentEntries.length === 0) return;
     pendingSaves.current = {};
     pendingStudentSaves.current = {};
     setPendingCount(0);
+    flushingRef.current = true;
+
+    // On failure the scores go back into the queue so a flaky request never
+    // silently drops what the evaluator typed.
+    const requeue = (failedEntries, store) => {
+      failedEntries.forEach(([key, value]) => {
+        if (!(key in store.current)) store.current[key] = value;
+      });
+      setPendingCount(Object.keys(pendingSaves.current).length + Object.keys(pendingStudentSaves.current).length);
+    };
 
     if (entries.length > 0) {
       const scores = entries.map(([key, score]) => {
@@ -145,7 +157,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         setData(previous => ({ ...previous, scores: newScores }));
         if ((response.data?.errors || []).length > 0) alert(formatSaveErrors(response.data.errors));
       } catch (err) {
-        alert(err.response?.data?.message || 'Failed to save scores.');
+        alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
+        requeue(entries, pendingSaves);
       }
     }
 
@@ -160,9 +173,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         setData(previous => ({ ...previous, studentScores: newScores }));
         if ((response.data?.errors || []).length > 0) alert(formatSaveErrors(response.data.errors));
       } catch (err) {
-        alert(err.response?.data?.message || 'Failed to save student scores.');
+        alert(err.response?.data?.message || 'Failed to save student scores. They will be retried.');
+        requeue(studentEntries, pendingStudentSaves);
       }
     }
+    flushingRef.current = false;
   }, [eventId]);
 
   const saveScore = useCallback((teamId, subroundId, value) => {
@@ -224,6 +239,43 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }, 3000);
     return () => clearInterval(interval);
   }, [canEdit, data.isPanelMember, flushPendingSaves]);
+
+  // Closing the tab / switching apps must not lose queued scores: push them
+  // with keepalive requests as the page goes away.
+  useEffect(() => {
+    const flushOnHide = () => {
+      const teamEntries = Object.entries(pendingSaves.current);
+      const studentEntries = Object.entries(pendingStudentSaves.current);
+      if (teamEntries.length === 0 && studentEntries.length === 0) return;
+      pendingSaves.current = {};
+      pendingStudentSaves.current = {};
+      const token = localStorage.getItem('token');
+      const base = axios.defaults.baseURL || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      if (studentEntries.length > 0) {
+        const scores = studentEntries.map(([key, score]) => {
+          const [registrationId, subroundId] = key.split(':');
+          return { registrationId, subroundId, score };
+        });
+        fetch(`${base}/api/events/${eventId}/scoring/student-bulk`, { method: 'PUT', headers, body: JSON.stringify({ scores }), keepalive: true }).catch(() => {});
+      }
+      if (teamEntries.length > 0) {
+        const scores = teamEntries.map(([key, score]) => {
+          const [teamId, subroundId] = key.split(':');
+          return { teamId, subroundId, score };
+        });
+        fetch(`${base}/api/events/${eventId}/scoring/bulk`, { method: 'PUT', headers, body: JSON.stringify({ scores }), keepalive: true }).catch(() => {});
+      }
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushOnHide(); };
+    window.addEventListener('pagehide', flushOnHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushOnHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [eventId]);
 
   const update = (path, value) => setData(previous => {
     const next = JSON.parse(JSON.stringify(previous));
@@ -298,6 +350,8 @@ const ScoringBoard = ({ eventId, canEdit }) => {
 
   const downloadReportPdf = async (registrationId, studentName) => {
     try {
+      // Persist anything still queued so the PDF reflects the latest scores
+      await flushPendingSaves();
       const res = await axios.get(`/api/events/${eventId}/scoring/report/${registrationId}/pdf`, {
         responseType: 'blob'
       });
@@ -312,7 +366,15 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Failed to download score report:', err);
-      alert('Failed to download the score report PDF.');
+      let message = 'Failed to download the score report PDF.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          message = JSON.parse(await err.response.data.text()).message || message;
+        } catch (e) { /* keep default message */ }
+      } else if (err.response?.data?.message) {
+        message = err.response.data.message;
+      }
+      alert(message);
     }
   };
 

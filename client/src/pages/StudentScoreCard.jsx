@@ -106,7 +106,11 @@ const StudentScoreCard = () => {
       setCard(prev => (prev ? { ...prev, scores: newScores } : prev));
       if ((response.data?.errors || []).length > 0) alert(formatSaveErrors(response.data.errors));
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save scores.');
+      alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
+      // Put the scores back so a failed request never drops the edit
+      entries.forEach(([key, value]) => {
+        if (!(key in pendingSaves.current)) pendingSaves.current[key] = value;
+      });
     }
   }, [eventId, registrationId]);
 
@@ -140,6 +144,31 @@ const StudentScoreCard = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, [card?.canEdit, flushPendingSaves]);
+
+  // Closing the tab / switching apps must not lose queued scores
+  useEffect(() => {
+    const flushOnHide = () => {
+      const entries = Object.entries(pendingSaves.current);
+      if (entries.length === 0) return;
+      pendingSaves.current = {};
+      const scores = entries.map(([key, value]) => {
+        const [regId, subroundId] = key.split(':');
+        return { registrationId: regId, subroundId, score: value.score, comment: value.comment };
+      });
+      const token = localStorage.getItem('token');
+      const base = axios.defaults.baseURL || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      fetch(`${base}/api/events/${eventId}/scoring/student-bulk`, { method: 'PUT', headers, body: JSON.stringify({ scores }), keepalive: true }).catch(() => {});
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushOnHide(); };
+    window.addEventListener('pagehide', flushOnHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushOnHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [eventId]);
 
   const subrounds = useMemo(
     () => (card?.rounds || []).flatMap(round => (round.subrounds || []).map(subround => ({ ...subround, roundName: round.name }))),
@@ -185,6 +214,8 @@ const StudentScoreCard = () => {
 
   const downloadReportPdf = async () => {
     try {
+      // Persist anything still queued so the PDF reflects the latest scores
+      await flushPendingSaves();
       const res = await axios.get(`/api/events/${eventId}/scoring/report/${registrationId}/pdf`, { responseType: 'blob' });
       const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
@@ -197,7 +228,15 @@ const StudentScoreCard = () => {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Failed to download score report:', err);
-      alert('Failed to download the score report PDF.');
+      let message = 'Failed to download the score report PDF.';
+      if (err.response?.data instanceof Blob) {
+        try {
+          message = JSON.parse(await err.response.data.text()).message || message;
+        } catch (e) { /* keep default message */ }
+      } else if (err.response?.data?.message) {
+        message = err.response.data.message;
+      }
+      alert(message);
     }
   };
 
