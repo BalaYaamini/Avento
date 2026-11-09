@@ -86,7 +86,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const pendingSaves = useRef({});
   const pendingStudentSaves = useRef({});
-  const flushingRef = useRef(false);
+  const flushChainRef = useRef(Promise.resolve(true));
   const filtersRestoredForRef = useRef(null);
   const scrollRestoredForRef = useRef(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -127,57 +127,71 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }
   };
 
-  const flushPendingSaves = useCallback(async () => {
-    if (flushingRef.current) return;
-    const entries = Object.entries(pendingSaves.current);
-    const studentEntries = Object.entries(pendingStudentSaves.current);
-    if (entries.length === 0 && studentEntries.length === 0) return;
-    pendingSaves.current = {};
-    pendingStudentSaves.current = {};
-    setPendingCount(0);
-    flushingRef.current = true;
+  const flushPendingSaves = useCallback(() => {
+    const run = async () => {
+      const entries = Object.entries(pendingSaves.current);
+      const studentEntries = Object.entries(pendingStudentSaves.current);
+      if (entries.length === 0 && studentEntries.length === 0) return true;
+      pendingSaves.current = {};
+      pendingStudentSaves.current = {};
+      setPendingCount(0);
+      let allSaved = true;
 
-    // On failure the scores go back into the queue so a flaky request never
-    // silently drops what the evaluator typed.
-    const requeue = (failedEntries, store) => {
-      failedEntries.forEach(([key, value]) => {
-        if (!(key in store.current)) store.current[key] = value;
-      });
-      setPendingCount(Object.keys(pendingSaves.current).length + Object.keys(pendingStudentSaves.current).length);
+      // On failure the scores go back into the queue so a flaky request never
+      // silently drops what the evaluator typed.
+      const requeue = (failedEntries, store) => {
+        failedEntries.forEach(([key, value]) => {
+          if (!(key in store.current)) store.current[key] = value;
+        });
+        setPendingCount(Object.keys(pendingSaves.current).length + Object.keys(pendingStudentSaves.current).length);
+      };
+
+      if (entries.length > 0) {
+        const scores = entries.map(([key, score]) => {
+          const [teamId, subroundId] = key.split(':');
+          return { teamId, subroundId, score };
+        });
+        try {
+          const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
+          const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
+          setData(previous => ({ ...previous, scores: newScores }));
+          if ((response.data?.errors || []).length > 0) {
+            alert(formatSaveErrors(response.data.errors));
+            allSaved = false;
+          }
+        } catch (err) {
+          alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
+          requeue(entries, pendingSaves);
+          allSaved = false;
+        }
+      }
+
+      if (studentEntries.length > 0) {
+        const scores = studentEntries.map(([key, score]) => {
+          const [registrationId, subroundId] = key.split(':');
+          return { registrationId, subroundId, score };
+        });
+        try {
+          const response = await axios.put(`/api/events/${eventId}/scoring/student-bulk`, { scores });
+          const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
+          setData(previous => ({ ...previous, studentScores: newScores }));
+          if ((response.data?.errors || []).length > 0) {
+            alert(formatSaveErrors(response.data.errors));
+            allSaved = false;
+          }
+        } catch (err) {
+          alert(err.response?.data?.message || 'Failed to save student scores. They will be retried.');
+          requeue(studentEntries, pendingStudentSaves);
+          allSaved = false;
+        }
+      }
+      return allSaved;
     };
-
-    if (entries.length > 0) {
-      const scores = entries.map(([key, score]) => {
-        const [teamId, subroundId] = key.split(':');
-        return { teamId, subroundId, score };
-      });
-      try {
-        const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
-        const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
-        setData(previous => ({ ...previous, scores: newScores }));
-        if ((response.data?.errors || []).length > 0) alert(formatSaveErrors(response.data.errors));
-      } catch (err) {
-        alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
-        requeue(entries, pendingSaves);
-      }
-    }
-
-    if (studentEntries.length > 0) {
-      const scores = studentEntries.map(([key, score]) => {
-        const [registrationId, subroundId] = key.split(':');
-        return { registrationId, subroundId, score };
-      });
-      try {
-        const response = await axios.put(`/api/events/${eventId}/scoring/student-bulk`, { scores });
-        const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
-        setData(previous => ({ ...previous, studentScores: newScores }));
-        if ((response.data?.errors || []).length > 0) alert(formatSaveErrors(response.data.errors));
-      } catch (err) {
-        alert(err.response?.data?.message || 'Failed to save student scores. They will be retried.');
-        requeue(studentEntries, pendingStudentSaves);
-      }
-    }
-    flushingRef.current = false;
+    // Chain flushes so report generation always waits for the latest scores
+    // to be fully persisted instead of racing an in-flight save.
+    const next = flushChainRef.current.then(run, run);
+    flushChainRef.current = next.catch(() => false);
+    return next;
   }, [eventId]);
 
   const saveScore = useCallback((teamId, subroundId, value) => {
@@ -339,7 +353,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const sendReports = async (registrationIds) => {
     try {
       // Make sure the newest edits are saved before the report totals are computed
-      await flushPendingSaves();
+      const saved = await flushPendingSaves();
+      if (!saved) {
+        alert('Some scores could not be saved. Please try again before sending reports.');
+        return;
+      }
       const res = await axios.post(`/api/events/${eventId}/scoring/reports`, registrationIds ? { registrationIds } : {});
       markReportsSent(res.data?.sent);
       alert(res.data?.message || 'Score reports sent.');
@@ -351,7 +369,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const downloadReportPdf = async (registrationId, studentName) => {
     try {
       // Persist anything still queued so the PDF reflects the latest scores
-      await flushPendingSaves();
+      const saved = await flushPendingSaves();
+      if (!saved) {
+        alert('Some scores could not be saved. Please try again before downloading the report.');
+        return;
+      }
       const res = await axios.get(`/api/events/${eventId}/scoring/report/${registrationId}/pdf`, {
         responseType: 'blob'
       });

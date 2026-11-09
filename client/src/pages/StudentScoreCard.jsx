@@ -58,6 +58,7 @@ const StudentScoreCard = () => {
   const [savingComment, setSavingComment] = useState(false);
   const pendingSaves = useRef({});
   const saveTimer = useRef(null);
+  const flushChainRef = useRef(Promise.resolve());
 
   const load = async () => {
     try {
@@ -86,32 +87,44 @@ const StudentScoreCard = () => {
 
   useEffect(() => { load(); }, [eventId, registrationId]);
 
-  const flushPendingSaves = useCallback(async () => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    const entries = Object.entries(pendingSaves.current);
-    if (entries.length === 0) return;
-    pendingSaves.current = {};
-    const scores = entries.map(([key, value]) => {
-      const [regId, subroundId] = key.split(':');
-      return { registrationId: regId, subroundId, score: value.score, comment: value.comment };
-    });
-    try {
-      const response = await axios.put(`/api/events/${eventId}/scoring/student-bulk`, { scores });
-      const newScores = Array.isArray(response.data?.scores)
-        ? response.data.scores.filter(s => s.registration_id === registrationId)
-        : [];
-      setCard(prev => (prev ? { ...prev, scores: newScores } : prev));
-      if ((response.data?.errors || []).length > 0) alert(formatSaveErrors(response.data.errors));
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
-      // Put the scores back so a failed request never drops the edit
-      entries.forEach(([key, value]) => {
-        if (!(key in pendingSaves.current)) pendingSaves.current[key] = value;
+  const flushPendingSaves = useCallback(() => {
+    const run = async () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      const entries = Object.entries(pendingSaves.current);
+      if (entries.length === 0) return true;
+      pendingSaves.current = {};
+      const scores = entries.map(([key, value]) => {
+        const [regId, subroundId] = key.split(':');
+        return { registrationId: regId, subroundId, score: value.score, comment: value.comment };
       });
-    }
+      try {
+        const response = await axios.put(`/api/events/${eventId}/scoring/student-bulk`, { scores });
+        const newScores = Array.isArray(response.data?.scores)
+          ? response.data.scores.filter(s => s.registration_id === registrationId)
+          : [];
+        setCard(prev => (prev ? { ...prev, scores: newScores } : prev));
+        if ((response.data?.errors || []).length > 0) {
+          alert(formatSaveErrors(response.data.errors));
+          return false;
+        }
+        return true;
+      } catch (err) {
+        alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
+        // Put the scores back so a failed request never drops the edit
+        entries.forEach(([key, value]) => {
+          if (!(key in pendingSaves.current)) pendingSaves.current[key] = value;
+        });
+        return false;
+      }
+    };
+    // Chain flushes so a save triggered by typing can never interleave with
+    // the save that must complete before a report is generated.
+    const next = flushChainRef.current.then(run, run);
+    flushChainRef.current = next.catch(() => false);
+    return next;
   }, [eventId, registrationId]);
 
   const saveRow = useCallback((subroundId, scoreValue, commentValue) => {
@@ -204,7 +217,11 @@ const StudentScoreCard = () => {
   const sendReport = async () => {
     try {
       // Make sure the newest edits are saved before the report totals are computed
-      await flushPendingSaves();
+      const saved = await flushPendingSaves();
+      if (!saved) {
+        alert('Some scores could not be saved. Please try again before sending the report.');
+        return;
+      }
       const res = await axios.post(`/api/events/${eventId}/scoring/reports`, { registrationIds: [registrationId] });
       alert(res.data?.message || 'Score report sent.');
     } catch (err) {
@@ -215,7 +232,11 @@ const StudentScoreCard = () => {
   const downloadReportPdf = async () => {
     try {
       // Persist anything still queued so the PDF reflects the latest scores
-      await flushPendingSaves();
+      const saved = await flushPendingSaves();
+      if (!saved) {
+        alert('Some scores could not be saved. Please try again before downloading the report.');
+        return;
+      }
       const res = await axios.get(`/api/events/${eventId}/scoring/report/${registrationId}/pdf`, { responseType: 'blob' });
       const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);

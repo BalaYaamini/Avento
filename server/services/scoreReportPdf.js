@@ -279,7 +279,7 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
   };
 
   const drawTableHeader = (page, topY) => {
-    drawText(page, 'ROUND', TABLE_COLS.round.x, topY - 14, { size: 7, font: bold, color: MUTED });
+    drawText(page, 'ROUND / CRITERION', TABLE_COLS.round.x, topY - 14, { size: 7, font: bold, color: MUTED });
     drawText(page, 'PERFORMANCE', TABLE_COLS.performance.x, topY - 14, { size: 7, font: bold, color: MUTED });
     drawText(page, 'SCORE', TABLE_COLS.score.x, topY - 14, { size: 7, font: bold, color: MUTED, align: 'right' });
     page.drawLine({
@@ -301,6 +301,9 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
     item.roundLines.forEach((line, i) => {
       drawText(page, line, TABLE_COLS.round.x, topY - 16 - i * 11, { size: 10, font: bold, color: NAVY, maxWidth: TABLE_COLS.round.w - 12 });
     });
+    if (item.criterionLine) {
+      drawText(page, item.criterionLine, TABLE_COLS.round.x, topY - 16 - item.roundLines.length * 11, { size: 8, color: SLATE, maxWidth: TABLE_COLS.round.w - 12 });
+    }
 
     drawRoundRect(page, barX, barY, barW, barH, barH / 2, TRACK);
     const scoreNum = row.score == null || row.score === '' ? null : num(row.score);
@@ -332,11 +335,15 @@ const buildScoreReportPdf = async ({ event, student, rows, total, rank, totalPar
   const contRowTop = contTableTop - TABLE_HEAD_H;
   const nameLineH = 11;
   const rowItems = safeRows.map(row => {
-    const roundLines = wrapText(bold, String(row.roundName == null ? '' : row.roundName), 10, TABLE_COLS.round.w - 12);
-    const extraNameLines = Math.max(roundLines.length - 1, 0);
+    const criterionName = String(row.criterionName == null || row.criterionName === '' ? row.roundName : row.criterionName);
+    const roundLines = wrapText(bold, criterionName, 10, TABLE_COLS.round.w - 12);
+    const criterionLine = row.criterionName != null && row.criterionName !== '' && row.roundName != null && row.roundName !== ''
+      ? String(row.roundName)
+      : '';
+    const extraNameLines = Math.max(roundLines.length - 1, 0) + (criterionLine ? 1 : 0);
     const textBottom = 16 + extraNameLines * nameLineH + 3;
     const mid = (9 + Math.max(31, textBottom)) / 2;
-    return { row, roundLines, mid, h: ROW_H + extraNameLines * nameLineH };
+    return { row, roundLines, criterionLine, mid, h: ROW_H + extraNameLines * nameLineH };
   });
 
   const chunks = [];

@@ -751,35 +751,24 @@ const buildSubroundMeta = async (eventId) => {
   return { subroundMeta, orderedSubs };
 };
 
-// Aggregate per-criterion scores into one row per ROUND (overall round-wise score).
-// A round where no criterion has a score yet yields score: null so renderers
-// show '-' instead of a misleading "0 / max".
-const buildRoundRows = (orderedSubs, ownScores) => {
+// One row per criterion (same granularity as the scorecard panel) so reports
+// show exactly the marks that were entered. A criterion with no score yet
+// yields score: null so renderers show '-' instead of a misleading "0 / max".
+const buildScoreRows = (orderedSubs, ownScores) => {
   const bySub = new Map((ownScores || []).map(s => [s.subround_id, s]));
-  const rounds = new Map();
-  const order = [];
-  orderedSubs.forEach(sub => {
+  return orderedSubs.map(sub => {
     const row = bySub.get(sub.id);
     const hasScore = Boolean(row && row.score != null && row.score !== '');
     let score = hasScore ? Number(row.score) : 0;
     if (!Number.isFinite(score)) score = 0;
     let max = Number(sub.max);
     if (!Number.isFinite(max) || max < 0) max = 0;
-    const key = sub.roundId != null ? sub.roundId : sub.roundName;
-    if (!rounds.has(key)) {
-      rounds.set(key, { roundName: sub.roundName, score: 0, max: 0, evaluated: false });
-      order.push(key);
-    }
-    const r = rounds.get(key);
-    if (hasScore) {
-      r.score += score;
-      r.evaluated = true;
-    }
-    r.max += max;
-  });
-  return order.map(key => {
-    const r = rounds.get(key);
-    return { roundName: r.roundName, score: r.evaluated ? r.score : null, max: r.max };
+    return {
+      roundName: sub.roundName,
+      criterionName: sub.name,
+      score: hasScore ? score : null,
+      max
+    };
   });
 };
 
@@ -808,7 +797,7 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
   const displayMax = rows.reduce((sum, r) => sum + (Number(r.max) || 0), 0);
   const rowsHtml = rows.map(r => `
     <tr>
-      <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;font-weight:600;">${escHtml(r.roundName)}</td>
+      <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:14px;font-weight:600;">${escHtml(r.criterionName || r.roundName)}${r.criterionName ? `<div style="margin-top:2px;font-size:11px;font-weight:500;color:#94a3b8;">${escHtml(r.roundName)}</div>` : ''}</td>
       <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#1e293b;font-size:15px;font-weight:700;text-align:center;">${formatScoreValue(r.score)}</td>
       <td style="padding:13px 14px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:14px;text-align:center;">${formatScoreValue(r.max)}</td>
     </tr>`).join('');
@@ -854,7 +843,7 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
         <tr><td style="padding:18px 40px;">
           <table width="100%" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;border-collapse:collapse;">
             <tr style="background-color:#f8fafc;">
-              <th style="padding:12px 14px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Round</th>
+              <th style="padding:12px 14px;text-align:left;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Round / Criterion</th>
               <th style="padding:12px 14px;text-align:center;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Score</th>
               <th style="padding:12px 14px;text-align:center;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Max</th>
             </tr>
@@ -935,7 +924,7 @@ const sendStudentScoreReports = async (req, res) => {
         continue;
       }
 
-      const rows = buildRoundRows(orderedSubs, own);
+      const rows = buildScoreRows(orderedSubs, own);
       const criterionComments = buildCriterionComments(subroundMeta, own);
       const total = totals.get(student.registration_id) || 0;
       const rank = rankMap.get(student.registration_id) || null;
@@ -1053,7 +1042,7 @@ const getStudentScoreReportPdf = async (req, res) => {
       return res.status(400).json({ message: 'No scores entered for this student yet.' });
     }
 
-    const rows = buildRoundRows(orderedSubs, own);
+    const rows = buildScoreRows(orderedSubs, own);
     const criterionComments = buildCriterionComments(subroundMeta, own);
     const total = totals.get(student.registration_id) || 0;
     const rank = rankMap.get(student.registration_id) || null;
