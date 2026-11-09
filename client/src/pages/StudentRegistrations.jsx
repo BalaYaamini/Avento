@@ -839,12 +839,14 @@ const StudentRegistrations = () => {
                                   </svg>
                                   {evt.venue}
                                 </div>
+                                {!slotInfo && (
                                 <div className="flex items-center gap-2.5 text-sm text-slate-600 font-medium">
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
                                     <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                                   </svg>
                                   {formatDate(evt.date)}
                                 </div>
+                                )}
                                 {slotInfo && (
                                   <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-violet-700 bg-violet-50 px-3 py-1.5 rounded-xl border border-violet-200/80 mt-2 w-fit">
                                     

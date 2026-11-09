@@ -859,14 +859,20 @@ exports.markManualAttendance = async (req, res) => {
       return res.status(400).json({ message: 'Manual attendance is disabled for this event. Use QR-based attendance.' });
     }
 
-    // Validate all registrations belong to this event (and capture their current state)
-    const { data: regs, error: regError } = await supabase
-      .from('event_registrations')
-      .select('id, event_id, user_id, attendance_status')
-      .in('id', ids)
-      .eq('event_id', eventId);
-
-    if (regError) throw regError;
+    // Validate all registrations belong to this event (and capture their current state).
+    // Supabase .in() filters with huge arrays overflow the ~16KB request URL limit
+    // (HeadersOverflowError -> fetch failed), so query in chunks.
+    const chunkSize = 100;
+    const regs = [];
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const { data: chunkRegs, error: regError } = await supabase
+        .from('event_registrations')
+        .select('id, event_id, user_id, attendance_status')
+        .in('id', ids.slice(i, i + chunkSize))
+        .eq('event_id', eventId);
+      if (regError) throw regError;
+      regs.push(...(chunkRegs || []));
+    }
 
     const foundIds = (regs || []).map(r => r.id);
     const missingIds = ids.filter(id => !foundIds.includes(id));
@@ -879,16 +885,17 @@ exports.markManualAttendance = async (req, res) => {
       attendance_timestamp: newStatus === 'Present' ? new Date().toISOString() : null
     };
 
-    const { data: updated, error } = await supabase
-      .from('event_registrations')
-      .update(updatePayload)
-      .in('id', foundIds)
-      .eq('event_id', eventId)
-      .select('id, user_id, attendance_status, attendance_timestamp');
-
-    if (error) throw error;
-
-    const updatedList = updated || [];
+    const updatedList = [];
+    for (let i = 0; i < foundIds.length; i += chunkSize) {
+      const { data: updated, error } = await supabase
+        .from('event_registrations')
+        .update(updatePayload)
+        .in('id', foundIds.slice(i, i + chunkSize))
+        .eq('event_id', eventId)
+        .select('id, user_id, attendance_status, attendance_timestamp');
+      if (error) throw error;
+      updatedList.push(...(updated || []));
+    }
     const results = (regs || []).map(r => {
       const after = updatedList.find(u => u.id === r.id);
       return {

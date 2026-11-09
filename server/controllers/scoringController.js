@@ -865,7 +865,7 @@ const buildScoreReportHtml = ({ event, student, rows, total, rank, totalParticip
           <table width="100%" style="background:linear-gradient(135deg,#06b6d4,#0891b2);border-radius:14px;">
             <tr>
               <td style="padding:18px 22px;color:#ffffff;font-size:15px;font-weight:700;">Total Score</td>
-              <td style="padding:18px 22px;color:#ffffff;font-size:22px;font-weight:800;text-align:right;">${formatScoreValue(displayTotal)} <span style="font-size:13px;font-weight:600;opacity:0.9;">/ ${formatScoreValue(displayMax)}</span>${rank ? ` <span style="font-size:13px;font-weight:600;opacity:0.9;">(Rank ${rank} of ${totalParticipants})</span>` : ''}</td>
+              <td style="padding:18px 22px;color:#ffffff;font-size:22px;font-weight:800;text-align:right;">${formatScoreValue(displayTotal)} <span style="font-size:13px;font-weight:600;opacity:0.9;">/ ${formatScoreValue(displayMax)}</span></td>
             </tr>
           </table>
         </td></tr>
