@@ -36,6 +36,46 @@ const formatSaveErrors = (errors) => {
   return `${list.length} score(s) could not be saved: ${unique.slice(0, 3).join('; ')}${unique.length > 3 ? ' ...' : ''}`;
 };
 
+const scoringFiltersCache = {};
+
+const scoringFiltersKey = (eventId) => `avento_scoring_filters:${eventId}`;
+
+const loadScoringFilters = (eventId) => {
+  const key = scoringFiltersKey(eventId);
+  if (scoringFiltersCache[key]) return scoringFiltersCache[key];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (err) {
+    return {};
+  }
+};
+
+const saveScoringFilters = (eventId, filters) => {
+  const key = scoringFiltersKey(eventId);
+  scoringFiltersCache[key] = filters;
+  try {
+    localStorage.setItem(key, JSON.stringify(filters));
+  } catch (err) {}
+};
+
+const scoringScrollKey = (eventId) => `avento_scoring_scroll:${eventId}`;
+
+const slotNumberKey = (student) => {
+  const m = String(student.slot_name || '').match(/(\d+)/);
+  return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+};
+
+const compareBySlotNumber = (a, b) => {
+  const na = slotNumberKey(a);
+  const nb = slotNumberKey(b);
+  if (na !== nb) return na < nb ? -1 : 1;
+  const da = String(a.slot_date || '');
+  const db = String(b.slot_date || '');
+  if (da !== db) return da < db ? -1 : 1;
+  return String(a.name || '').localeCompare(String(b.name || ''));
+};
+
 const ScoringBoard = ({ eventId, canEdit }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -46,9 +86,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const pendingSaves = useRef({});
   const pendingStudentSaves = useRef({});
+  const filtersRestoredForRef = useRef(null);
+  const scrollRestoredForRef = useRef(null);
   const [pendingCount, setPendingCount] = useState(0);
-  const [panelFilter, setPanelFilter] = useState('all');
-  const [slotDateFilter, setSlotDateFilter] = useState('all');
+  const [panelFilter, setPanelFilter] = useState(() => loadScoringFilters(eventId).panel || 'all');
+  const [slotDateFilter, setSlotDateFilter] = useState(() => loadScoringFilters(eventId).slotDate || 'all');
 
   const load = async () => {
     try {
@@ -140,6 +182,31 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   }, []);
 
   useEffect(() => { load(); }, [eventId]);
+
+  useEffect(() => {
+    if (filtersRestoredForRef.current === eventId) return;
+    filtersRestoredForRef.current = eventId;
+    const saved = loadScoringFilters(eventId);
+    setPanelFilter(saved.panel || 'all');
+    setSlotDateFilter(saved.slotDate || 'all');
+  }, [eventId]);
+
+  useEffect(() => {
+    if (filtersRestoredForRef.current !== eventId) return;
+    saveScoringFilters(eventId, { panel: panelFilter, slotDate: slotDateFilter });
+  }, [eventId, panelFilter, slotDateFilter]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (scrollRestoredForRef.current === eventId) return;
+    scrollRestoredForRef.current = eventId;
+    let savedY = 0;
+    try {
+      savedY = Number(sessionStorage.getItem(scoringScrollKey(eventId)) || 0);
+      sessionStorage.removeItem(scoringScrollKey(eventId));
+    } catch (err) {}
+    if (savedY > 0) window.scrollTo({ top: savedY, left: 0, behavior: 'auto' });
+  }, [loading, eventId]);
 
   useEffect(() => {
     if (!canEdit && user?.id && eventId) {
@@ -460,13 +527,18 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       return false;
     }
     return true;
-  });
+  }).sort(compareBySlotNumber);
   const filtersActive = panelFilter !== 'all' || slotDateFilter !== 'all';
   const clearStudentFilters = () => { setPanelFilter('all'); setSlotDateFilter('all'); };
 
   const canSendReports = canEdit || data.isPanelMember;
   const myComment = (data.studentComments || []).find(c => String(c.registration_id) === String(data.myScorecard?.registration_id))?.comment || '';
-  const openScorecard = (registrationId) => navigate(`/workspace/${eventId}/scoring/student/${registrationId}`);
+  const openScorecard = (registrationId) => {
+    try {
+      sessionStorage.setItem(scoringScrollKey(eventId), String(window.scrollY || 0));
+    } catch (err) {}
+    navigate(`/workspace/${eventId}/scoring/student/${registrationId}`);
+  };
 
   if (loading) {
     return (
