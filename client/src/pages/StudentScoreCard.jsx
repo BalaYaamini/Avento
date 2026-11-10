@@ -56,6 +56,8 @@ const StudentScoreCard = () => {
   const [comments, setComments] = useState({});
   const [comment, setComment] = useState('');
   const [savingComment, setSavingComment] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [saveState, setSaveState] = useState('saved');
   const pendingSaves = useRef({});
   const saveTimer = useRef(null);
   const flushChainRef = useRef(Promise.resolve());
@@ -94,29 +96,52 @@ const StudentScoreCard = () => {
         saveTimer.current = null;
       }
       const entries = Object.entries(pendingSaves.current);
-      if (entries.length === 0) return true;
-      pendingSaves.current = {};
+      if (entries.length === 0) {
+        setSaveState(prev => (prev === 'saving' ? 'saved' : prev));
+        return true;
+      }
       const scores = entries.map(([key, value]) => {
         const [regId, subroundId] = key.split(':');
         return { registrationId: regId, subroundId, score: value.score, comment: value.comment };
       });
+      setSaveState('saving');
       try {
         const response = await axios.put(`/api/events/${eventId}/scoring/student-bulk`, { scores });
+        entries.forEach(([key, value]) => {
+          if (pendingSaves.current[key] === value) delete pendingSaves.current[key];
+        });
         const newScores = Array.isArray(response.data?.scores)
           ? response.data.scores.filter(s => s.registration_id === registrationId)
           : [];
         setCard(prev => (prev ? { ...prev, scores: newScores } : prev));
+        setValues(prev => {
+          const next = { ...prev };
+          newScores.forEach(s => {
+            if (!s.subround_id || pendingSaves.current[`${registrationId}:${s.subround_id}`]) return;
+            next[s.subround_id] = s.score;
+          });
+          return next;
+        });
+        setComments(prev => {
+          const next = { ...prev };
+          newScores.forEach(s => {
+            if (!s.subround_id || pendingSaves.current[`${registrationId}:${s.subround_id}`]) return;
+            next[s.subround_id] = s.comment || '';
+          });
+          return next;
+        });
+        setPendingCount(Object.keys(pendingSaves.current).length);
         if ((response.data?.errors || []).length > 0) {
           alert(formatSaveErrors(response.data.errors));
+          setSaveState('error');
           return false;
         }
+        setSaveState(Object.keys(pendingSaves.current).length > 0 ? 'dirty' : 'saved');
         return true;
       } catch (err) {
         alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
-        // Put the scores back so a failed request never drops the edit
-        entries.forEach(([key, value]) => {
-          if (!(key in pendingSaves.current)) pendingSaves.current[key] = value;
-        });
+        setSaveState('error');
+        setPendingCount(Object.keys(pendingSaves.current).length);
         return false;
       }
     };
@@ -129,6 +154,8 @@ const StudentScoreCard = () => {
 
   const saveRow = useCallback((subroundId, scoreValue, commentValue) => {
     pendingSaves.current[`${registrationId}:${subroundId}`] = { score: scoreValue, comment: commentValue };
+    setPendingCount(Object.keys(pendingSaves.current).length);
+    setSaveState('dirty');
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
@@ -160,10 +187,9 @@ const StudentScoreCard = () => {
 
   // Closing the tab / switching apps must not lose queued scores
   useEffect(() => {
-    const flushOnHide = () => {
+    const sendKeepalive = () => {
       const entries = Object.entries(pendingSaves.current);
       if (entries.length === 0) return;
-      pendingSaves.current = {};
       const scores = entries.map(([key, value]) => {
         const [regId, subroundId] = key.split(':');
         return { registrationId: regId, subroundId, score: value.score, comment: value.comment };
@@ -174,14 +200,18 @@ const StudentScoreCard = () => {
       if (token) headers.Authorization = `Bearer ${token}`;
       fetch(`${base}/api/events/${eventId}/scoring/student-bulk`, { method: 'PUT', headers, body: JSON.stringify({ scores }), keepalive: true }).catch(() => {});
     };
-    const onVisibility = () => { if (document.visibilityState === 'hidden') flushOnHide(); };
-    window.addEventListener('pagehide', flushOnHide);
+    const onVisibility = () => {
+      if (document.visibilityState !== 'hidden') return;
+      if (Object.keys(pendingSaves.current).length > 0) flushPendingSaves();
+    };
+    const onPageHide = () => sendKeepalive();
+    window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      window.removeEventListener('pagehide', flushOnHide);
+      window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [eventId]);
+  }, [eventId, flushPendingSaves]);
 
   const subrounds = useMemo(
     () => (card?.rounds || []).flatMap(round => (round.subrounds || []).map(subround => ({ ...subround, roundName: round.name }))),
@@ -198,10 +228,51 @@ const StudentScoreCard = () => {
     [subrounds]
   );
 
+  const scoredCount = useMemo(
+    () => subrounds.filter(sub => {
+      const value = values[sub.id];
+      return value != null && value !== '' && Number.isFinite(Number(value));
+    }).length,
+    [subrounds, values]
+  );
+
+  const allMarksAllocated = subrounds.length > 0 && scoredCount === subrounds.length;
+
+  const saveStateText = {
+    saved: 'All changes saved',
+    saving: 'Saving\u2026',
+    dirty: pendingCount > 0 ? `Unsaved changes (${pendingCount})` : 'Unsaved changes',
+    error: 'Save failed \u2013 will retry'
+  }[saveState] || '';
+  const saveStateClass = {
+    saved: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300',
+    saving: 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/40 dark:text-indigo-300',
+    dirty: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300',
+    error: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
+  }[saveState] || '';
+
   useEffect(() => {
     if (!card?.canEdit) return;
     setComment(prev => (isDefaultComment(prev) ? getReadinessComment(total, maxTotal) : prev));
   }, [card?.canEdit, total, maxTotal]);
+
+  const saveAllMarks = async () => {
+    if (!card?.canEdit) return;
+    if (!allMarksAllocated) {
+      const proceed = window.confirm(`Only ${scoredCount} of ${subrounds.length} criteria have marks. Save what is entered so far?`);
+      if (!proceed) return;
+    }
+    subrounds.forEach(sub => {
+      const scoreValue = values[sub.id] ?? '';
+      const commentValue = comments[sub.id] ?? '';
+      if ((scoreValue === '' || scoreValue == null) && !String(commentValue ?? '').trim()) return;
+      pendingSaves.current[`${registrationId}:${sub.id}`] = { score: scoreValue, comment: commentValue };
+    });
+    setPendingCount(Object.keys(pendingSaves.current).length);
+    setSaveState('dirty');
+    const saved = await flushPendingSaves();
+    if (saved) alert(`Saved marks for ${scoredCount} of ${subrounds.length} criteria.`);
+  };
 
   const saveComment = async () => {
     setSavingComment(true);
@@ -331,6 +402,7 @@ const StudentScoreCard = () => {
                   <div className="text-2xl font-black">{total} pts</div>
                   {card?.rank && <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-100/80">Rank #{card.rank} of {card.total_participants}</div>}
                 </div>
+                {card?.canEdit && <button type="button" onClick={saveAllMarks} disabled={saveState === 'saving'} className="rounded-xl border border-emerald-300/40 bg-emerald-400/20 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-400/30 disabled:opacity-60">{saveState === 'saving' ? 'Saving\u2026' : 'Save All Marks'}</button>}
                 {card?.canEdit && <button type="button" onClick={sendReport} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">Email Report</button>}
                 <button type="button" onClick={downloadReportPdf} className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20">Download PDF</button>
               </div>
@@ -341,6 +413,12 @@ const StudentScoreCard = () => {
             <div>
               <h2 className="font-display text-xl font-black text-slate-800 dark:text-slate-100">Score Breakdown</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">{card?.canEdit ? 'Enter scores for this student. Scores save automatically as you type.' : 'Scores for this student.'}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${allMarksAllocated ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300'}`}>
+                  {scoredCount} / {subrounds.length} marks allocated
+                </span>
+                {card?.canEdit && <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${saveStateClass}`}>{saveStateText}</span>}
+              </div>
               <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
                 <table className="w-full min-w-[760px] text-left text-xs">
                   <thead>

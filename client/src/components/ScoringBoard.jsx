@@ -36,6 +36,14 @@ const formatSaveErrors = (errors) => {
   return `${list.length} score(s) could not be saved: ${unique.slice(0, 3).join('; ')}${unique.length > 3 ? ' ...' : ''}`;
 };
 
+const mergeScoreRows = (previous, incoming) => {
+  const byId = new Map((previous || []).map(r => [r.id, r]));
+  (incoming || []).forEach(r => {
+    if (r && r.id) byId.set(r.id, r);
+  });
+  return [...byId.values()];
+};
+
 const scoringFiltersCache = {};
 
 const scoringFiltersKey = (eventId) => `avento_scoring_filters:${eventId}`;
@@ -132,16 +140,11 @@ const ScoringBoard = ({ eventId, canEdit }) => {
       const entries = Object.entries(pendingSaves.current);
       const studentEntries = Object.entries(pendingStudentSaves.current);
       if (entries.length === 0 && studentEntries.length === 0) return true;
-      pendingSaves.current = {};
-      pendingStudentSaves.current = {};
-      setPendingCount(0);
       let allSaved = true;
 
-      // On failure the scores go back into the queue so a flaky request never
-      // silently drops what the evaluator typed.
-      const requeue = (failedEntries, store) => {
-        failedEntries.forEach(([key, value]) => {
-          if (!(key in store.current)) store.current[key] = value;
+      const confirmSaved = (savedEntries, store) => {
+        savedEntries.forEach(([key, value]) => {
+          if (store.current[key] === value) delete store.current[key];
         });
         setPendingCount(Object.keys(pendingSaves.current).length + Object.keys(pendingStudentSaves.current).length);
       };
@@ -153,15 +156,15 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         });
         try {
           const response = await axios.put(`/api/events/${eventId}/scoring/bulk`, { scores });
+          confirmSaved(entries, pendingSaves);
           const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
-          setData(previous => ({ ...previous, scores: newScores }));
+          setData(previous => ({ ...previous, scores: mergeScoreRows(previous.scores, newScores) }));
           if ((response.data?.errors || []).length > 0) {
             alert(formatSaveErrors(response.data.errors));
             allSaved = false;
           }
         } catch (err) {
           alert(err.response?.data?.message || 'Failed to save scores. They will be retried.');
-          requeue(entries, pendingSaves);
           allSaved = false;
         }
       }
@@ -173,15 +176,15 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         });
         try {
           const response = await axios.put(`/api/events/${eventId}/scoring/student-bulk`, { scores });
+          confirmSaved(studentEntries, pendingStudentSaves);
           const newScores = Array.isArray(response.data?.scores) ? response.data.scores : [];
-          setData(previous => ({ ...previous, studentScores: newScores }));
+          setData(previous => ({ ...previous, studentScores: mergeScoreRows(previous.studentScores, newScores) }));
           if ((response.data?.errors || []).length > 0) {
             alert(formatSaveErrors(response.data.errors));
             allSaved = false;
           }
         } catch (err) {
           alert(err.response?.data?.message || 'Failed to save student scores. They will be retried.');
-          requeue(studentEntries, pendingStudentSaves);
           allSaved = false;
         }
       }
@@ -257,12 +260,10 @@ const ScoringBoard = ({ eventId, canEdit }) => {
   // Closing the tab / switching apps must not lose queued scores: push them
   // with keepalive requests as the page goes away.
   useEffect(() => {
-    const flushOnHide = () => {
+    const sendKeepalive = () => {
       const teamEntries = Object.entries(pendingSaves.current);
       const studentEntries = Object.entries(pendingStudentSaves.current);
       if (teamEntries.length === 0 && studentEntries.length === 0) return;
-      pendingSaves.current = {};
-      pendingStudentSaves.current = {};
       const token = localStorage.getItem('token');
       const base = axios.defaults.baseURL || '';
       const headers = { 'Content-Type': 'application/json' };
@@ -282,14 +283,18 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         fetch(`${base}/api/events/${eventId}/scoring/bulk`, { method: 'PUT', headers, body: JSON.stringify({ scores }), keepalive: true }).catch(() => {});
       }
     };
-    const onVisibility = () => { if (document.visibilityState === 'hidden') flushOnHide(); };
-    window.addEventListener('pagehide', flushOnHide);
+    const onVisibility = () => {
+      if (document.visibilityState !== 'hidden') return;
+      if (Object.keys(pendingSaves.current).length > 0 || Object.keys(pendingStudentSaves.current).length > 0) flushPendingSaves();
+    };
+    const onPageHide = () => sendKeepalive();
+    window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      window.removeEventListener('pagehide', flushOnHide);
+      window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [eventId]);
+  }, [eventId, flushPendingSaves]);
 
   const update = (path, value) => setData(previous => {
     const next = JSON.parse(JSON.stringify(previous));

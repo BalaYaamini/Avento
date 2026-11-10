@@ -79,6 +79,14 @@ router.put(
   eventController.updateStatus
 );
 
+// Enable / disable feedback for an event
+router.put(
+  '/:id/feedback-enabled',
+  authMiddleware,
+  roleMiddleware(['admin', 'faculty', 'faculty_organizer', 'student']),
+  eventController.updateFeedbackEnabled
+);
+
 // Publish approved event
 router.put(
   '/:id/publish',

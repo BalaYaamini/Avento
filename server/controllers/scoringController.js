@@ -178,6 +178,25 @@ const fetchStudentComments = async (eventId) => {
   return data || [];
 };
 
+const SCORE_PAGE_SIZE = 1000;
+const fetchAllScoreRows = async (eventId, { studentsOnly = false } = {}) => {
+  const rows = [];
+  for (let from = 0; ; from += SCORE_PAGE_SIZE) {
+    let query = supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .order('id')
+      .range(from, from + SCORE_PAGE_SIZE - 1);
+    if (studentsOnly) query = query.not('registration_id', 'is', null);
+    const { data, error } = await query;
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < SCORE_PAGE_SIZE) break;
+  }
+  return rows;
+};
+
 const getMyRegistrationId = async (eventId, userId) => {
   if (!userId) return null;
   const { data: reg } = await supabase
@@ -222,11 +241,7 @@ const getScoring = async (req, res) => {
     const canReadFull = allowed || isPanelMember || event.scoreboard_visible;
     if (!canReadFull) {
       const students = await fetchEventStudents(eventId);
-      const { data: studentScores } = await supabase
-        .from('scoring_scores')
-        .select('*')
-        .eq('event_id', eventId)
-        .not('registration_id', 'is', null);
+      const studentScores = await fetchAllScoreRows(eventId, { studentsOnly: true });
       const myRegistrationId = await getMyRegistrationId(eventId, req.user?.id);
       return res.json({
         enabled: true,
@@ -260,11 +275,7 @@ const getScoring = async (req, res) => {
       .order('name');
     if (teamsErr) throw teamsErr;
 
-    const { data: scores, error: scoresErr } = await supabase
-      .from('scoring_scores')
-      .select('*')
-      .eq('event_id', eventId);
-    if (scoresErr) throw scoresErr;
+    const scores = await fetchAllScoreRows(eventId);
 
     const students = await fetchEventStudents(eventId);
     const studentScores = (scores || []).filter(s => s.registration_id);
@@ -417,7 +428,12 @@ const bulkUpdateScores = async (req, res) => {
       if (error) throw error;
     }
 
-    const { data: updatedScores } = await supabase.from('scoring_scores').select('*').eq('event_id', eventId);
+    const teamIds = [...new Set(scores.map(s => s.teamId).filter(Boolean))];
+    const { data: updatedScores } = await supabase
+      .from('scoring_scores')
+      .select('*')
+      .eq('event_id', eventId)
+      .in('team_id', teamIds);
     res.json({ saved: rows.length, errors, scores: updatedScores || [] });
   } catch (err) {
     res.status(500).json({ message: 'Server error bulk saving scores.', error: err.message });
@@ -598,7 +614,7 @@ const bulkUpdateStudentScores = async (req, res) => {
       .from('scoring_scores')
       .select('*')
       .eq('event_id', eventId)
-      .not('registration_id', 'is', null);
+      .in('registration_id', regIds);
     res.json({ saved: rows.length, errors, scores: updatedScores || [] });
   } catch (err) {
     console.error('bulkUpdateStudentScores error:', err);
@@ -636,11 +652,7 @@ const getStudentScoreCard = async (req, res) => {
     if (roundsErr) throw roundsErr;
 
     const { subroundMeta } = await buildSubroundMeta(eventId);
-    const { data: allStudentScores } = await supabase
-      .from('scoring_scores')
-      .select('*')
-      .eq('event_id', eventId)
-      .not('registration_id', 'is', null);
+    const allStudentScores = await fetchAllScoreRows(eventId, { studentsOnly: true });
     const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
     const { totals, rankMap } = computeStudentTotals(studentScores, new Set(students.map(s => s.registration_id)));
 
@@ -755,7 +767,21 @@ const buildSubroundMeta = async (eventId) => {
 // A round where no criterion has a score yet yields score: null so renderers
 // show '-' instead of a misleading "0 / max".
 const buildRoundRows = (orderedSubs, ownScores) => {
-  const bySub = new Map((ownScores || []).map(s => [s.subround_id, s]));
+  const bySub = new Map();
+  (ownScores || []).forEach(s => {
+    const prev = bySub.get(s.subround_id);
+    if (!prev) {
+      bySub.set(s.subround_id, s);
+      return;
+    }
+    const sHasScore = s.score != null && s.score !== '';
+    const prevHasScore = prev.score != null && prev.score !== '';
+    if (sHasScore && !prevHasScore) {
+      bySub.set(s.subround_id, s);
+    } else if (sHasScore === prevHasScore && String(s.updated_at || '') >= String(prev.updated_at || '')) {
+      bySub.set(s.subround_id, s);
+    }
+  });
   const rounds = new Map();
   const order = [];
   orderedSubs.forEach(sub => {
@@ -890,11 +916,7 @@ const sendStudentScoreReports = async (req, res) => {
     if (!event) return res.status(404).json({ message: 'Event not found.' });
 
     const students = await fetchEventStudents(eventId);
-    const { data: allStudentScores } = await supabase
-      .from('scoring_scores')
-      .select('*')
-      .eq('event_id', eventId)
-      .not('registration_id', 'is', null);
+    const allStudentScores = await fetchAllScoreRows(eventId, { studentsOnly: true });
     const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
     const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
     const activeRegIds = new Set(students.map(s => s.registration_id));
@@ -1038,11 +1060,7 @@ const getStudentScoreReportPdf = async (req, res) => {
       }
     }
 
-    const { data: allStudentScores } = await supabase
-      .from('scoring_scores')
-      .select('*')
-      .eq('event_id', eventId)
-      .not('registration_id', 'is', null);
+    const allStudentScores = await fetchAllScoreRows(eventId, { studentsOnly: true });
     const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
     const studentScores = (allStudentScores || []).filter(s => subroundMeta.has(s.subround_id));
     const activeRegIds = new Set(students.map(s => s.registration_id));
@@ -1091,11 +1109,7 @@ const getScoringAnalysisPdf = async (req, res) => {
       ? students
       : students.filter(s => panelAccess.registrationIds.has(s.registration_id));
 
-    const { data: allStudentScores } = await supabase
-      .from('scoring_scores')
-      .select('*')
-      .eq('event_id', eventId)
-      .not('registration_id', 'is', null);
+    const allStudentScores = await fetchAllScoreRows(eventId, { studentsOnly: true });
     const { subroundMeta, orderedSubs } = await buildSubroundMeta(eventId);
     const scopedIds = new Set(scopedStudents.map(s => s.registration_id));
     const scopedScores = (allStudentScores || [])

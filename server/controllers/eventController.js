@@ -1227,15 +1227,20 @@ const updateStatus = async (req, res) => {
         }
       }
 
-    } else if (status === 'completed') {
+    } else if (status === 'completed' || status === 'reopen') {
       // Allow Admin, Faculty Coordinator, and Event Head
       const isEventHead = req.user.id === event.student_organizer_id || req.user.id === event.proposed_by || req.user.id === event.organizer_id;
       if (!isAdmin && (!isFaculty || event.faculty_id !== req.user.id) && !isEventHead) {
-        return res.status(403).json({ message: 'Access denied. Only Admins, assigned Faculty Coordinators, or Event Heads can mark an event as completed.' });
+        return res.status(403).json({ message: 'Access denied. Only Admins, assigned Faculty Coordinators, or Event Heads can change event completion.' });
       }
 
-      const { error: compErr } = await supabase.from('events').update({ status: 'completed' }).eq('id', id);
+      const nextStatus = status === 'completed' ? 'completed' : 'published';
+      const { error: compErr } = await supabase.from('events').update({ status: nextStatus }).eq('id', id);
       if (compErr) throw compErr;
+      if (status === 'completed') {
+        const { error: fbErr } = await supabase.from('events').update({ feedback_enabled: true }).eq('id', id);
+        if (fbErr) console.warn('Could not auto-enable feedback (run supabase-patch-v64-feedback-enabled.sql):', fbErr.message);
+      }
 
     } else {
       // Any other status changes (like cancelling events)
@@ -1259,6 +1264,42 @@ const updateStatus = async (req, res) => {
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: 'Server error updating status.', error: err.message });
+  }
+};
+
+const updateFeedbackEnabled = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { enabled } = req.body;
+
+    const { data: events, error } = await supabase
+      .from('events').select('*').eq('id', id);
+    if (error) throw error;
+    const event = events && events[0];
+    if (!event) return res.status(404).json({ message: 'Event not found.' });
+
+    const isFaculty = req.user.roles.includes('faculty') || req.user.roles.includes('faculty_organizer');
+    const isAdmin = req.user.roles.includes('admin');
+    const isEventHead = req.user.id === event.student_organizer_id || req.user.id === event.proposed_by || req.user.id === event.organizer_id;
+    if (!isAdmin && (!isFaculty || event.faculty_id !== req.user.id) && !isEventHead) {
+      return res.status(403).json({ message: 'Access denied. Only Admins, assigned Faculty Coordinators, or Event Heads can change the feedback setting.' });
+    }
+
+    const { error: updErr } = await supabase
+      .from('events')
+      .update({ feedback_enabled: enabled === true })
+      .eq('id', id);
+    if (updErr) {
+      if (updErr.message && /column|schema cache/i.test(updErr.message)) {
+        return res.status(500).json({ message: 'feedback_enabled column missing. Run supabase-patch-v64-feedback-enabled.sql first.' });
+      }
+      throw updErr;
+    }
+
+    const { data: updatedList } = await supabase.from('events').select('*').eq('id', id);
+    res.json((updatedList && updatedList[0]) || { ...event, feedback_enabled: enabled === true });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error updating feedback setting.', error: err.message });
   }
 };
 
@@ -4581,6 +4622,7 @@ module.exports = {
   editEvent,
   deleteEvent,
   updateStatus,
+  updateFeedbackEnabled,
   getMyEvents,
   getEventAnalytics,
   addTeamMember,

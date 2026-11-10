@@ -1,54 +1,10 @@
-const cron = require('node-cron');
-const supabase = require('../config/supabaseClient');
-
+// Event completion is MANUAL: an authorized organizer marks an event as
+// completed from the Workspace ("Mark as Completed"). This job previously
+// auto-completed events whose `date` had passed, which flipped multi-day
+// events to "completed" mid-run (opening feedback and hiding passes too
+// early), so the automatic behavior is intentionally disabled.
 const startEventCompletionJob = () => {
-  // Run every 5 minutes
-  cron.schedule('*/5 * * * *', async () => {
-    try {
-      const now = new Date().toISOString();
-
-      // Find events that are either published or active, and their scheduled date has passed
-      const { data: eligibleEvents, error } = await supabase
-        .from('events')
-        .select('id, title, date, status')
-        .in('status', ['published', 'active'])
-        .lt('date', now);
-
-      if (error) {
-        if (error.message && (error.message.includes('fetch failed') || error.message.includes('ENOTFOUND'))) {
-          console.warn('[EventCompletionJob] Database unreachable (fetch failed). Please check your Supabase project status in dashboard.');
-        } else {
-          console.error('[EventCompletionJob] Error fetching eligible events:', error.message);
-        }
-        return;
-      }
-
-      if (!eligibleEvents || eligibleEvents.length === 0) {
-        return;
-      }
-
-      console.log(`[EventCompletionJob] Found ${eligibleEvents.length} event(s) to mark as completed.`);
-
-      const eventIds = eligibleEvents.map(e => e.id);
-
-      // Update status to 'completed'
-      const { error: updateError } = await supabase
-        .from('events')
-        .update({ status: 'completed' })
-        .in('id', eventIds);
-
-      if (updateError) {
-        console.error('[EventCompletionJob] Error updating event statuses:', updateError.message);
-      } else {
-        console.log(`[EventCompletionJob] Successfully updated ${eligibleEvents.length} event(s) to completed status.`);
-      }
-
-    } catch (err) {
-      console.error('[EventCompletionJob] Unexpected error during execution:', err.message);
-    }
-  });
-
-  console.log('🕒 Event Completion Cron Job initialized (runs every 5 minutes).');
+  console.log('[EventCompletionJob] Auto-completion disabled - events are completed manually from the Workspace.');
 };
 
 module.exports = startEventCompletionJob;

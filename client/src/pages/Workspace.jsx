@@ -528,6 +528,34 @@ const Workspace = () => {
     }
   };
 
+  const handleReopenEvent = async () => {
+    if (!window.confirm('Reopen this event? It will move back to published and student passes will be available again.')) {
+      return;
+    }
+
+    try {
+      await axios.put(`/api/events/${eventId}/status`, { status: 'reopen' });
+      fetchWorkspaceData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to reopen the event.');
+    }
+  };
+
+  const handleToggleFeedback = async () => {
+    const next = !event.feedback_enabled;
+    const prompt = next
+      ? 'Enable feedback for this event? Registered students will be able to submit feedback.'
+      : 'Disable feedback for this event? Students will no longer be able to submit feedback.';
+    if (!window.confirm(prompt)) return;
+
+    try {
+      await axios.put(`/api/events/${eventId}/feedback-enabled`, { enabled: next });
+      fetchWorkspaceData(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update the feedback setting.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen bg-background transition-colors duration-300">
@@ -745,6 +773,22 @@ const Workspace = () => {
                   )
                 )}
 
+                {isSuperUser && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      handleToggleFeedback();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.86L3 20l1.2-3.2A7.6 7.6 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <span>{event.feedback_enabled ? 'Disable Feedback' : 'Enable Feedback'}</span>
+                  </button>
+                )}
+
                 {isSuperUser && event.status !== 'completed' && (
                   <button
                     type="button"
@@ -758,6 +802,22 @@ const Workspace = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                     <span>Mark as Completed</span>
+                  </button>
+                )}
+
+                {isSuperUser && event.status === 'completed' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsDropdownOpen(false);
+                      handleReopenEvent();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <svg className="h-4 w-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114.9-2M20 15a8 8 0 01-14.9 2" />
+                    </svg>
+                    <span>Reopen Event</span>
                   </button>
                 )}
               </div>

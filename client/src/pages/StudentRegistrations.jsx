@@ -942,7 +942,7 @@ const StudentRegistrations = () => {
 
                       {/* Bottom Section: Actions */}
                       <div className="flex flex-wrap items-center justify-end gap-3">
-                        {evt.status === 'completed' && (
+                        {evt.status === 'completed' && evt.feedback_enabled && (
                           feedbackStatuses[evt.id || evt._id] ? (
                             <span className="px-5 py-2 text-xs font-bold rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center">
                               Feedback Submitted
@@ -959,7 +959,7 @@ const StudentRegistrations = () => {
                             </button>
                           )
                         )}
-                        {new Date(evt.date) < new Date() ? (
+                        {evt.status === 'completed' ? (
                           <span className="px-5 py-2 text-[10px] font-bold rounded-xl bg-slate-500/10 text-slate-500 border border-slate-500/20 flex items-center text-center">
                             Event Completed – Pass unavailable.
                           </span>

@@ -53,7 +53,7 @@ const submitFeedback = async (req, res) => {
     // Check if event exists and is completed
     const { data: event, error: eventError } = await supabase
       .from('events')
-      .select('id, status, feedback_questions, faculty_id, student_organizer_id, proposed_by, organizer_id, created_by')
+      .select('*')
       .eq('id', eventId)
       .maybeSingle();
 
@@ -63,6 +63,10 @@ const submitFeedback = async (req, res) => {
 
     if (event.status !== 'completed') {
       return res.status(400).json({ message: 'Feedback can only be submitted for completed events.' });
+    }
+
+    if (event.feedback_enabled !== true) {
+      return res.status(400).json({ message: 'Feedback for this event is currently disabled.' });
     }
 
     // Check if user is registered for the event
