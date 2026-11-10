@@ -85,8 +85,21 @@ startEventReminderJob();
 const app = express();
 
 // Global Middlewares
+const allowedOrigins = new Set(
+  (process.env.CLIENT_URL || 'http://localhost:3000')
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, ''))
+    .filter(Boolean)
+);
+allowedOrigins.add('http://localhost:3000');
+allowedOrigins.add('http://localhost:5173');
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin(origin, callback) {
+    const clean = origin ? origin.replace(/\/+$/, '') : '';
+    const ok = !origin || allowedOrigins.has(clean) || /\.vercel\.app$/i.test(clean);
+    callback(null, ok);
+  },
   credentials: true
 }));
 app.use(express.json());
