@@ -430,7 +430,12 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     }
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const queuedStudentScores = { ...pendingStudentSaves.current };
+    const queuedTeamScores = { ...pendingSaves.current };
+    await flushPendingSaves().catch(() => false);
+    const studentScoresExport = { ...studentScoresMap, ...queuedStudentScores };
+    const scoresExport = { ...scoresMap, ...queuedTeamScores };
     const subMeta = (data.rounds || []).flatMap(round => (round.subrounds || []).map(sub => ({
       id: sub.id,
       label: `${round.name} - ${sub.name}`,
@@ -440,7 +445,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
 
     const studentEntries = filteredStudents.map(student => ({
       student,
-      total: subMeta.reduce((sum, sub) => sum + Number(studentScoresMap[`${student.registration_id}:${sub.id}`] || 0), 0)
+      total: subMeta.reduce((sum, sub) => sum + Number(studentScoresExport[`${student.registration_id}:${sub.id}`] || 0), 0)
     }));
     const sorted = [...studentEntries].sort((a, b) => b.total - a.total);
     const rankMap = new Map();
@@ -462,7 +467,7 @@ const ScoringBoard = ({ eventId, canEdit }) => {
         Panel: student.panel_name || ''
       };
       subMeta.forEach(sub => {
-        const value = studentScoresMap[`${student.registration_id}:${sub.id}`];
+        const value = studentScoresExport[`${student.registration_id}:${sub.id}`];
         row[`${sub.label} (/${sub.max})`] = value == null || value === '' ? '' : Number(value);
       });
       row['Total'] = total;
@@ -481,10 +486,10 @@ const ScoringBoard = ({ eventId, canEdit }) => {
     });
 
     const teamRows = detailTeams.map(team => {
-      const total = subMeta.reduce((sum, sub) => sum + Number(scoresMap[`${team.id}:${sub.id}`] || 0), 0);
+      const total = subMeta.reduce((sum, sub) => sum + Number(scoresExport[`${team.id}:${sub.id}`] || 0), 0);
       const row = { Team: team.name || '' };
       subMeta.forEach(sub => {
-        const value = scoresMap[`${team.id}:${sub.id}`];
+        const value = scoresExport[`${team.id}:${sub.id}`];
         row[`${sub.label} (/${sub.max})`] = value == null || value === '' ? '' : Number(value);
       });
       row['Total'] = total;
