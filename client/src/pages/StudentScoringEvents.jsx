@@ -12,13 +12,13 @@ const StudentScoringEvents = () => {
   useEffect(() => {
     const loadEvents = async () => {
       try {
-        const [eventsRes, registrationsRes] = await Promise.all([axios.get('/api/events?status=published'), axios.get('/api/registrations/my-registrations')]);
+        const [eventsRes, registrationsRes] = await Promise.all([axios.get('/api/events'), axios.get('/api/registrations/my-registrations')]);
         const registeredEventIds = new Set((registrationsRes.data || []).filter(reg => {
           if (reg.status !== 'registered') return false;
           if (!reg.team_id && !reg.teamId) return true;
           return reg.teamId?.status === 'registered' || reg.teamDetails?.teamStatus === 'registered';
         }).map(reg => String(reg.event_id || reg.eventId?.id || reg.eventId?._id)));
-        setEvents((eventsRes.data || []).filter(event => event.scoring_enabled && registeredEventIds.has(String(event.id || event._id))));
+        setEvents((eventsRes.data || []).filter(event => ['published', 'completed'].includes(event.status) && event.scoring_enabled && registeredEventIds.has(String(event.id || event._id))));
       } catch (err) {
         setError('Failed to load scoring events. Please refresh.');
       } finally {

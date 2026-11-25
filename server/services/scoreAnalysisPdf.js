@@ -34,6 +34,39 @@ const truncate = (font, text, size, maxWidth) => {
   return `${out}...`;
 };
 
+const wrapText = (font, text, size, maxWidth) => {
+  const raw = String(text == null ? '' : text).trim();
+  if (!raw) return [''];
+  if (font.widthOfTextAtSize(raw, size) <= maxWidth) return [raw];
+  const words = raw.split(/\s+/);
+  const lines = [];
+  let line = '';
+  words.forEach(word => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      line = candidate;
+    } else {
+      if (line) lines.push(line);
+      if (font.widthOfTextAtSize(word, size) <= maxWidth) {
+        line = word;
+      } else {
+        let chunk = '';
+        for (const ch of word) {
+          if (font.widthOfTextAtSize(chunk + ch, size) <= maxWidth) {
+            chunk += ch;
+          } else {
+            if (chunk) lines.push(chunk);
+            chunk = ch;
+          }
+        }
+        line = chunk;
+      }
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+};
+
 const roundRectPath = (w, h, r) => {
   const rr = Math.max(0, Math.min(r, w / 2, h / 2));
   return [
@@ -56,7 +89,7 @@ const gradeOf = (pct) => {
   if (p >= 80) return 'A';
   if (p >= 70) return 'B';
   if (p >= 60) return 'C';
-  if (p >= 50) return 'D';
+  if (p > 0) return 'D';
   return 'F';
 };
 
@@ -127,7 +160,15 @@ const buildScoreAnalysisPdf = async ({ event, students, orderedSubs, scores }) =
 
     drawLogo(page, 40, PAGE_H - 45, 34, 34, 1);
     drawText(page, 'AVENTO', 82, PAGE_H - 34, { size: 13, font: bold, color: NAVY });
-    drawText(page, `${event.title || 'Event'} - Score Analysis (continued)`, PAGE_W - 40, PAGE_H - 33, { size: 8.5, color: SLATE, align: 'right' });
+    const contMaxW = PAGE_W - 40 - 148;
+    let contLines = wrapText(regular, `${event.title || 'Event'} - Score Analysis (continued)`, 8.5, contMaxW);
+    if (contLines.length > 2) {
+      contLines = [contLines[0], truncate(regular, contLines.slice(1).join(' '), 8.5, contMaxW)];
+    }
+    const contY = contLines.length === 1 ? PAGE_H - 33 : PAGE_H - 27;
+    contLines.forEach((line, i) => {
+      drawText(page, line, PAGE_W - 40, contY - i * 11, { size: 8.5, color: SLATE, align: 'right' });
+    });
   };
 
   const drawFooter = (page) => {
@@ -189,8 +230,8 @@ const buildScoreAnalysisPdf = async ({ event, students, orderedSubs, scores }) =
     { label: 'A - 80 to 89%', min: 80, max: 90 },
     { label: 'B - 70 to 79%', min: 70, max: 80 },
     { label: 'C - 60 to 69%', min: 60, max: 70 },
-    { label: 'D - 50 to 59%', min: 50, max: 60 },
-    { label: 'F - below 50%', min: -1, max: 50 }
+    { label: 'D - 1 to 59%', min: 1e-9, max: 60 },
+    { label: 'F - 0% (Not Attempted)', min: -1, max: 1e-9 }
   ];
   const gradeBands = bandDefs.map(band => {
     const members = perStudent.filter(st => st.pct >= band.min && st.pct < band.max);
@@ -252,9 +293,12 @@ const buildScoreAnalysisPdf = async ({ event, students, orderedSubs, scores }) =
 
   // ---------------- page 1 ----------------
   newPage(false);
-  drawText(page, event.title || 'Event', MARGIN, y - 16, { size: 20, font: bold, color: NAVY, maxWidth: CONTENT_W });
-  drawText(page, `Evaluation analysis across ${count} scored student${count === 1 ? '' : 's'} and ${orderedSubs.length} criteria`, MARGIN, y - 34, { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
-  y -= 56;
+  const titleLines = wrapText(bold, event.title || 'Event', 20, CONTENT_W);
+  titleLines.forEach((line, i) => {
+    drawText(page, line, MARGIN, y - 16 - i * 24, { size: 20, font: bold, color: NAVY });
+  });
+  drawText(page, `Evaluation analysis across ${count} scored student${count === 1 ? '' : 's'} and ${orderedSubs.length} criteria`, MARGIN, y - 34 - (titleLines.length - 1) * 24, { size: 9.5, color: SLATE, maxWidth: CONTENT_W });
+  y -= 56 + (titleLines.length - 1) * 24;
 
   sectionTitle('Overall Summary');
   const cards = [
@@ -309,15 +353,19 @@ const buildScoreAnalysisPdf = async ({ event, students, orderedSubs, scores }) =
   page.drawLine({ start: { x: MARGIN, y }, end: { x: MARGIN + CONTENT_W, y }, thickness: 0.75, color: BORDER });
 
   perCriterion.forEach(crit => {
-    ensureSpace(28);
+    const nameLines = wrapText(bold, `${crit.roundName} - ${crit.name}`, 9, 215);
+    const extra = (nameLines.length - 1) * 11;
+    ensureSpace(28 + extra);
     y -= 16;
-    drawText(page, `${crit.roundName} - ${crit.name}`, critCols.name, y, { size: 9, font: bold, color: NAVY, maxWidth: 215 });
+    nameLines.forEach((line, i) => {
+      drawText(page, line, critCols.name, y - i * 11, { size: 9, font: bold, color: NAVY });
+    });
     drawText(page, formatScore(crit.max), critCols.max, y, { size: 9, color: SLATE, align: 'right' });
     drawText(page, formatScore(crit.avg), critCols.avg, y, { size: 9, font: bold, color: CYAN_DARK, align: 'right' });
     drawText(page, crit.high == null ? '-' : formatScore(crit.high), critCols.high, y, { size: 9, color: SLATE, align: 'right' });
     drawText(page, crit.low == null ? '-' : formatScore(crit.low), critCols.low, y, { size: 9, color: SLATE, align: 'right' });
     drawText(page, `${formatScore(crit.avgPct)}%`, critCols.pct, y, { size: 9, font: bold, color: CYAN_DARK, align: 'right' });
-    y -= 10;
+    y -= 10 + extra;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: MARGIN + CONTENT_W, y }, thickness: 0.5, color: LINE });
     y -= 2;
   });
@@ -380,16 +428,20 @@ const buildScoreAnalysisPdf = async ({ event, students, orderedSubs, scores }) =
   page.drawLine({ start: { x: MARGIN, y }, end: { x: MARGIN + CONTENT_W, y }, thickness: 0.75, color: BORDER });
 
   perStudent.forEach(st => {
-    ensureSpace(30);
+    const nameLines = wrapText(bold, st.name || 'Unknown Student', 9.5, 200);
+    const extra = (nameLines.length - 1) * 11 + (st.roll_number ? 11 : 0);
+    ensureSpace(30 + extra);
     y -= 17;
     drawText(page, `#${st.rank}`, cols.rank, y, { size: 9, font: bold, color: MUTED });
-    drawText(page, st.name || 'Unknown Student', cols.student, y, { size: 9.5, font: bold, color: NAVY, maxWidth: 135 });
-    if (st.roll_number) drawText(page, st.roll_number, cols.student + 140, y, { size: 8, color: MUTED, maxWidth: 60 });
+    nameLines.forEach((line, i) => {
+      drawText(page, line, cols.student, y - i * 11, { size: 9.5, font: bold, color: NAVY });
+    });
+    if (st.roll_number) drawText(page, String(st.roll_number), cols.student, y - nameLines.length * 11, { size: 8, color: MUTED, maxWidth: 200 });
     drawText(page, st.panel_name || '-', cols.panel, y, { size: 8.5, color: SLATE, maxWidth: 115 });
     drawText(page, formatScore(st.total), cols.total, y, { size: 10, font: bold, color: NAVY, align: 'right' });
     drawText(page, `${formatScore(st.pct)}%`, cols.pct, y, { size: 9, color: SLATE, align: 'right' });
     drawText(page, gradeOf(st.pct), cols.grade, y, { size: 10, font: bold, color: CYAN_DARK, align: 'right' });
-    y -= 10;
+    y -= 10 + extra;
     page.drawLine({ start: { x: MARGIN, y }, end: { x: MARGIN + CONTENT_W, y }, thickness: 0.5, color: LINE });
     y -= 2;
   });

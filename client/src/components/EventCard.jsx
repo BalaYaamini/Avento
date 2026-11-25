@@ -256,7 +256,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
               View Organizers
             </button>
           )}
-          {isActive && event.scoring_enabled && event.scoreboard_visible && (
+          {(isActive || event.status === 'completed') && event.scoring_enabled && event.scoreboard_visible && (
             <button onClick={onViewScores} className="w-full rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-all hover:bg-emerald-500/20">View Scoreboard</button>
           )}
 
@@ -580,7 +580,7 @@ const EventCard = ({ event, index = 0, isRegistered, isPendingRegistration, isOr
                     View Organizers
                   </button>
                 )}
-                {isActive && event.scoring_enabled && event.scoreboard_visible && (
+                {(isActive || event.status === 'completed') && event.scoring_enabled && event.scoreboard_visible && (
                   <button
                     onClick={() => { setShowPosterZoom(false); onViewScores(); }}
                     className="px-4 py-2 text-xs font-bold rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-500/20 transition-all shadow-xs"

@@ -72,6 +72,16 @@ const Contact = () => {
       title: 'Support Hours',
       line1: 'Monday - Friday',
       line2: '09:00 AM - 05:00 PM'
+    },
+    {
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
+        </svg>
+      ),
+      title: 'Phone',
+      line1: '9849808611',
+      line2: '8008075869'
     }
   ];
 
@@ -94,7 +104,7 @@ const Contact = () => {
         </div>
 
         {/* Support Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-14">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-14">
           {contactCards.map((card, i) => (
             <div 
               key={i} 
